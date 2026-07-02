@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m unittest tests.test_roadmap tests.test_grading tests.test_question_classifier tests.test_import_commit)"
+    ]
+  }
+}

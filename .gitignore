@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.py[cod]
+.next/
+node_modules/
+uploads/
+resources/
