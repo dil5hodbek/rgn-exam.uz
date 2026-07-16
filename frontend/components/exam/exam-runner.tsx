@@ -48,6 +48,7 @@ type AttemptState = {
   id: string; elapsed_seconds: number;
   answers: { question_id: string; answer: AnswerValue; flagged: boolean }[];
   checked_task_ids?: string[];
+  answers_updated_at?: string | null;
 };
 type ExerciseResult = Record<string, boolean | null>;
 
@@ -292,14 +293,19 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
       setAttemptId(attempt.id);
       const serverAnswers = Object.fromEntries((attempt.answers ?? []).map((row) => [row.question_id, row.answer]));
       let serverFlagged = (attempt.answers ?? []).filter((row) => row.flagged).map((row) => row.question_id);
-      // Local backup wins over the server copy: it holds whatever was on the
-      // screen at the moment of the refresh, even if the network save failed.
+      // The local backup holds whatever was on the screen at the moment of a
+      // refresh — but it only wins when it is NEWER than the server copy
+      // (15s clock tolerance), so an old device never overwrites newer work.
       try {
         const stored = localStorage.getItem(`exam-progress:${attempt.id}`);
         if (stored) {
           const local = JSON.parse(stored);
-          Object.assign(serverAnswers, local.answers ?? {});
-          if (Array.isArray(local.flagged)) serverFlagged = local.flagged;
+          const serverSavedAt = attempt.answers_updated_at ? Date.parse(attempt.answers_updated_at) : 0;
+          const localSavedAt = typeof local.savedAt === "number" ? local.savedAt : Date.now();
+          if (localSavedAt >= serverSavedAt - 15000) {
+            Object.assign(serverAnswers, local.answers ?? {});
+            if (Array.isArray(local.flagged)) serverFlagged = local.flagged;
+          }
         }
       } catch { /* corrupted backup — server copy is fine */ }
       setAnswers(serverAnswers);
@@ -363,7 +369,7 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
   useEffect(() => {
     if (!attemptId) return;
     try {
-      localStorage.setItem(`exam-progress:${attemptId}`, JSON.stringify({ answers, flagged }));
+      localStorage.setItem(`exam-progress:${attemptId}`, JSON.stringify({ answers, flagged, savedAt: Date.now() }));
     } catch { /* storage full — server save still runs */ }
   }, [answers, flagged, attemptId]);
 
@@ -387,11 +393,22 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
   useEffect(() => {
     if (!attemptId) return;
     const flush = () => { saveAnswers().catch(() => {}); };
+    // Leaving the page (close/refresh/navigate away) freezes the timer too —
+    // a keepalive request survives the unload; resuming restores the clock.
+    const onLeave = () => {
+      flush();
+      const base = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
+      try {
+        fetch(`${base}/attempts/${attemptId}/pause`, {
+          method: "POST", credentials: "include", keepalive: true,
+        }).catch(() => {});
+      } catch { /* best effort */ }
+    };
     const onVisibility = () => { if (document.visibilityState === "hidden") flush(); };
-    window.addEventListener("pagehide", flush);
+    window.addEventListener("pagehide", onLeave);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
-      window.removeEventListener("pagehide", flush);
+      window.removeEventListener("pagehide", onLeave);
       document.removeEventListener("visibilitychange", onVisibility);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

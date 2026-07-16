@@ -175,8 +175,14 @@ async def list_tests(_: User = Depends(require_admin), db: AsyncSession = Depend
         "exam_type": exam_type.name, "exam_type_slug": exam_type.slug,
         "status": variant.status, "time_limit_minutes": variant.time_limit_minutes,
         "sections_count": len(variant.sections),
-        "tasks_count": sum(len(section.tasks) for section in variant.sections),
-        "questions_count": sum(len(task.questions) for section in variant.sections for task in section.tasks),
+        "tasks_count": sum(
+            1 for section in variant.sections for task in section.tasks
+            if not (task.metadata_json or {}).get("superseded")
+        ),
+        "questions_count": sum(
+            len(task.questions) for section in variant.sections for task in section.tasks
+            if not (task.metadata_json or {}).get("superseded")
+        ),
     } for variant, level, exam_type in rows]
 
 
@@ -202,6 +208,10 @@ async def admin_test_detail(
     for section in variant.sections:
         tasks = []
         for task in section.tasks:
+            # Superseded tasks are retired copies kept only because students
+            # already answered them — invisible everywhere in the admin UI.
+            if (task.metadata_json or {}).get("superseded"):
+                continue
             media = await db.get(MediaAsset, task.media_asset_id) if task.media_asset_id else None
             tasks.append({
                 "id": task.id, "title": task.title, "type": task.type,

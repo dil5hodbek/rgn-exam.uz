@@ -41,6 +41,9 @@ async def attempt_state(db: AsyncSession, attempt: Attempt) -> dict:
         "status": attempt.status,
         "started_at": attempt.started_at,
         "elapsed_seconds": max(0, int((datetime.now(timezone.utc) - started_at).total_seconds())),
+        # When the server copy was last written — the client compares this
+        # against its local backup so an older device never overwrites newer work.
+        "answers_updated_at": max((row.updated_at for row in rows), default=None),
         "answers": [{
             "question_id": row.question_id,
             "answer": row.student_answer,

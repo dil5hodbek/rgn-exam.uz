@@ -15,3 +15,4 @@ python-multipart==0.0.20
 openpyxl==3.1.5
 python-docx==1.1.2
 anthropic>=0.39,<1.0
+pytest==8.3.4

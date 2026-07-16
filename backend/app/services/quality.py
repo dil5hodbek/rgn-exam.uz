@@ -95,7 +95,9 @@ async def quality_report(db: AsyncSession, variant_id: uuid.UUID) -> dict:
                 issue(warnings, scope, str(message), section.id, task.id)
             if metadata.get("source_document") and not metadata.get("context_kind"):
                 issue(errors, scope, "Imported task source context is missing.", section.id, task.id)
-            if re.search(r"\brecording\s*\d+", task.instructions, re.I) and not task.media_asset_id:
+            # A listening exercise may carry "Recording N" in its title OR its
+            # instructions — either way it must ship with the audio.
+            if re.search(r"\brecording\s*\d+", f"{task.title} {task.instructions}", re.I) and not task.media_asset_id:
                 issue(errors, scope, "Listening recording has no attached audio/video.", section.id, task.id)
             interaction_options = interaction.get("options", [])
             option_values = [

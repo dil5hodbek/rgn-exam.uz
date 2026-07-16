@@ -98,14 +98,26 @@ async def register(payload: RegisterRequest, response: Response, db: AsyncSessio
 
 
 @router.post("/login", response_model=AuthResponse)
-async def login(payload: LoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
+async def login(payload: LoginRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     try:
         phone = normalize_phone(payload.phone_number)
     except ValueError:
         phone = ""
+    # Brute-force guard: 10 failed tries per phone+IP within 15 minutes.
+    client_ip = request.client.host if request.client else "unknown"
+    fails_key = f"login-fails:{phone or 'invalid'}:{client_ip}"
+    async with redis_client() as redis:
+        if int(await redis.get(fails_key) or 0) >= 10:
+            raise HTTPException(429, "Too many failed attempts. Try again in 15 minutes.")
     user = await db.scalar(select(User).where(User.phone_number == phone))
     if not user or not verify_password(payload.password, user.password_hash) or not user.is_active:
+        async with redis_client() as redis:
+            fails = await redis.incr(fails_key)
+            if fails == 1:
+                await redis.expire(fails_key, 900)
         raise HTTPException(401, "Incorrect phone number or password.")
+    async with redis_client() as redis:
+        await redis.delete(fails_key)
     set_session(response, str(user.id))
     return AuthResponse(user=user_output(user))
 
