@@ -11,3 +11,6 @@ uploads/
 resources/
 
 backups/
+
+~$*
+*.tmp
