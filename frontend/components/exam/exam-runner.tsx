@@ -1127,7 +1127,7 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
         </div>
         <div className="flex w-full min-w-0 items-center justify-end gap-2.5 sm:w-auto">
           {exercise.media?.mime_type.startsWith("audio/") && <>
-            <AudioPlayer className="w-full min-w-0 sm:w-80 sm:shrink-0" src={mediaUrl(exercise.media.url)} onPlay={(media) => guardMediaPlay(exercise, media)} onEnded={() => recordMediaPlay(exercise)} />
+            <AudioPlayer className="w-full min-w-0 sm:w-80 sm:shrink-0" src={mediaUrl(exercise.media.url)} autoStartDelay={5000} onPlay={(media) => guardMediaPlay(exercise, media)} onEnded={() => recordMediaPlay(exercise)} />
             {exercise.audio_replay_limit && <span className="hidden shrink-0 rounded-lg bg-surface px-2 py-2 text-[10px] font-bold text-muted xl:block">{Math.max(0, exercise.audio_replay_limit - (mediaPlays[exercise.id] ?? 0))} left</span>}
           </>}
           <span className="hidden shrink-0 rounded-xl bg-surface px-2.5 py-2 text-xs font-bold text-muted sm:block">{exerciseAnswered}/{exerciseQuestions.length}</span>

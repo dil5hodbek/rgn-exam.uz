@@ -487,6 +487,33 @@ async def create_task_for_test(
     return await _persist_new_task(db, section, payload, admin, request)
 
 
+@router.delete("/tests/{variant_id}", status_code=204)
+async def delete_variant(
+    variant_id: uuid.UUID, request: Request,
+    admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
+):
+    """Delete ONE test variant with all of its sections/exercises/questions.
+    Refused once students have attempted it — their results must survive."""
+    variant = await db.get(
+        TestVariant, variant_id,
+        options=[selectinload(TestVariant.sections).selectinload(Section.tasks).selectinload(Task.questions)],
+    )
+    if not variant:
+        raise HTTPException(404, "Test variant not found.")
+    attempts = await db.scalar(
+        select(func.count()).select_from(Attempt).where(Attempt.test_variant_id == variant_id)
+    )
+    if attempts:
+        raise HTTPException(409, "This test has student attempts and cannot be deleted. Move it to draft instead.")
+    await write_audit(
+        db, admin.id, "test.delete", "TestVariant", str(variant_id),
+        {"title": variant.title, "variant_number": variant.variant_number},
+        request.client.host if request.client else None,
+    )
+    await db.delete(variant)
+    await db.commit()
+
+
 @router.post("/tests/{variant_id}/import-docx", status_code=201)
 async def import_docx_into_test(
     variant_id: uuid.UUID, request: Request, file: UploadFile = File(...),

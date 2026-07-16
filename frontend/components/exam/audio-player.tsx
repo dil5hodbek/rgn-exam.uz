@@ -12,12 +12,15 @@ function formatTime(seconds: number) {
 }
 
 export function AudioPlayer({
-  src, className, onPlay, onEnded,
+  src, className, onPlay, onEnded, autoStartDelay,
 }: {
   src: string;
   className?: string;
   onPlay?: (audio: HTMLAudioElement) => void;
   onEnded?: () => void;
+  /** Start playing this many ms after the player appears — unless the student
+   *  has already pressed play or pause themselves. */
+  autoStartDelay?: number;
 }) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -25,16 +28,28 @@ export function AudioPlayer({
   const [duration, setDuration] = useState(0);
   const [muted, setMuted] = useState(false);
   const [volume, setVolume] = useState(1);
+  // Any manual play/pause cancels the pending auto-start and keeps the
+  // student in control (a paused recording stays paused).
+  const interacted = useRef(false);
 
   useEffect(() => {
     setPlaying(false);
     setCurrentTime(0);
     setDuration(0);
-  }, [src]);
+    interacted.current = false;
+    if (!autoStartDelay) return;
+    const timer = window.setTimeout(() => {
+      const audio = audioRef.current;
+      if (!audio || interacted.current || !audio.paused) return;
+      audio.play().catch(() => { /* browser blocked autoplay — student presses play */ });
+    }, autoStartDelay);
+    return () => window.clearTimeout(timer);
+  }, [src, autoStartDelay]);
 
   function togglePlay() {
     const audio = audioRef.current;
     if (!audio) return;
+    interacted.current = true;
     if (audio.paused) audio.play(); else audio.pause();
   }
 
@@ -80,7 +95,7 @@ export function AudioPlayer({
         src={src}
         preload="metadata"
         onPlay={(event) => { setPlaying(true); onPlay?.(event.currentTarget); }}
-        onPause={() => setPlaying(false)}
+        onPause={() => { setPlaying(false); interacted.current = true; }}
         onEnded={() => { setPlaying(false); onEnded?.(); }}
         onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)}
         onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
