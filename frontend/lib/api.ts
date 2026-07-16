@@ -2,10 +2,22 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
 export const API_ORIGIN = API_URL.replace(/\/api\/v1\/?$/, "");
 
 export class ApiError extends Error {
-  constructor(message: string, public readonly status: number) {
+  constructor(message: string, public readonly status: number, public readonly detail?: unknown) {
     super(message);
     this.name = "ApiError";
   }
+}
+
+// FastAPI's `detail` may be a plain string OR a structured object like
+// {message, errors: [...]} — always derive a readable message, never
+// "[object Object]".
+function detailMessage(detail: unknown): string {
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (detail && typeof detail === "object") {
+    const message = (detail as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return "Something went wrong. Please try again.";
 }
 
 let refreshPromise: Promise<boolean> | null = null;
@@ -51,7 +63,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new ApiError(data.detail ?? "Something went wrong. Please try again.", response.status);
+    throw new ApiError(detailMessage(data.detail), response.status, data.detail);
   }
   if (response.status === 204) return undefined as T;
   return response.json();

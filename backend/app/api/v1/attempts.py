@@ -1,9 +1,9 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -11,8 +11,8 @@ from app.core.database import get_db
 from app.core.config import settings
 from app.core.deps import current_user
 from app.models import (
-    Attempt, AttemptAnswer, AttemptStatus, ContentStatus, ExamType, Level, Question, Section, Task,
-    TestVariant, User,
+    Attempt, AttemptAnswer, AttemptStatus, ContentStatus, ExamType, Level, MediaAsset, Question, Section,
+    Task, TestVariant, User,
 )
 from app.schemas.content import AnswerBatch
 from app.services.grading import grade_answer
@@ -65,6 +65,17 @@ async def start_attempt(test_id: uuid.UUID, user: User = Depends(current_user), 
         Attempt.status == AttemptStatus.IN_PROGRESS,
     ))
     if existing:
+        # Resume a paused attempt: the clock stopped at "Save & exit", so
+        # shift started_at to keep exactly the remaining time from that moment.
+        redis = redis_client()
+        try:
+            paused = await redis.get(f"attempt-paused:{existing.id}")
+            if paused is not None:
+                existing.started_at = datetime.now(timezone.utc) - timedelta(seconds=float(paused))
+                await db.commit()
+                await redis.delete(f"attempt-paused:{existing.id}")
+        finally:
+            await redis.aclose()
         return await attempt_state(db, existing)
     completed = await db.scalar(select(Attempt.id).where(
         Attempt.user_id == user.id,
@@ -97,6 +108,79 @@ async def ensure_attempt_time(db: AsyncSession, attempt: Attempt) -> None:
     elapsed = (datetime.now(timezone.utc) - started_at).total_seconds()
     if limit and elapsed >= limit * 60:
         raise HTTPException(409, "The test time has expired. Submit the saved answers.")
+
+
+@router.post("/attempts/{attempt_id}/pause", status_code=204)
+async def pause_attempt(attempt_id: uuid.UUID, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    """'Save & exit': freeze the timer at this moment. The elapsed time is
+    stored; when the student comes back, the clock resumes from here."""
+    attempt = await owned_attempt(db, attempt_id, user.id)
+    if attempt.status != AttemptStatus.IN_PROGRESS:
+        raise HTTPException(409, "This attempt has already been submitted.")
+    started_at = attempt.started_at
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+    elapsed = max(0.0, (datetime.now(timezone.utc) - started_at).total_seconds())
+    redis = redis_client()
+    try:
+        await redis.set(f"attempt-paused:{attempt.id}", elapsed, ex=settings.refresh_token_days * 86400)
+    finally:
+        await redis.aclose()
+
+
+@router.get("/me/teacher-reviews")
+async def my_teacher_reviews(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    """The student's teacher-graded work (writing/speaking): pending items
+    waiting for the teacher plus graded ones with score, feedback and the
+    teacher's marked errors."""
+    manual_types = ("writing", "speaking_prompt_placeholder", "rich_text_question")
+    rows = (await db.execute(
+        select(AttemptAnswer, Question, Task, Attempt, TestVariant)
+        .join(Question, Question.id == AttemptAnswer.question_id)
+        .join(Task, Task.id == Question.task_id)
+        .join(Attempt, Attempt.id == AttemptAnswer.attempt_id)
+        .join(TestVariant, TestVariant.id == Attempt.test_variant_id)
+        .where(
+            Attempt.user_id == user.id,
+            Attempt.status != AttemptStatus.IN_PROGRESS,
+            Task.type.in_(manual_types),
+        )
+        .order_by(AttemptAnswer.updated_at.desc())
+    )).all()
+    return [{
+        "id": answer.id,
+        "attempt_id": answer.attempt_id,
+        "test_title": variant.title,
+        "task_title": task.title,
+        "instructions": task.instructions,
+        "prompt": question.prompt,
+        "answer": answer.student_answer,
+        "max_points": float(question.points),
+        "graded": answer.graded_at is not None,
+        "points_awarded": float(answer.points_awarded) if answer.points_awarded is not None else None,
+        "feedback": answer.feedback,
+        "annotations": (answer.rubric_scores or {}).get("annotations", []),
+        "graded_at": answer.graded_at,
+        "submitted_at": attempt.submitted_at,
+    } for answer, question, task, attempt, variant in rows]
+
+
+@router.post("/attempts/{attempt_id}/restart", status_code=204)
+async def restart_attempt(attempt_id: uuid.UUID, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    """Wipe the attempt clean and start over: every saved answer is deleted,
+    all finished-exercise locks are lifted, and the timer restarts from the
+    full time limit."""
+    attempt = await owned_attempt(db, attempt_id, user.id)
+    if attempt.status != AttemptStatus.IN_PROGRESS:
+        raise HTTPException(409, "This attempt has already been submitted.")
+    await db.execute(delete(AttemptAnswer).where(AttemptAnswer.attempt_id == attempt.id))
+    attempt.started_at = datetime.now(timezone.utc)
+    await db.commit()
+    redis = redis_client()
+    try:
+        await redis.delete(f"attempt-checked:{attempt.id}")
+    finally:
+        await redis.aclose()
 
 
 @router.patch("/attempts/{attempt_id}/answers")
@@ -260,7 +344,11 @@ async def submit(attempt_id: uuid.UUID, user: User = Depends(current_user), db: 
     attempt.total_score, attempt.max_score = total, maximum
     attempt.percentage = round(total / maximum * 100, 2) if maximum else 0
     attempt.submitted_at = datetime.now(timezone.utc)
-    attempt.time_spent_seconds = int((attempt.submitted_at - attempt.started_at).total_seconds())
+    started_at = attempt.started_at if attempt.started_at.tzinfo else attempt.started_at.replace(tzinfo=timezone.utc)
+    elapsed = int((attempt.submitted_at - started_at).total_seconds())
+    # Cap at the test's time limit so an attempt left open for hours (then submitted
+    # or auto-submitted) doesn't record runaway practice time.
+    attempt.time_spent_seconds = max(0, min(elapsed, variant.time_limit_minutes * 60))
     attempt.status = AttemptStatus.PENDING_REVIEW if pending else AttemptStatus.GRADED
     await db.commit()
     return {"status": attempt.status, "score": total, "max_score": maximum, "percentage": attempt.percentage}
@@ -288,6 +376,37 @@ async def history(user: User = Depends(current_user), db: AsyncSession = Depends
     } for attempt, variant, level, exam_type in rows]
 
 
+@router.get("/me/saved-questions")
+async def saved_questions(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    """Every question the student bookmarked (flagged) during their attempts,
+    newest first — the "Saved questions" review list."""
+    rows = (await db.execute(
+        select(AttemptAnswer, Question, Task, TestVariant, Level, ExamType)
+        .join(Attempt, Attempt.id == AttemptAnswer.attempt_id)
+        .join(Question, Question.id == AttemptAnswer.question_id)
+        .join(Task, Task.id == Question.task_id)
+        .join(TestVariant, TestVariant.id == Attempt.test_variant_id)
+        .join(Level, Level.id == TestVariant.level_id)
+        .join(ExamType, ExamType.id == TestVariant.exam_type_id)
+        .where(Attempt.user_id == user.id, AttemptAnswer.flagged.is_(True))
+        .order_by(AttemptAnswer.updated_at.desc())
+    )).all()
+    return [{
+        "id": answer.id,
+        "attempt_id": answer.attempt_id,
+        "question_id": question.id,
+        "prompt": question.prompt,
+        "options": question.options,
+        "correct_answer": question.correct_answer if variant.review_allowed else None,
+        "student_answer": answer.student_answer,
+        "is_correct": answer.is_correct,
+        "exercise_type": task.type,
+        "test_title": variant.title,
+        "level": level.name,
+        "exam_type": exam_type.name,
+    } for answer, question, task, variant, level, exam_type in rows]
+
+
 @router.get("/attempts/{attempt_id}/result")
 async def attempt_result(
     attempt_id: uuid.UUID,
@@ -310,6 +429,18 @@ async def attempt_result(
         select(AttemptAnswer).where(AttemptAnswer.attempt_id == attempt.id)
     )).scalars().all()
     answer_map = {row.question_id: row for row in saved}
+    media_ids = {
+        task.media_asset_id
+        for section in variant.sections for task in section.tasks
+        if task.media_asset_id
+    }
+    media_map = {}
+    if media_ids:
+        media_rows = (await db.execute(select(MediaAsset).where(MediaAsset.id.in_(media_ids)))).scalars().all()
+        media_map = {
+            media.id: {"id": media.id, "file_name": media.file_name, "url": media.file_url, "mime_type": media.mime_type}
+            for media in media_rows
+        }
     sections = []
     review = []
     correct_count = incorrect_count = pending_count = 0
@@ -335,8 +466,12 @@ async def attempt_result(
                 if variant.review_allowed:
                     review.append({
                         "question_id": question.id,
+                        "task_id": task.id,
                         "section": section.title,
                         "task_type": task.type,
+                        "task_title": task.title,
+                        "passage_html": task.passage_html,
+                        "media": media_map.get(task.media_asset_id),
                         "prompt": question.prompt,
                         "student_answer": answer.student_answer if answer else None,
                         "correct_answer": question.correct_answer,
@@ -353,6 +488,7 @@ async def attempt_result(
         })
     return {
         "id": attempt.id,
+        "test_variant_id": variant.id,
         "title": variant.title,
         "status": attempt.status,
         "score": float(attempt.total_score or 0),
@@ -360,6 +496,7 @@ async def attempt_result(
         "percentage": float(attempt.percentage or 0),
         "passing_percentage": variant.passing_percentage,
         "passed": float(attempt.percentage or 0) >= variant.passing_percentage,
+        "retake_allowed": variant.retake_allowed,
         "correct_count": correct_count,
         "incorrect_count": incorrect_count,
         "pending_count": pending_count,

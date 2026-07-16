@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, Bell, LayoutDashboard, LogOut, Settings, ShieldCheck, Sparkles } from "lucide-react";
+import { BarChart3, Bookmark, FilePenLine, LayoutDashboard, LogOut, Settings, ShieldCheck, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRouter } from "next/navigation";
@@ -13,6 +13,7 @@ import { api, ApiError } from "@/lib/api";
 const studentNav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/solved-tests", label: "Solved Tests", icon: BarChart3 },
+  { href: "/teacher-review", label: "Teacher Review", icon: FilePenLine },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -21,7 +22,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [initials, setInitials] = useState("ME");
   const [isAdmin, setIsAdmin] = useState(false);
+  const [today, setToday] = useState("");
   useEffect(() => {
+    setToday(new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }));
     api<{ first_name: string; last_name: string; role: string }>("/auth/me")
       .then((user) => {
         setInitials(`${user.first_name[0] ?? ""}${user.last_name[0] ?? ""}`.toUpperCase());
@@ -66,10 +69,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
       <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-line bg-canvas/85 px-4 backdrop-blur-xl lg:ml-64 lg:px-8">
         <div className="lg:hidden"><Logo /></div>
-        <p className="hidden text-sm font-medium text-muted lg:block">Tuesday, June 30</p>
+        <p className="hidden text-sm font-medium text-muted lg:block">{today}</p>
         <div className="flex items-center gap-2">
+          <Link href="/saved-questions" title="Saved questions" className={cn("grid h-10 w-10 place-items-center rounded-xl transition", pathname.startsWith("/saved-questions") ? "bg-indigo-500/10 text-brand" : "text-muted hover:bg-surface")}><Bookmark className="h-4 w-4" /></Link>
           <ThemeToggle />
-          <button className="grid h-10 w-10 place-items-center rounded-xl text-muted hover:bg-surface"><Bell className="h-4 w-4" /></button>
           <div className="ml-1 h-9 w-9 rounded-full bg-gradient-to-br from-amber-300 to-orange-500 p-0.5">
             <div className="grid h-full w-full place-items-center rounded-full bg-canvas text-xs font-bold text-ink">{initials}</div>
           </div>

@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap");
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -10,6 +10,7 @@
   --text-secondary: #697184;
   --border: #e6e8ef;
   --accent: #5b55e7;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
 }
 .dark {
   --bg-primary: #10131b;
@@ -31,3 +32,49 @@ body { color: var(--text-primary); background: var(--bg-primary); font-family: "
   background-image: linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px);
   background-size: 28px 28px;
 }
+
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; width: 0; height: 0; }
+
+input.player-seek {
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 999px;
+  outline: none;
+  cursor: pointer;
+}
+input.player-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  border: 2px solid var(--bg-primary);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .3);
+  cursor: pointer;
+  transition: transform .15s ease;
+}
+input.player-seek::-webkit-slider-thumb:hover { transform: scale(1.15); }
+input.player-seek::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  border: 2px solid var(--bg-primary);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .3);
+  cursor: pointer;
+}
+input.player-seek::-moz-range-track { background: transparent; border: none; }
+
+/* Rich-text reading passage: restore formatting Tailwind's preflight strips,
+   so admin bold / lists / font sizes render for students. */
+.passage-content b, .passage-content strong { font-weight: 700; }
+.passage-content i, .passage-content em { font-style: italic; }
+.passage-content u { text-decoration: underline; }
+.passage-content ul { list-style: disc; padding-left: 1.5rem; margin: .5rem 0; }
+.passage-content ol { list-style: decimal; padding-left: 1.5rem; margin: .5rem 0; }
+.passage-content li { margin: .15rem 0; }
+.passage-content p { margin: .5rem 0; }
+.passage-content a { text-decoration: underline; color: var(--accent); }
+.passage-content:empty::before { content: attr(data-placeholder); color: var(--text-muted, #8b93a7); }

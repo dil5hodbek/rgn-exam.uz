@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, Eye, Headphones, Pencil, Plus, Save, Send, Trash2, Undo2 } from "lucide-react";
+import { Copy, FileText, GripVertical, Loader2, Pencil, Plus, Save, Send, Trash2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { QuestionFields } from "@/components/admin/question-editor/QuestionFields";
-import { QuestionTypeSelect } from "@/components/admin/question-editor/QuestionTypeSelect";
-import { api, mediaUrl } from "@/lib/api";
-import { binaryTypes, defaultKind, manualTypes, parseAnswer } from "@/lib/question-types";
+import { ExerciseBuilder } from "@/components/admin/exercise-builder";
+import { api, ApiError, mediaUrl } from "@/lib/api";
+import { sanitizeHtml } from "@/lib/sanitize";
+import { answerText, binaryTypes, manualTypes } from "@/lib/question-types";
 
 type Question = {
   id: string; prompt: string; options: string[]; correct_answer: unknown; accepted_answers: unknown[];
@@ -22,8 +22,10 @@ type Task = {
     options?: Array<string | { value: string; label: string }>;
     reuse_options?: boolean;
     template?: string;
+    words?: string[];
+    min_words?: number; max_words?: number; prep_seconds?: number;
   };
-  media?: { file_name: string; url: string; mime_type?: string }; questions: Question[];
+  media?: { id?: string; file_name: string; url: string; mime_type?: string }; questions: Question[];
 };
 type Section = { id: string; title: string; order_index: number; tasks: Task[] };
 type Test = {
@@ -32,73 +34,129 @@ type Test = {
   retake_allowed: boolean; review_allowed: boolean; status: string; sections: Section[];
 };
 
+const letter = (i: number) => String.fromCharCode(97 + i);
+const optionValue = (o: string | { value: string; label: string }) => (typeof o === "string" ? o : o.value);
+const optionLabel = (o: string | { value: string; label: string }) => (typeof o === "string" ? o : o.label);
+function isChosen(question: Question, value: unknown) {
+  const ca = question.correct_answer;
+  if (Array.isArray(ca)) return ca.map(String).includes(String(value));
+  return String(ca) === String(value);
+}
+const chip = (correct: boolean) =>
+  `rounded-lg border px-3 py-2 text-sm font-semibold ${correct ? "border-emerald-500 bg-emerald-500/10 text-emerald-600" : "border-line bg-surface text-ink"}`;
+
+// Faithful "how the student sees it" render, with the correct answer highlighted
+// so the admin can verify the exercise at a glance.
+function ExercisePreview({ task }: { task: Task }) {
+  const kind = task.interaction?.kind;
+  const options = task.interaction?.options ?? [];
+  const isManual = manualTypes.has(task.type);
+  const isBinary = binaryTypes.has(task.type);
+
+  return <div className="space-y-4">
+    {task.instructions && <p className="whitespace-pre-wrap text-sm leading-6 text-muted">{task.instructions}</p>}
+    {task.media && <div className="rounded-2xl bg-surface p-3">
+      {task.media.mime_type?.startsWith("image/") ? <img className="max-h-72 w-full rounded-xl object-contain" src={mediaUrl(task.media.url)} alt={task.media.file_name} />
+        : task.media.mime_type?.startsWith("video/") ? <video controls className="max-h-72 w-full rounded-xl bg-black" src={mediaUrl(task.media.url)} />
+          : <audio controls className="h-10 w-full" src={mediaUrl(task.media.url)} />}
+    </div>}
+    {task.passage_html && <div className="passage-content rounded-2xl border border-line bg-surface p-4 text-sm leading-7 text-ink" dangerouslySetInnerHTML={{ __html: sanitizeHtml(task.passage_html) }} />}
+
+    {kind === "gap_match" ? (() => {
+      const words = task.interaction?.words ?? [];
+      const sorted = [...task.questions].sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+      const rows: Array<[Question, Question | undefined]> = [];
+      for (let i = 0; i < sorted.length; i += 2) rows.push([sorted[i], sorted[i + 1]]);
+      return <div className="space-y-3">
+        <div className="rounded-xl border border-line bg-surface p-3 text-sm text-ink"><b className="text-brand">Word box:</b> {words.join("  ·  ")}</div>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+          <div className="space-y-2">{rows.map(([wordQ, replyQ], i) => <div key={wordQ.id} className="rounded-xl border border-line p-3 text-sm">
+            <span className="font-bold text-ink">{i + 1}. {wordQ.prompt}</span>
+            <div className="mt-1.5 flex flex-wrap gap-2 text-xs font-bold">
+              <span className="rounded-lg bg-emerald-500/10 px-2 py-1 text-emerald-600">word: {String(wordQ.correct_answer ?? "—")}</span>
+              <span className="rounded-lg bg-emerald-500/10 px-2 py-1 text-emerald-600">reply: {String(replyQ?.correct_answer ?? "—")}</span>
+            </div>
+          </div>)}</div>
+          <div className="space-y-2">{options.map((o) => <div key={optionValue(o)} className="rounded-xl border border-line bg-surface p-2.5 text-xs"><b className="text-brand">{optionValue(o)}.</b> {optionLabel(o)}</div>)}</div>
+        </div>
+      </div>;
+    })()
+    : kind === "matching" || kind === "matching_headings" ? <div className="grid gap-4 sm:grid-cols-2">
+      <div className="space-y-2">{task.questions.map((q, i) => <div key={q.id} className="flex items-center gap-2 rounded-xl border border-line p-3 text-sm">
+        <span className="font-bold text-ink">{i + 1}. {q.prompt}</span>
+        <span className="ml-auto rounded-lg bg-emerald-500/10 px-2 py-1 text-xs font-bold text-emerald-600">{String(q.correct_answer ?? "—")}</span>
+      </div>)}</div>
+      <div className="space-y-2">{options.map((o) => <div key={optionValue(o)} className="rounded-xl border border-line bg-surface p-3 text-sm"><b className="text-brand">{optionValue(o)}.</b> {optionLabel(o)}</div>)}</div>
+    </div>
+    : kind === "ordering" ? <div>
+      <p className="mb-2 text-xs text-muted">Correct order (the student sees these shuffled):</p>
+      <div className="space-y-2">{((task.questions[0]?.correct_answer as unknown[]) ?? []).map((item, i) => <div key={i} className="flex items-center gap-3 rounded-xl border border-line bg-surface p-3 text-sm">
+        <span className="font-mono text-xs text-brand">{i + 1}</span><span className="text-ink">{String(item)}</span></div>)}</div>
+    </div>
+    : kind === "cloze_passage" ? <div>
+      <div className="whitespace-pre-wrap rounded-2xl border border-line bg-surface p-4 text-sm leading-7 text-ink">{task.interaction?.template}</div>
+      <div className="mt-3 space-y-1.5">{task.questions.map((q) => <div key={q.id} className="text-sm">
+        <span className="font-mono text-brand">{`{{${q.order_index}}}`}</span> <span className="font-semibold text-emerald-600">{answerText(q.correct_answer)}</span>
+        {q.options?.length ? <span className="text-xs text-muted"> — {q.options.map(String).join(" / ")}</span> : null}
+      </div>)}</div>
+    </div>
+    : <div className="space-y-3">{task.questions.map((q, i) => <article key={q.id} className="rounded-2xl border border-line p-4">
+      <p className="font-bold leading-7 text-ink">{q.is_example ? "e.g." : `${i + 1}.`} {q.prompt || <span className="italic text-muted">(no prompt)</span>}</p>
+      {isManual ? <div className="mt-3">
+        <textarea disabled className="min-h-32 w-full rounded-xl border border-line bg-surface p-3 text-sm" placeholder="Student writes here…" />
+        {(task.interaction?.min_words != null || task.interaction?.max_words != null) && <p className="mt-1 text-xs text-muted">{task.interaction?.min_words ?? 0}–{task.interaction?.max_words ?? "∞"} words</p>}
+        {task.interaction?.prep_seconds != null && <p className="mt-1 text-xs text-muted">Preparation: {task.interaction.prep_seconds}s</p>}
+      </div>
+      : isBinary ? <div className="mt-3 flex flex-wrap gap-2">{(task.type === "true_false_not_given" ? ["True", "False", "Not Given"] : ["True", "False"]).map((v) => <span key={v} className={chip(isChosen(q, v))}>{v}</span>)}</div>
+      : q.options && q.options.length ? <div className="mt-3 flex flex-wrap gap-2">{q.options.map((o, oi) => <span key={oi} className={chip(isChosen(q, o))}>{letter(oi)}. {String(o)}</span>)}</div>
+      : <div className="mt-3">
+        <span className="inline-block min-w-40 rounded-lg border border-dashed border-line bg-surface px-3 py-2 text-sm text-muted">answer…</span>
+        {q.correct_answer != null && q.correct_answer !== "" && <span className="ml-2 text-sm font-semibold text-emerald-600">✓ {answerText(q.correct_answer)}</span>}
+        {q.accepted_answers?.length ? <span className="ml-2 text-xs text-muted">(also: {q.accepted_answers.map(String).join(", ")})</span> : null}
+      </div>}
+      {q.explanation && <p className="mt-2 text-xs text-muted">💡 {q.explanation}</p>}
+    </article>)}</div>}
+  </div>;
+}
+
 export function TestBuilder({ variantId }: { variantId: string }) {
   const [test, setTest] = useState<Test | null>(null);
-  const [sectionId, setSectionId] = useState("");
   const [taskId, setTaskId] = useState("");
-  const [questionId, setQuestionId] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [preview, setPreview] = useState(false);
-  const [qualityErrors, setQualityErrors] = useState<Array<{ scope: string; message: string }>>([]);
+  // The adaptive builder, open either to add (no task) or edit (task set) an exercise.
+  const [builder, setBuilder] = useState<{ task?: Task } | null>(null);
+  // Exercise currently being dragged to reorder (null = none).
+  const [dragId, setDragId] = useState<string | null>(null);
+  // Whole-document AI import state.
+  const [importingDoc, setImportingDoc] = useState(false);
+  const [importingKey, setImportingKey] = useState(false);
+  const [importWarnings, setImportWarnings] = useState<string[]>([]);
+
+  function loadTest() {
+    return api<Test>(`/admin/tests/${variantId}`).then((value) => {
+      setTest(value);
+      const firstTask = value.sections.flatMap((s) => s.tasks)[0];
+      setTaskId((current) => current || firstTask?.id || "");
+      return value;
+    });
+  }
 
   useEffect(() => {
-    api<Test>(`/admin/tests/${variantId}`).then((value) => {
-      setTest(value);
-      const firstSection = value.sections[0];
-      const firstTask = firstSection?.tasks[0];
-      setSectionId(firstSection?.id ?? "");
-      setTaskId(firstTask?.id ?? "");
-      setQuestionId(firstTask?.questions[0]?.id ?? "");
-    }).catch((reason) => setError(reason instanceof Error ? reason.message : "Unable to load test."));
+    loadTest().catch((reason) => setError(reason instanceof Error ? reason.message : "Unable to load test."));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [variantId]);
 
-  const section = useMemo(
-    () => test?.sections.find((item) => item.id === sectionId),
-    [test, sectionId],
-  );
-  const task = useMemo(
-    () => test?.sections.flatMap((item) => item.tasks).find((item) => item.id === taskId),
-    [test, taskId],
-  );
-  const question = useMemo(
-    () => task?.questions.find((item) => item.id === questionId),
-    [task, questionId],
-  );
+  // Sections are an internal grouping the admin never sees — the builder shows a
+  // single flat list of exercises for the whole test.
+  const exercises = useMemo(() => test?.sections.flatMap((s) => s.tasks) ?? [], [test]);
+  const task = useMemo(() => exercises.find((item) => item.id === taskId), [exercises, taskId]);
 
   function notify(text: string) { setError(""); setMessage(text); }
   function fail(reason: unknown, fallback: string) {
     setMessage("");
     setError(reason instanceof Error ? reason.message : fallback);
-  }
-  function updateSection(changes: Partial<Section>) {
-    if (!test) return;
-    setTest({ ...test, sections: test.sections.map((item) => item.id === sectionId ? { ...item, ...changes } : item) });
-  }
-  function updateTask(changes: Partial<Task>) {
-    if (!test) return;
-    setTest({
-      ...test,
-      sections: test.sections.map((group) => ({
-        ...group,
-        tasks: group.tasks.map((item) => item.id === taskId ? { ...item, ...changes } : item),
-      })),
-    });
-  }
-  function updateQuestion(changes: Partial<Question>) {
-    if (!task || !question) return;
-    updateTask({ questions: task.questions.map((item) => item.id === question.id ? { ...item, ...changes } : item) });
-  }
-  // Kinds an admin can pick explicitly from the interaction dropdown — left
-  // alone on a type change since they were a deliberate choice, not a stale default.
-  const explicitInteractionKinds = new Set(["word_bank", "matching", "inline_alternatives", "cloze_passage", "ordering"]);
-  function updateTaskType(newType: string) {
-    const currentKind = task?.interaction?.kind;
-    const interaction = currentKind && explicitInteractionKinds.has(currentKind)
-      ? task?.interaction
-      : { ...(task?.interaction ?? {}), kind: defaultKind(newType) };
-    updateTask({ type: newType, interaction });
   }
 
   async function saveTest() {
@@ -115,149 +173,117 @@ export function TestBuilder({ variantId }: { variantId: string }) {
     finally { setBusy(false); }
   }
 
-  async function saveSection() {
-    if (!section) return;
-    try {
-      await api(`/admin/sections/${section.id}`, {
-        method: "PATCH", body: JSON.stringify({ title: section.title }),
-      });
-      notify("Section saved.");
-    } catch (reason) { fail(reason, "Unable to save section."); }
-  }
-
-  async function saveTask() {
+  async function duplicateTask() {
     if (!task) return;
     try {
-      await api(`/admin/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify({
-        title: task.title, instructions: task.instructions, type: task.type,
-        passage_html: task.passage_html || null, audio_replay_limit: task.audio_replay_limit || null,
-        interaction: task.interaction ?? {},
-      }) });
-      notify("Task saved.");
-    } catch (reason) { fail(reason, "Unable to save task."); }
-  }
-
-  async function saveQuestion() {
-    if (!question) return;
-    try {
-      await api(`/admin/questions/${question.id}`, { method: "PATCH", body: JSON.stringify({
-        prompt: question.prompt, options: question.options,
-        correct_answer: parseAnswer(question.correct_answer),
-        accepted_answers: question.accepted_answers,
-        points: question.points, explanation: question.explanation || null,
-        is_example: question.is_example, case_sensitive: question.case_sensitive,
-        normalize_spaces: question.normalize_spaces,
-      }) });
-      notify("Question and answer saved.");
-    } catch (reason) { fail(reason, "Unable to save question."); }
-  }
-
-  async function addSection() {
-    if (!test) return;
-    try {
-      const created = await api<Section>(`/admin/tests/${test.id}/sections`, {
-        method: "POST", body: JSON.stringify({ title: `Section ${test.sections.length + 1}` }),
-      });
-      setTest({ ...test, sections: [...test.sections, created] });
-      setSectionId(created.id); setTaskId(""); setQuestionId("");
-      notify("Section added. Rename it and save.");
-    } catch (reason) { fail(reason, "Unable to add section."); }
-  }
-
-  async function addTask(targetSectionId: string) {
-    if (!test) return;
-    try {
-      const created = await api<Task>(`/admin/sections/${targetSectionId}/tasks`, {
-        method: "POST",
-        body: JSON.stringify({
-          title: "New task", instructions: "Complete the task.", type: "multiple_choice",
-          passage_html: null, audio_replay_limit: null,
-        }),
-      });
-      setTest({
-        ...test,
-        sections: test.sections.map((item) => item.id === targetSectionId
-          ? { ...item, tasks: [...item.tasks, created] } : item),
-      });
-      setSectionId(targetSectionId); setTaskId(created.id); setQuestionId("");
-      notify("Task added.");
-    } catch (reason) { fail(reason, "Unable to add task."); }
-  }
-
-  async function addQuestion() {
-    if (!task) return;
-    try {
-      const created = await api<Question>(`/admin/tasks/${task.id}/questions`, {
-        method: "POST",
-        body: JSON.stringify({
-          prompt: "New question", options: [], correct_answer: null, accepted_answers: [],
-          points: 1, explanation: null, is_example: false, case_sensitive: false,
-          normalize_spaces: true,
-        }),
-      });
-      updateTask({ questions: [...task.questions, created] });
-      setQuestionId(created.id);
-      notify("Question added. Add its prompt and answer.");
-    } catch (reason) { fail(reason, "Unable to add question."); }
-  }
-
-  async function removeQuestion() {
-    if (!task || !question || !window.confirm("Delete this question?")) return;
-    try {
-      await api(`/admin/questions/${question.id}`, { method: "DELETE" });
-      const remaining = task.questions.filter((item) => item.id !== question.id);
-      updateTask({ questions: remaining });
-      setQuestionId(remaining[0]?.id ?? "");
-      notify("Question deleted.");
-    } catch (reason) { fail(reason, "Unable to delete question."); }
+      const created = await api<{ id: string }>(`/admin/tasks/${task.id}/duplicate`, { method: "POST" });
+      await loadTest();
+      setTaskId(created.id);
+      notify("Exercise duplicated.");
+    } catch (reason) { fail(reason, "Unable to duplicate this exercise."); }
   }
 
   async function removeTask() {
-    if (!test || !task || !window.confirm("Delete this task and all of its questions?")) return;
+    if (!test || !task || !window.confirm("Delete this exercise and all of its questions?")) return;
     try {
       await api(`/admin/tasks/${task.id}`, { method: "DELETE" });
-      const updated = test.sections.map((item) => ({ ...item, tasks: item.tasks.filter((row) => row.id !== task.id) }));
-      const currentSection = updated.find((item) => item.id === sectionId);
-      setTest({ ...test, sections: updated });
-      setTaskId(currentSection?.tasks[0]?.id ?? "");
-      setQuestionId(currentSection?.tasks[0]?.questions[0]?.id ?? "");
-      notify("Task deleted.");
-    } catch (reason) { fail(reason, "Unable to delete task."); }
-  }
-
-  async function removeSection() {
-    if (!test || !section || !window.confirm("Delete this section and all of its tasks?")) return;
-    try {
-      await api(`/admin/sections/${section.id}`, { method: "DELETE" });
-      const remaining = test.sections.filter((item) => item.id !== section.id);
-      setTest({ ...test, sections: remaining });
-      setSectionId(remaining[0]?.id ?? "");
-      setTaskId(remaining[0]?.tasks[0]?.id ?? "");
-      setQuestionId(remaining[0]?.tasks[0]?.questions[0]?.id ?? "");
-      notify("Section deleted.");
-    } catch (reason) { fail(reason, "Unable to delete section."); }
+      const value = await loadTest();
+      setTaskId(value.sections.flatMap((s) => s.tasks)[0]?.id ?? "");
+      notify("Exercise deleted.");
+    } catch (reason) { fail(reason, "Unable to delete exercise."); }
   }
 
   async function togglePublished() {
     if (!test) return;
+    setImportWarnings([]);
     try {
       const action = test.status === "PUBLISHED" ? "unpublish" : "publish";
       const result = await api<{ status: string }>(`/admin/tests/${test.id}/${action}`, { method: "POST" });
       setTest({ ...test, status: result.status });
       notify(result.status === "PUBLISHED" ? "Test published." : "Test moved to draft.");
-    } catch (reason) { fail(reason, "Unable to change publication status."); }
+    } catch (reason) {
+      // The quality gate returns a structured report — show each problem as
+      // its own line so the admin can fix them one by one.
+      if (reason instanceof ApiError && reason.detail && typeof reason.detail === "object") {
+        const detail = reason.detail as { message?: string; errors?: Array<{ scope?: string; message?: string } | string> };
+        if (Array.isArray(detail.errors) && detail.errors.length) {
+          setMessage("");
+          setError(detail.message ?? "Quality check failed — fix the issues below and publish again.");
+          setImportWarnings(detail.errors.map((item) =>
+            typeof item === "string" ? item : `${item.scope ? `${item.scope} — ` : ""}${item.message ?? ""}`,
+          ));
+          return;
+        }
+      }
+      fail(reason, "Unable to change publication status.");
+    }
   }
 
-  async function runQualityCheck() {
-    if (!test) return;
+  // Drag-and-drop reorder: move the dragged exercise to the drop target's slot,
+  // reflect it immediately, and persist the new order.
+  function onDropExercise(targetId: string) {
+    if (!dragId || dragId === targetId || !test) { setDragId(null); return; }
+    const ids = exercises.map((item) => item.id);
+    const from = ids.indexOf(dragId);
+    const to = ids.indexOf(targetId);
+    setDragId(null);
+    if (from < 0 || to < 0) return;
+    ids.splice(from, 1);
+    ids.splice(to, 0, dragId);
+    const pos = new Map(ids.map((id, index) => [id, index]));
+    setTest({
+      ...test,
+      sections: test.sections.map((s) => ({
+        ...s, tasks: [...s.tasks].sort((a, b) => (pos.get(a.id) ?? 0) - (pos.get(b.id) ?? 0)),
+      })),
+    });
+    api(`/admin/tests/${variantId}/reorder-tasks`, { method: "POST", body: JSON.stringify({ task_ids: ids }) })
+      .catch((reason) => fail(reason, "Unable to save the new order."));
+  }
+
+  // AI import of a whole test paper: the backend splits the .docx into
+  // exercises, detects each type, and creates them all in this test.
+  async function importDoc(file: File) {
+    setImportingDoc(true); setImportWarnings([]); setError(""); setMessage("");
     try {
-      const report = await api<{ valid: boolean; errors: Array<{ scope: string; message: string }> }>(
-        `/admin/tests/${test.id}/quality-check`,
-        { method: "POST" },
+      const form = new FormData();
+      form.append("file", file);
+      const r = await api<{ created: number; warnings: string[] }>(
+        `/admin/tests/${variantId}/import-docx`, { method: "POST", body: form },
       );
-      setQualityErrors(report.errors);
-      notify(report.valid ? "Quality check passed. This test is ready to publish." : `Quality check found ${report.errors.length} issue(s).`);
-    } catch (reason) { fail(reason, "Unable to check test quality."); }
+      await loadTest();
+      notify(`Imported ${r.created} exercise(s) from the document. Review answers and add audio before publishing.`);
+      setImportWarnings(r.warnings ?? []);
+    } catch (reason) { fail(reason, "Could not import this document."); }
+    finally { setImportingDoc(false); }
+  }
+
+  // AI import of an answer key: matches the document's answers to the test's
+  // existing questions and updates their correct answers.
+  async function importAnswers(file: File) {
+    setImportingKey(true); setImportWarnings([]); setError(""); setMessage("");
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const r = await api<{ updated: number; warnings: string[] }>(
+        `/admin/tests/${variantId}/import-answers`, { method: "POST", body: form },
+      );
+      await loadTest();
+      notify(`Updated ${r.updated} answer(s) from the key. Check the highlighted answers in each exercise.`);
+      setImportWarnings(r.warnings ?? []);
+    } catch (reason) { fail(reason, "Could not import the answer key."); }
+    finally { setImportingKey(false); }
+  }
+
+  function onBuilderSaved() {
+    if (!builder) return;
+    const editedId = builder.task?.id;
+    setBuilder(null);
+    loadTest().then((value) => {
+      const all = value.sections.flatMap((s) => s.tasks);
+      setTaskId(editedId ?? all[all.length - 1]?.id ?? "");
+    }).catch(() => {});
+    notify(editedId ? "Exercise updated." : "Exercise saved.");
   }
 
   if (error && !test) return <div className="p-8 text-red-600">{error}</div>;
@@ -270,66 +296,84 @@ export function TestBuilder({ variantId }: { variantId: string }) {
         <Input className="mt-1 h-10 max-w-lg border-0 px-0 text-xl font-extrabold" value={test.title} onChange={(event) => setTest({ ...test, title: event.target.value })} />
       </div>
       <div className="flex gap-2">
-        <Button variant="secondary" onClick={() => setPreview((value) => !value)}>{preview ? <Pencil className="h-4 w-4" /> : <Eye className="h-4 w-4" />}{preview ? "Edit mode" : "Student preview"}</Button>
-        <Button variant="secondary" onClick={runQualityCheck}><Check className="h-4 w-4" /> Quality Check</Button>
         <Button variant="secondary" onClick={togglePublished}>{test.status === "PUBLISHED" ? <Undo2 className="h-4 w-4" /> : <Send className="h-4 w-4" />}{test.status === "PUBLISHED" ? "Move to Draft" : "Publish"}</Button>
         <Button onClick={saveTest} disabled={busy}><Save className="h-4 w-4" /> Save Test</Button>
       </div>
     </div>
     {(message || error) && <p className={`mx-4 mt-4 rounded-xl p-3 text-sm font-semibold sm:mx-8 ${error ? "bg-red-500/10 text-red-600" : "bg-emerald-500/10 text-emerald-700"}`}>{error || message}</p>}
-    {qualityErrors.length > 0 && <div className="mx-4 mt-3 max-h-48 overflow-auto rounded-xl border border-red-200 bg-red-500/5 p-3 text-xs text-red-700 sm:mx-8">{qualityErrors.map((item, index) => <p key={`${item.scope}-${index}`} className="py-1"><strong>{item.scope}:</strong> {item.message}</p>)}</div>}
-    <div className={`grid ${preview ? "lg:grid-cols-[240px_minmax(0,1fr)]" : "lg:grid-cols-[240px_minmax(0,1fr)_340px]"}`}>
+    {importWarnings.length > 0 && <div className="mx-4 mt-3 rounded-xl border border-amber-300 bg-amber-500/10 p-3 sm:mx-8">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-bold text-amber-700">Review needed ({importWarnings.length})</p>
+        <button onClick={() => setImportWarnings([])} className="text-xs font-semibold text-amber-700 hover:underline">Dismiss</button>
+      </div>
+      <ul className="mt-1.5 max-h-48 space-y-1 overflow-auto">
+        {importWarnings.map((w, i) => <li key={i} className="text-xs leading-5 text-amber-800">• {w}</li>)}
+      </ul>
+    </div>}
+    <div className="grid lg:grid-cols-[260px_minmax(0,1fr)]">
       <aside className="max-h-[calc(100vh-130px)] overflow-auto border-r border-line bg-canvas p-4">
-        <div className="flex items-center justify-between px-2"><p className="text-xs font-bold uppercase tracking-wider text-muted">Test structure</p><Button size="icon" variant="ghost" aria-label="Add section" onClick={addSection}><Plus className="h-4 w-4" /></Button></div>
-        {test.sections.map((group) => <div key={group.id} className={`mt-4 rounded-xl p-3 ${sectionId === group.id ? "bg-indigo-500/5 ring-1 ring-indigo-200" : "bg-surface"}`}>
-          <button className="w-full text-left text-sm font-extrabold text-ink" onClick={() => { setSectionId(group.id); setTaskId(group.tasks[0]?.id ?? ""); setQuestionId(group.tasks[0]?.questions[0]?.id ?? ""); }}>{group.title}</button>
-          <div className="mt-2 space-y-1">{group.tasks.map((item) => <button key={item.id} onClick={() => { setSectionId(group.id); setTaskId(item.id); setQuestionId(item.questions[0]?.id ?? ""); }} className={`w-full rounded-lg px-2 py-2 text-left text-xs font-semibold ${taskId === item.id ? "bg-canvas text-brand shadow-sm" : "text-muted"}`}>{item.title}<span className="block text-[10px] font-normal">{item.type} · {item.questions.length} questions</span></button>)}</div>
-          <Button className="mt-2 w-full" size="sm" variant="ghost" onClick={() => addTask(group.id)}><Plus className="h-3 w-3" /> Add task</Button>
-        </div>)}
+        <div className="flex items-center justify-between px-1"><p className="text-xs font-bold uppercase tracking-wider text-muted">Exercises</p><span className="text-xs text-muted">{exercises.length}</span></div>
+        <div className="mt-3 space-y-1">
+          {exercises.map((item, index) => <div
+            key={item.id}
+            draggable
+            onDragStart={() => setDragId(item.id)}
+            onDragEnd={() => setDragId(null)}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={() => onDropExercise(item.id)}
+            className={`flex items-center gap-1 rounded-lg pr-2 transition ${taskId === item.id ? "bg-indigo-500/5 ring-1 ring-indigo-200" : "hover:bg-surface"} ${dragId === item.id ? "opacity-40" : ""}`}
+          >
+            <span className="grid h-full cursor-grab place-items-center py-2.5 pl-1.5 text-muted active:cursor-grabbing" title="Drag to reorder"><GripVertical className="h-4 w-4" /></span>
+            <button onClick={() => setTaskId(item.id)} className="min-w-0 flex-1 py-2.5 text-left text-xs font-semibold">
+              <span className={taskId === item.id ? "text-brand" : "text-ink"}>{index + 1}. {item.title}</span>
+              <span className="block text-[10px] font-normal text-muted">{item.type} · {item.questions.length} questions</span>
+            </button>
+          </div>)}
+          {exercises.length === 0 && <p className="px-1 py-4 text-xs text-muted">No exercises yet.</p>}
+        </div>
+        <Button className="mt-4 w-full" size="sm" onClick={() => setBuilder({})}><Plus className="h-4 w-4" /> Add exercise</Button>
+        <label className={`mt-2 flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-brand bg-brand/5 px-3 py-2 text-xs font-semibold text-brand transition hover:bg-brand/10 ${importingDoc ? "pointer-events-none opacity-60" : ""}`}>
+          {importingDoc ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+          {importingDoc ? "Analyzing document…" : "Import test from Word"}
+          <input type="file" accept=".docx" className="hidden" disabled={importingDoc}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) importDoc(f); e.target.value = ""; }} />
+        </label>
+        {importingDoc && <p className="mt-1.5 px-1 text-[10px] leading-4 text-muted">The AI is splitting the document into exercises and detecting question types. This can take a minute…</p>}
+        <label className={`mt-2 flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-emerald-500 bg-emerald-500/5 px-3 py-2 text-xs font-semibold text-emerald-600 transition hover:bg-emerald-500/10 ${importingKey || exercises.length === 0 ? "pointer-events-none opacity-50" : ""}`}>
+          {importingKey ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+          {importingKey ? "Matching answers…" : "Import answers from Word"}
+          <input type="file" accept=".docx" className="hidden" disabled={importingKey || exercises.length === 0}
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) importAnswers(f); e.target.value = ""; }} />
+        </label>
+        {importingKey && <p className="mt-1.5 px-1 text-[10px] leading-4 text-muted">The AI is matching the answer key to this test&apos;s questions…</p>}
       </aside>
       <main className="bg-surface p-4 sm:p-7">
-        {preview ? <div className="mx-auto max-w-5xl">
-          {task ? <section className="rounded-3xl border border-line bg-canvas p-5 shadow-sm sm:p-8">
-            <p className="text-xs font-bold uppercase tracking-wider text-brand">Student preview · {section?.title}</p>
-            <h2 className="mt-2 text-2xl font-extrabold text-ink">{task.title}</h2>
-            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted">{task.instructions}</p>
-            {task.media && <div className="mt-5 rounded-2xl bg-surface p-3">{task.media.mime_type?.startsWith("video/") ? <video controls className="max-h-52 w-full rounded-xl bg-black" src={mediaUrl(task.media.url)} /> : <audio controls className="h-10 w-full" src={mediaUrl(task.media.url)} />}</div>}
-            {task.passage_html && <div className="mt-5 whitespace-pre-wrap rounded-2xl border border-line bg-surface p-4 text-sm leading-7 text-ink">{task.passage_html}</div>}
-            <div className="mt-5 space-y-3">{task.questions.map((item, index) => <article key={item.id} className="rounded-2xl border border-line p-4">
-              <p className="font-bold leading-7 text-ink">{index + 1}. {item.prompt}</p>
-              {manualTypes.has(task.type) ? <textarea disabled className="mt-3 min-h-40 w-full rounded-xl border border-line bg-surface p-3" placeholder="Student writes here…" />
-                : (binaryTypes.has(task.type) ? (task.type === "true_false_not_given" ? ["True", "False", "Not Given"] : ["True", "False"]) : item.options).length > 0
-                  ? <div className="mt-3 flex flex-wrap gap-2">{(binaryTypes.has(task.type) ? (task.type === "true_false_not_given" ? ["True", "False", "Not Given"] : ["True", "False"]) : item.options).map((option) => <span key={option} className="rounded-lg border border-line bg-surface px-3 py-2 text-sm font-semibold text-ink">{option}</span>)}</div>
-                  : <div className="mt-3 h-10 rounded-xl border border-line bg-surface" />}
-            </article>)}</div>
-          </section> : <p className="text-sm text-muted">Select a task to preview it.</p>}
-        </div> : <div className="mx-auto max-w-5xl space-y-5">
-          {section && <div className="rounded-2xl border border-line bg-canvas p-5"><div className="flex gap-2"><Input value={section.title} onChange={(event) => updateSection({ title: event.target.value })} /><Button size="icon" onClick={saveSection} aria-label="Save section"><Save className="h-4 w-4" /></Button><Button size="icon" variant="danger" onClick={removeSection} aria-label="Delete section"><Trash2 className="h-4 w-4" /></Button></div></div>}
-          <div className="rounded-3xl border border-line bg-canvas p-6 shadow-sm">
-            <h2 className="text-xl font-extrabold text-ink">Task editor</h2>
-            {task ? <><div className="mt-5 grid gap-4">
-              <label className="space-y-2 text-sm font-bold text-ink">Task title<Input value={task.title} onChange={(event) => updateTask({ title: event.target.value })} /></label>
-              <QuestionTypeSelect
-                type={task.type}
-                interaction={task.interaction}
-                onTypeChange={updateTaskType}
-                onInteractionChange={(interaction) => updateTask({ interaction })}
-              />
-              <label className="space-y-2 text-sm font-bold text-ink">Instructions<textarea className="min-h-28 w-full rounded-xl border border-line bg-canvas p-4 text-sm outline-none focus:border-brand" value={task.instructions} onChange={(event) => updateTask({ instructions: event.target.value })} /></label>
-              <label className="space-y-2 text-sm font-bold text-ink">Reading passage / context<textarea className="min-h-28 w-full rounded-xl border border-line bg-canvas p-4 text-sm outline-none focus:border-brand" value={task.passage_html ?? ""} onChange={(event) => updateTask({ passage_html: event.target.value })} /></label>
-              {task.media && <div className="rounded-2xl bg-surface p-4"><p className="flex items-center gap-2 text-sm font-bold text-ink"><Headphones className="h-4 w-4 text-brand" /> {task.media.file_name}</p>{task.media.mime_type?.startsWith("video/") ? <video controls className="mt-3 max-h-72 w-full" src={mediaUrl(task.media.url)} /> : <audio controls className="mt-3 w-full" src={mediaUrl(task.media.url)} />}</div>}
-              <div className="flex gap-2"><Button onClick={saveTask}><Save className="h-4 w-4" /> Save Task</Button><Button variant="danger" onClick={removeTask}><Trash2 className="h-4 w-4" /> Delete Task</Button></div>
-            </div><div className="mt-8 border-t border-line pt-6"><div className="flex items-center justify-between"><h3 className="font-extrabold text-ink">Questions</h3><Button size="sm" variant="secondary" onClick={addQuestion}><Plus className="h-4 w-4" /> Add question</Button></div><div className="mt-3 grid gap-2 sm:grid-cols-2">{task.questions.map((item, index) => <button key={item.id} onClick={() => setQuestionId(item.id)} className={`rounded-xl border p-3 text-left text-xs font-bold ${questionId === item.id ? "border-brand bg-indigo-500/5 text-brand" : "border-line text-ink"}`}>{index + 1}. {item.prompt.slice(0, 70)}</button>)}</div></div></> : <p className="mt-5 text-sm text-muted">Select or add a task.</p>}
+        {task ? <div className="w-full">
+          <div className="flex items-start justify-between gap-3 border-b border-line pb-4">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-brand">Student preview</p>
+              <h2 className="mt-1 text-2xl font-extrabold text-ink">{task.title}</h2>
+              <p className="mt-0.5 text-xs text-muted">{task.type} · {task.questions.length} questions</p>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <Button size="sm" onClick={() => setBuilder({ task })}><Pencil className="h-4 w-4" /> Edit</Button>
+              <Button size="sm" variant="secondary" onClick={duplicateTask}><Copy className="h-4 w-4" /> Duplicate</Button>
+              <Button size="sm" variant="danger" onClick={removeTask}><Trash2 className="h-4 w-4" /></Button>
+            </div>
           </div>
+          <div className="mt-6"><ExercisePreview task={task} /></div>
+        </div> : <div className="grid min-h-[40vh] place-items-center rounded-3xl border border-dashed border-line p-10 text-center">
+          <p className="text-sm text-muted">No exercise selected. Press <b>Add exercise</b> to create one.</p>
         </div>}
       </main>
-      {!preview && <aside className="max-h-[calc(100vh-130px)] overflow-auto border-l border-line bg-canvas p-5">
-        <h3 className="text-sm font-extrabold text-ink">Question & answer</h3>
-        {question ? <div className="mt-5 space-y-4">
-          <QuestionFields type={task?.type ?? ""} question={question} onChange={updateQuestion} />
-          <div className="grid grid-cols-[1fr_auto] gap-2"><Button onClick={saveQuestion}><Check className="h-4 w-4" /> Save Question</Button><Button size="icon" variant="danger" onClick={removeQuestion} aria-label="Delete question"><Trash2 className="h-4 w-4" /></Button></div>
-        </div> : <p className="mt-5 text-sm text-muted">Select or add a question.</p>}
-      </aside>}
     </div>
+    {builder && <ExerciseBuilder
+      testId={test.id}
+      label={`${test.level} · ${test.exam_type}`}
+      exerciseNumber={builder.task ? exercises.findIndex((t) => t.id === builder.task!.id) + 1 : exercises.length + 1}
+      task={builder.task}
+      onClose={() => setBuilder(null)}
+      onSaved={onBuilderSaved}
+    />}
   </div>;
 }

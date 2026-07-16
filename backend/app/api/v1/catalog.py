@@ -87,6 +87,9 @@ async def test_detail(test_id: uuid.UUID, _: User = Depends(current_user), db: A
                     "options": question.options,
                     "points": float(question.points),
                     "is_example": question.is_example,
+                    # Examples show their model answer to the student; real
+                    # questions never leak the answer key.
+                    "example_answer": question.correct_answer if question.is_example else None,
                     "order_index": question.order_index,
                 } for question in task.questions if not (question.rich_content or {}).get("superseded")],
             })

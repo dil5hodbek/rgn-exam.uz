@@ -44,6 +44,14 @@ class OTPVerify(BaseModel):
     purpose: Literal["login", "reset"] = "login"
 
 
+class BotContact(BaseModel):
+    """Sent by the Telegram bot when a user shares their phone via plain /start —
+    the backend matches it to an account, links it, and issues any pending code."""
+    chat_id: str
+    telegram_user_id: str
+    phone: str
+
+
 class PasswordReset(BaseModel):
     reset_token: str
     password: str = Field(min_length=8, max_length=128)

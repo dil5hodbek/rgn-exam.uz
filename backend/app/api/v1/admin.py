@@ -1,5 +1,6 @@
+import logging
+import mimetypes
 import uuid
-import re
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
@@ -7,201 +8,140 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
-from rapidfuzz import fuzz, process
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import require_admin
-from app.importer.roadmap_import import persist_parsed
-from app.importer.structured_parser import draft_to_parsed_tests, find_exercise
+from app.core.security import verify_password
 from app.models import (
-    AdminAuditLog, Attempt, AttemptAnswer, AttemptStatus, ContentStatus, ExamType, ImportJob,
-    ImportStatus, Level, MediaAsset, Question, Role, Section, Task, TelegramLink, TestVariant, User,
+    AdminAuditLog, Attempt, AttemptAnswer, AttemptStatus, ContentStatus, ExamType,
+    Level, MediaAsset, Question, Role, Section, Task, TelegramLink, TestVariant, User,
 )
 from app.schemas.content import (
-    GradeInput, ImportExerciseUpdate, ImportQuestionUpdate, QuestionCreate, QuestionInput,
-    SectionInput, TaskCreate, TaskUpdate, VariantCreate, VariantUpdate,
+    GradeInput, QuestionCreate, QuestionInput, ReorderTasks, ResetContent,
+    SectionInput, TaskCreate, VariantCreate, VariantUpdate,
 )
 from app.services.audit import write_audit
-from app.services.exercise_registry import (
-    EXERCISE_REGISTRY, MANUAL_TASK_TYPES, default_kind, interaction_matches_type, registry_payload,
-)
+from app.services.exercise_registry import registry_payload
 from app.services.numbering import renumber_questions
-from app.services.question_classifier import classify_task, infer_interaction
-from app.worker import import_package
+from app.services.quality import quality_report
+from app.services.question_templates import templates_payload, validate_task_payload
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["Administration"])
 
+MEDIA_EXTENSIONS = {
+    ".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4", ".ogg": "audio/ogg",
+    ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".gif": "image/gif", ".webp": "image/webp",
+}
 
-async def quality_report(db: AsyncSession, variant_id: uuid.UUID) -> dict:
-    variant = await db.scalar(
-        select(TestVariant)
-        .where(TestVariant.id == variant_id)
-        .options(
-            selectinload(TestVariant.sections)
-            .selectinload(Section.tasks)
-            .selectinload(Task.questions)
-        )
+
+async def save_media_upload(upload: UploadFile, uploaded_by: uuid.UUID, db: AsyncSession) -> MediaAsset:
+    suffix = Path(upload.filename or "").suffix.lower()
+    if suffix not in MEDIA_EXTENSIONS:
+        raise HTTPException(415, "Upload an audio, video, or image file (mp3, wav, m4a, ogg, mp4, webm, mov, png, jpg, gif, webp).")
+    settings.storage_path.mkdir(parents=True, exist_ok=True)
+    target = settings.storage_path / "media" / f"{uuid.uuid4()}{suffix}"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    size = 0
+    with target.open("wb") as output:
+        while chunk := await upload.read(1024 * 1024):
+            size += len(chunk)
+            if size > settings.max_upload_mb * 1024 * 1024:
+                output.close()
+                target.unlink(missing_ok=True)
+                raise HTTPException(413, "The file is too large.")
+            output.write(chunk)
+    media = MediaAsset(
+        file_name=upload.filename or target.name,
+        file_url=f"/media/media/{target.name}",
+        mime_type=mimetypes.guess_type(upload.filename or "")[0] or MEDIA_EXTENSIONS[suffix],
+        uploaded_by=uploaded_by,
     )
-    if not variant:
-        raise HTTPException(404, "Test variant not found.")
-    errors: list[dict[str, str | None]] = []
-    warnings: list[dict[str, str | None]] = []
+    db.add(media)
+    await db.flush()
+    return media
 
-    def issue(
-        target: list[dict[str, str | None]],
-        scope: str,
-        message: str,
-        section_id: uuid.UUID | None = None,
-        task_id: uuid.UUID | None = None,
-        question_id: uuid.UUID | None = None,
-    ) -> None:
-        target.append({
-            "scope": scope,
-            "message": message,
-            "section_id": str(section_id) if section_id else None,
-            "task_id": str(task_id) if task_id else None,
-            "question_id": str(question_id) if question_id else None,
-        })
 
-    if not variant.title.strip():
-        issue(errors, "test", "Test title is empty.")
-    if variant.variant_number < 1:
-        issue(errors, "test", "Variant number must be positive.")
-    if not 1 <= variant.time_limit_minutes <= 300:
-        issue(errors, "test", "Time limit must be between 1 and 300 minutes.")
-    if not 0 <= variant.passing_percentage <= 100:
-        issue(errors, "test", "Passing percentage must be between 0 and 100.")
-    if not await db.get(Level, variant.level_id):
-        issue(errors, "test", "Level is missing or invalid.")
-    if not await db.get(ExamType, variant.exam_type_id):
-        issue(errors, "test", "Exam type is missing or invalid.")
-    if not variant.sections:
-        issue(errors, "test", "Add at least one section.")
-    scored_questions = 0
-    for section in variant.sections:
-        active_tasks = [
-            task for task in section.tasks
-            if not (task.metadata_json or {}).get("superseded")
-        ]
-        if not active_tasks:
-            issue(errors, section.title, "Section has no active exercises.", section.id)
-        for task in active_tasks:
-            scope = f"{section.title} / {task.title}"
-            metadata = task.metadata_json or {}
-            if not task.title.strip():
-                issue(errors, scope, "Exercise title is empty.", section.id, task.id)
-            if not task.instructions.strip():
-                issue(errors, scope, "Exercise instructions are empty.", section.id, task.id)
-            active_questions = [
-                question for question in task.questions
-                if not (question.rich_content or {}).get("superseded")
-            ]
-            if not active_questions:
-                issue(errors, scope, "Exercise has no active questions.", section.id, task.id)
-            interaction = metadata.get("interaction", {})
-            kind = interaction.get("kind")
-            if kind not in EXERCISE_REGISTRY:
-                issue(errors, scope, "Interaction kind is missing or unsupported.", section.id, task.id)
-            elif not interaction_matches_type(kind, task.type):
-                issue(errors, scope, f"Interaction {kind} does not match task type {task.type}.", section.id, task.id)
-            confidence = float(metadata.get("confidence", 1))
-            if confidence < 0.8 and not metadata.get("manual_approved"):
-                issue(errors, scope, f"Parser confidence {confidence:.2f} requires manual approval.", section.id, task.id)
-            for message in metadata.get("warnings", []):
-                issue(warnings, scope, str(message), section.id, task.id)
-            if metadata.get("source_document") and not metadata.get("context_kind"):
-                issue(errors, scope, "Imported task source context is missing.", section.id, task.id)
-            if re.search(r"\brecording\s*\d+", task.instructions, re.I) and not task.media_asset_id:
-                issue(errors, scope, "Listening recording has no attached audio/video.", section.id, task.id)
-            interaction_options = interaction.get("options", [])
-            option_values = [
-                str(option.get("value", "") if isinstance(option, dict) else option).strip()
-                for option in interaction_options
-            ]
-            if kind in {"word_bank", "matching", "matching_headings"} and not option_values:
-                issue(errors, scope, "Interaction options are empty.", section.id, task.id)
-            normalized_values = [value.casefold() for value in option_values]
-            if len(normalized_values) != len(set(normalized_values)):
-                issue(errors, scope, "Interaction options contain duplicate values.", section.id, task.id)
-            if kind == "cloze_passage":
-                template = interaction.get("template", "")
-                placeholders = re.findall(r"\{\{(\d+)\}\}", template)
-                expected = [str(question.order_index) for question in active_questions]
-                if not template.strip() or set(placeholders) != set(expected) or len(placeholders) != len(expected):
-                    issue(errors, scope, "Cloze placeholders and questions do not match exactly.", section.id, task.id)
-            prompts_seen: set[str] = set()
-            assigned_answers: list[str] = []
-            for index, question in enumerate(active_questions, start=1):
-                question_scope = f"{scope} / Question {index}"
-                if not question.prompt.strip():
-                    issue(errors, question_scope, "Question prompt is empty.", section.id, task.id, question.id)
-                normalized_prompt = re.sub(r"\s+", " ", question.prompt).strip().casefold()
-                if normalized_prompt in prompts_seen:
-                    issue(errors, question_scope, "Duplicate prompt inside this exercise.", section.id, task.id, question.id)
-                prompts_seen.add(normalized_prompt)
-                if question.is_example:
-                    if float(question.points) != 0:
-                        issue(errors, question_scope, "Example questions must have 0 points.", section.id, task.id, question.id)
-                    continue
-                scored_questions += 1
-                if float(question.points) <= 0:
-                    issue(errors, question_scope, "Scored questions must have positive points.", section.id, task.id, question.id)
-                if task.type in MANUAL_TASK_TYPES:
-                    continue
-                if question.correct_answer in (None, "", []):
-                    issue(errors, question_scope, "Correct answer is missing.", section.id, task.id, question.id)
-                    continue
-                question_values = [
-                    str(option.get("value", "") if isinstance(option, dict) else option).strip()
-                    for option in question.options
-                ]
-                if task.type in {"multiple_choice", "multi_select", "dropdown_gap_fill"}:
-                    normalized = [value.casefold() for value in question_values]
-                    if not normalized:
-                        issue(errors, question_scope, "Choice options are empty.", section.id, task.id, question.id)
-                    if len(normalized) != len(set(normalized)):
-                        issue(errors, question_scope, "Options contain duplicates.", section.id, task.id, question.id)
-                    if task.type != "multi_select" and str(question.correct_answer).strip().casefold() not in normalized:
-                        issue(errors, question_scope, "Correct answer is not one of the options.", section.id, task.id, question.id)
-                if kind == "inline_alternatives":
-                    if len(question_values) != 2:
-                        issue(errors, question_scope, "Inline alternative must contain exactly two parsed options.", section.id, task.id, question.id)
-                    elif str(question.correct_answer).strip().casefold() not in {
-                        value.casefold() for value in question_values
-                    }:
-                        issue(errors, question_scope, "Inline answer is not one of its alternatives.", section.id, task.id, question.id)
-                if kind in {"word_bank", "matching", "matching_headings"}:
-                    accepted = {
-                        str(value).strip().casefold()
-                        for value in [question.correct_answer, *question.accepted_answers]
-                    }
-                    if not accepted.intersection(normalized_values):
-                        issue(errors, question_scope, "Answer is not present in interaction options.", section.id, task.id, question.id)
-                    assigned_answers.append(str(question.correct_answer).strip().casefold())
-                if kind == "binary_choice":
-                    valid = {"true", "false"} | ({"not given"} if task.type == "true_false_not_given" else set())
-                    if str(question.correct_answer).strip().casefold() not in valid:
-                        issue(errors, question_scope, "Binary answer is not normalized.", section.id, task.id, question.id)
-                if kind == "correction" and not question.accepted_answers:
-                    issue(warnings, question_scope, "Correction has no alternative accepted answers; uncertain responses require review.", section.id, task.id, question.id)
-            if kind in {"word_bank", "matching", "matching_headings"} and not interaction.get("reuse_options", False):
-                if len(assigned_answers) != len(set(assigned_answers)):
-                    issue(errors, scope, "A non-reusable interaction assigns the same option more than once.", section.id, task.id)
-                if len(option_values) < len(active_questions):
-                    issue(errors, scope, "There are fewer options than question blanks.", section.id, task.id)
-    if scored_questions == 0:
-        issue(errors, "test", "Test has no scored questions.")
-    return {"valid": not errors, "errors": errors, "warnings": warnings}
+def media_payload(media: MediaAsset) -> dict:
+    return {"id": str(media.id), "file_name": media.file_name, "url": media.file_url, "mime_type": media.mime_type}
+
+
+def build_task_questions(task_id: uuid.UUID, question_inputs: list[dict]) -> list[Question]:
+    """Turn the exercise builder's inline question dicts into Question rows.
+    Shared by task create and task edit so both persist identically. Example
+    questions are forced to 0 points to satisfy the quality check; their
+    answer IS stored — the exam runner shows it to the student as the model
+    answer."""
+    rows: list[Question] = []
+    for question in question_inputs:
+        is_example = bool(question.get("is_example"))
+        rows.append(Question(
+            task_id=task_id,
+            prompt=(question.get("prompt") or "").strip(),
+            options=question.get("options") or [],
+            correct_answer=question.get("correct_answer"),
+            accepted_answers=question.get("accepted_answers") or [],
+            points=0 if is_example else float(question.get("points") or 1),
+            explanation=(question.get("explanation") or None),
+            is_example=is_example,
+            case_sensitive=bool(question.get("case_sensitive")),
+            normalize_spaces=question.get("normalize_spaces", True),
+            order_index=question.get("order_index") or 0,
+        ))
+    return rows
+
+
+def serialize_question(question: Question) -> dict:
+    return {
+        "id": question.id, "prompt": question.prompt, "options": question.options,
+        "correct_answer": question.correct_answer, "accepted_answers": question.accepted_answers,
+        "points": float(question.points), "explanation": question.explanation,
+        "is_example": question.is_example, "case_sensitive": question.case_sensitive,
+        "normalize_spaces": question.normalize_spaces, "order_index": question.order_index,
+    }
 
 
 @router.get("/exercise-registry")
 async def exercise_registry(_: User = Depends(require_admin)):
     return registry_payload()
+
+
+@router.get("/question-templates")
+async def question_templates(_: User = Depends(require_admin)):
+    return templates_payload()
+
+
+@router.post("/parse-docx")
+async def parse_docx_upload(
+    file: UploadFile = File(...),
+    _: User = Depends(require_admin),
+):
+    """Read a .docx and return a best-effort exercise draft (type + question
+    text) to pre-fill the builder. Nothing is saved; the admin reviews, adds
+    media/answers, and saves manually."""
+    if not (file.filename or "").lower().endswith(".docx"):
+        raise HTTPException(415, "Upload a Word .docx file.")
+    data = await file.read()
+    if len(data) > 20 * 1024 * 1024:
+        raise HTTPException(413, "The document is too large (max 20 MB).")
+    try:
+        from app.services.docx_import import parse_docx
+        result = parse_docx(data)
+    except Exception as exc:  # pragma: no cover - malformed uploads
+        raise HTTPException(422, "Could not read this .docx file.") from exc
+    # Matching exercises carry their content in left/right, not questions.
+    has_content = bool(result.get("questions")) or bool(result.get("left")) or bool(result.get("right"))
+    if not has_content:
+        raise HTTPException(422, "No questions were found in this document.")
+    return result
 
 
 @router.get("/overview")
@@ -295,9 +235,17 @@ async def admin_test_detail(
 
 @router.post("/tests", status_code=201)
 async def create_variant(payload: VariantCreate, request: Request, admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    if not await db.get(Level, payload.level_id):
+        raise HTTPException(404, "Level not found.")
+    if not await db.get(ExamType, payload.exam_type_id):
+        raise HTTPException(404, "Exam type not found.")
     variant = TestVariant(created_by=admin.id, **payload.model_dump())
     db.add(variant)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(409, "A test with this variant number already exists for this level and exam type.") from exc
     await write_audit(db, admin.id, "test.create", "TestVariant", str(variant.id), payload.model_dump(mode="json"), request.client.host if request.client else None)
     await db.commit()
     await db.refresh(variant)
@@ -319,25 +267,85 @@ async def update_variant(
     return {"id": variant.id, "status": variant.status}
 
 
-@router.patch("/tasks/{task_id}")
-async def update_task(
-    task_id: uuid.UUID, payload: TaskUpdate, request: Request,
+@router.post("/media", status_code=201)
+async def upload_media(
+    file: UploadFile = File(...),
     admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
 ):
-    task = await db.get(Task, task_id)
+    media = await save_media_upload(file, admin.id, db)
+    await db.commit()
+    return media_payload(media)
+
+
+@router.patch("/tasks/{task_id}")
+async def update_task(
+    task_id: uuid.UUID, payload: TaskCreate, request: Request,
+    admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
+):
+    task = await db.get(Task, task_id, options=[selectinload(Task.questions)])
     if not task:
         raise HTTPException(404, "Task not found.")
     values = payload.model_dump()
     interaction = values.pop("interaction", None)
+    template_key = values.pop("template_key", None)
+    values.pop("questions", None)
+    replace_questions = bool(template_key)
+    if values.get("media_asset_id") and not await db.get(MediaAsset, values["media_asset_id"]):
+        raise HTTPException(404, "Media asset not found.")
+
+    # When the exercise builder edits the whole exercise it resends every
+    # question — validate up front, then swap the question set atomically. This
+    # is blocked once students have answered (their answers would be orphaned).
+    if replace_questions:
+        problems = validate_task_payload(
+            template_key, values["type"], [q.model_dump() for q in payload.questions],
+            interaction, values.get("passage_html"),
+        )
+        if problems:
+            raise HTTPException(422, {"message": "Exercise cannot be saved.", "errors": problems})
+        has_answers = await db.scalar(
+            select(func.count()).select_from(AttemptAnswer)
+            .join(Question, Question.id == AttemptAnswer.question_id)
+            .where(Question.task_id == task_id)
+        )
+        if has_answers:
+            raise HTTPException(409, "This exercise has student answers and can no longer be edited.")
+
     for key, value in values.items():
         setattr(task, key, value)
     if interaction is not None:
         metadata = dict(task.metadata_json or {})
         metadata["interaction"] = interaction
         task.metadata_json = metadata
-    await write_audit(db, admin.id, "task.update", "Task", str(task.id), payload.model_dump(), request.client.host if request.client else None)
+
+    new_questions: list[Question] = []
+    if replace_questions:
+        for existing in list(task.questions):
+            await db.delete(existing)
+        await db.flush()
+        new_questions = build_task_questions(task.id, [q.model_dump() for q in payload.questions])
+        for question in new_questions:
+            db.add(question)
+        if new_questions:
+            await db.flush()
+            renumber_questions(new_questions)
+
+    await write_audit(
+        db, admin.id, "task.update", "Task", str(task.id),
+        {"title": task.title, "type": task.type, "questions": len(new_questions) if replace_questions else None},
+        request.client.host if request.client else None,
+    )
     await db.commit()
-    return {"id": task.id}
+    media = await db.get(MediaAsset, task.media_asset_id) if task.media_asset_id else None
+    result = {
+        "id": task.id, "title": task.title, "type": task.type,
+        "instructions": task.instructions, "passage_html": task.passage_html,
+        "audio_replay_limit": task.audio_replay_limit,
+        "interaction": interaction or {}, "media": media_payload(media) if media else None,
+    }
+    if replace_questions:
+        result["questions"] = [serialize_question(q) for q in sorted(new_questions, key=lambda x: x.order_index)]
+    return result
 
 
 @router.post("/tests/{variant_id}/sections", status_code=201)
@@ -384,6 +392,61 @@ async def update_section(
     return {"id": section.id, "title": section.title}
 
 
+async def _persist_new_task(
+    db: AsyncSession, section: Section, payload: TaskCreate, admin: User, request: Request,
+) -> dict:
+    last_order = await db.scalar(select(func.max(Task.order_index)).where(Task.section_id == section.id))
+    values = payload.model_dump()
+    interaction = values.pop("interaction", None)
+    template_key = values.pop("template_key", None)
+    question_inputs = values.pop("questions", []) or []
+    if values.get("media_asset_id") and not await db.get(MediaAsset, values["media_asset_id"]):
+        raise HTTPException(404, "Media asset not found.")
+
+    # When the exercise builder submits the full structure, reject a variantless
+    # or answerless exercise up front so it is never persisted (the fix that
+    # prevents the "answer missing / options missing" defects from recurring).
+    if template_key:
+        problems = validate_task_payload(
+            template_key, values["type"], [q.model_dump() for q in payload.questions],
+            interaction, values.get("passage_html"),
+        )
+        if problems:
+            raise HTTPException(422, {"message": "Exercise cannot be saved.", "errors": problems})
+
+    task = Task(
+        section_id=section.id,
+        order_index=(last_order or 0) + 1,
+        metadata_json={"interaction": interaction} if interaction else {},
+        **values,
+    )
+    db.add(task)
+    await db.flush()
+
+    created_questions = build_task_questions(task.id, question_inputs)
+    for question in created_questions:
+        db.add(question)
+    if created_questions:
+        await db.flush()
+        renumber_questions(created_questions)
+
+    await write_audit(
+        db, admin.id, "task.create", "Task", str(task.id),
+        {"section_id": str(section.id), "title": task.title, "type": task.type,
+         "questions": len(created_questions)},
+        request.client.host if request.client else None,
+    )
+    await db.commit()
+    media = await db.get(MediaAsset, task.media_asset_id) if task.media_asset_id else None
+    return {
+        "id": task.id, "title": task.title, "type": task.type,
+        "instructions": task.instructions, "passage_html": task.passage_html,
+        "audio_replay_limit": task.audio_replay_limit,
+        "interaction": interaction or {}, "media": media_payload(media) if media else None,
+        "questions": [serialize_question(q) for q in sorted(created_questions, key=lambda x: x.order_index)],
+    }
+
+
 @router.post("/sections/{section_id}/tasks", status_code=201)
 async def create_task(
     section_id: uuid.UUID, payload: TaskCreate, request: Request,
@@ -392,29 +455,288 @@ async def create_task(
     section = await db.get(Section, section_id)
     if not section:
         raise HTTPException(404, "Section not found.")
-    last_order = await db.scalar(select(func.max(Task.order_index)).where(Task.section_id == section_id))
-    values = payload.model_dump()
-    interaction = values.pop("interaction", None)
-    task = Task(
-        section_id=section_id,
-        order_index=(last_order or 0) + 1,
-        metadata_json={"interaction": interaction} if interaction else {},
-        **values,
+    return await _persist_new_task(db, section, payload, admin, request)
+
+
+@router.post("/tests/{variant_id}/tasks", status_code=201)
+async def create_task_for_test(
+    variant_id: uuid.UUID, payload: TaskCreate, request: Request,
+    admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
+):
+    """Add an exercise straight to a test. Sections are an internal grouping the
+    admin never sees, so this finds the test's single section (creating one on
+    first use) and drops the exercise into it."""
+    variant = await db.get(TestVariant, variant_id, options=[selectinload(TestVariant.sections)])
+    if not variant:
+        raise HTTPException(404, "Test variant not found.")
+    section = variant.sections[0] if variant.sections else None
+    if not section:
+        section = Section(test_variant_id=variant_id, title="Exercises", order_index=1)
+        db.add(section)
+        await db.flush()
+    return await _persist_new_task(db, section, payload, admin, request)
+
+
+@router.post("/tests/{variant_id}/import-docx", status_code=201)
+async def import_docx_into_test(
+    variant_id: uuid.UUID, request: Request, file: UploadFile = File(...),
+    admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
+):
+    """AI import of a whole test paper: split the .docx into its exercises,
+    classify each question type, extract prompts/options/answers, and create
+    every exercise in this test. Answers the AI could not settle are saved
+    with placeholders and reported back as warnings for the admin to fix."""
+    if not (file.filename or "").lower().endswith(".docx"):
+        raise HTTPException(415, "Upload a Word .docx file.")
+    data = await file.read()
+    if len(data) > 20 * 1024 * 1024:
+        raise HTTPException(413, "The document is too large (max 20 MB).")
+
+    from app.services.docx_import import ai_available, ai_import_document, build_task_payloads
+    if not ai_available():
+        raise HTTPException(422, "AI import needs OPENROUTER_API_KEY or ANTHROPIC_API_KEY to be configured.")
+
+    variant = await db.get(TestVariant, variant_id, options=[selectinload(TestVariant.sections)])
+    if not variant:
+        raise HTTPException(404, "Test variant not found.")
+
+    try:
+        exercises = await ai_import_document(data)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - malformed uploads
+        raise HTTPException(422, "Could not read this .docx file.") from exc
+
+    payloads, warnings = build_task_payloads(exercises)
+    if not payloads:
+        raise HTTPException(422, "No exercises could be extracted from this document.")
+
+    section = variant.sections[0] if variant.sections else None
+    if not section:
+        section = Section(test_variant_id=variant_id, title="Exercises", order_index=1)
+        db.add(section)
+        await db.flush()
+
+    created = []
+    for payload in payloads:
+        try:
+            result = await _persist_new_task(db, section, TaskCreate(**payload), admin, request)
+            created.append({"id": result["id"], "title": result["title"],
+                            "type": result["type"], "questions": len(result["questions"])})
+        except HTTPException as exc:
+            await db.rollback()
+            detail = exc.detail
+            reason = "; ".join(detail.get("errors", [])) if isinstance(detail, dict) else str(detail)
+            warnings.append(f"“{payload['title']}” was skipped: {reason}")
+        except Exception:
+            await db.rollback()
+            logger.warning("Import: could not save task %s", payload["title"], exc_info=True)
+            warnings.append(f"“{payload['title']}” was skipped: could not be saved.")
+
+    if not created:
+        raise HTTPException(422, {"message": "No exercises could be imported.", "errors": warnings})
+    return {"created": len(created), "exercises": created, "warnings": warnings}
+
+
+@router.post("/tests/{variant_id}/import-answers")
+async def import_answers_into_test(
+    variant_id: uuid.UUID, request: Request, file: UploadFile = File(...),
+    admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
+):
+    """AI import of an answer key: read the .docx, match its answers to this
+    test's existing questions, and update their correct answers. Questions the
+    key doesn't cover are left untouched and reported as warnings."""
+    if not (file.filename or "").lower().endswith(".docx"):
+        raise HTTPException(415, "Upload a Word .docx file.")
+    data = await file.read()
+    if len(data) > 20 * 1024 * 1024:
+        raise HTTPException(413, "The document is too large (max 20 MB).")
+
+    from app.services.docx_import import _extract_lines, ai_available, ai_match_answers, normalise_answer
+    if not ai_available():
+        raise HTTPException(422, "AI import needs OPENROUTER_API_KEY or ANTHROPIC_API_KEY to be configured.")
+
+    variant = await db.get(
+        TestVariant, variant_id,
+        options=[selectinload(TestVariant.sections).selectinload(Section.tasks).selectinload(Task.questions)],
     )
-    db.add(task)
-    await db.flush()
+    if not variant:
+        raise HTTPException(404, "Test variant not found.")
+
+    try:
+        key_lines = _extract_lines(data)
+    except Exception as exc:  # pragma: no cover - malformed uploads
+        raise HTTPException(422, "Could not read this .docx file.") from exc
+    if not key_lines:
+        raise HTTPException(422, "The answer key document is empty.")
+
+    manual_types = {"writing", "speaking_prompt_placeholder"}
+    letter = lambda i: chr(97 + i)  # noqa: E731
+
+    # Build the compact structure the AI matches the key against, plus a
+    # code → (task, question) map to apply its output.
+    structure: list[str] = [f"TEST: {variant.title} (variant {variant.variant_number})"]
+    code_map: dict[str, tuple[Task, Question]] = {}
+    tasks = [t for section in sorted(variant.sections, key=lambda s: s.order_index)
+             for t in sorted(section.tasks, key=lambda t: t.order_index or 0)]
+    for ti, task in enumerate(tasks, start=1):
+        interaction = (task.metadata_json or {}).get("interaction") or {}
+        kind = interaction.get("kind") or ""
+        structure.append(f"\nExercise {ti} (e{ti}) [{task.type}] {task.instructions or task.title}")
+        if kind in ("matching", "matching_headings", "gap_match"):
+            opts = interaction.get("options") or []
+            labels = "  ".join(
+                f"{(o.get('value') if isinstance(o, dict) else letter(i))}) {(o.get('label') if isinstance(o, dict) else o)}"
+                for i, o in enumerate(opts)
+            )
+            structure.append(f"  right options: {labels}")
+        if kind == "gap_match":
+            structure.append(f"  word box: {', '.join(interaction.get('words') or [])}")
+            structure.append("  note: rows starting with 'Reply ·' take the LETTER of the matching reply; other rows take the word from the box.")
+        for qi, question in enumerate(sorted(task.questions, key=lambda q: q.order_index or 0), start=1):
+            code = f"e{ti}q{qi}"
+            code_map[code] = (task, question)
+            line = f"  {code}: {question.prompt}"
+            if question.options:
+                line += " | options: " + "  ".join(f"{letter(i)}) {o}" for i, o in enumerate(question.options))
+            structure.append(line)
+
+    matches = await ai_match_answers("\n".join(structure), "\n".join(key_lines))
+    if not matches:
+        raise HTTPException(422, "The AI could not match any answers from this document.")
+
+    updated = 0
+    warnings: list[str] = []
+    seen_tasks: set[uuid.UUID] = set()
+    for match in matches:
+        pair = code_map.get(match["code"])
+        if not pair:
+            warnings.append(f"Answer for unknown question code '{match['code']}' ignored.")
+            continue
+        task, question = pair
+        if task.type in manual_types:
+            continue
+        interaction = (task.metadata_json or {}).get("interaction") or {}
+        kind = interaction.get("kind") or ""
+        if kind == "gap_match":
+            # Alternating rows: "Reply · …" rows take the reply letter, the
+            # others take the word from the box.
+            if question.prompt.startswith("Reply ·"):
+                norm_kind, norm_opts = "matching", interaction.get("options") or []
+            else:
+                norm_kind, norm_opts = "text", []
+        elif kind in ("matching", "matching_headings"):
+            norm_kind, norm_opts = "matching", interaction.get("options") or []
+        elif task.type == "multi_select":
+            norm_kind, norm_opts = "options_multi", question.options or []
+        elif task.type in ("true_false", "true_false_not_given"):
+            norm_kind, norm_opts = "binary", []
+        elif question.options:
+            norm_kind, norm_opts = "options_single", question.options
+        else:
+            norm_kind, norm_opts = "text", []
+        value, problem = normalise_answer(
+            norm_kind, norm_opts, match["answer"], tfng=task.type == "true_false_not_given",
+        )
+        if problem:
+            warnings.append(f"“{task.title[:60]}” — {match['code']}: {problem}.")
+            continue
+        question.correct_answer = value
+        seen_tasks.add(task.id)
+        updated += 1
+
+    unanswered = [
+        f"e{ti}q{qi}"
+        for ti, task in enumerate(tasks, start=1) if task.type not in manual_types
+        for qi, question in enumerate(sorted(task.questions, key=lambda q: q.order_index or 0), start=1)
+        if f"e{ti}q{qi}" not in {m["code"] for m in matches} and not question.is_example
+    ]
+    if unanswered:
+        warnings.append(f"No answer found in the key for: {', '.join(unanswered[:25])}"
+                        + (f" (+{len(unanswered) - 25} more)" if len(unanswered) > 25 else ""))
+
     await write_audit(
-        db, admin.id, "task.create", "Task", str(task.id),
-        {"section_id": str(section_id), "title": task.title, "type": task.type},
+        db, admin.id, "test.import_answers", "TestVariant", str(variant_id),
+        {"updated": updated, "file": file.filename},
         request.client.host if request.client else None,
     )
     await db.commit()
-    return {
-        "id": task.id, "title": task.title, "type": task.type,
-        "instructions": task.instructions, "passage_html": task.passage_html,
-        "audio_replay_limit": task.audio_replay_limit,
-        "interaction": interaction or {}, "questions": [],
-    }
+    return {"updated": updated, "warnings": warnings}
+
+
+@router.post("/tests/{variant_id}/reorder-tasks")
+async def reorder_tasks(
+    variant_id: uuid.UUID, payload: ReorderTasks, request: Request,
+    admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
+):
+    """Persist a new exercise order (from drag-and-drop). Each task's
+    order_index becomes its position in the submitted list."""
+    variant = await db.get(
+        TestVariant, variant_id,
+        options=[selectinload(TestVariant.sections).selectinload(Section.tasks)],
+    )
+    if not variant:
+        raise HTTPException(404, "Test variant not found.")
+    tasks = {task.id: task for section in variant.sections for task in section.tasks}
+    for index, task_id in enumerate(payload.task_ids, start=1):
+        task = tasks.get(task_id)
+        if task:
+            task.order_index = index
+    await write_audit(
+        db, admin.id, "tasks.reorder", "TestVariant", str(variant_id),
+        {"order": [str(tid) for tid in payload.task_ids]},
+        request.client.host if request.client else None,
+    )
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/tasks/{task_id}/duplicate", status_code=201)
+async def duplicate_task(
+    task_id: uuid.UUID, request: Request,
+    admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
+):
+    """Clone an exercise (with all its questions) into the same section — a big
+    time-saver when building similar exercises."""
+    task = await db.get(Task, task_id, options=[selectinload(Task.questions)])
+    if not task:
+        raise HTTPException(404, "Task not found.")
+    last_order = await db.scalar(select(func.max(Task.order_index)).where(Task.section_id == task.section_id))
+    copy = Task(
+        section_id=task.section_id,
+        type=task.type,
+        title=f"{task.title} (copy)",
+        instructions=task.instructions,
+        passage_html=task.passage_html,
+        media_asset_id=task.media_asset_id,
+        audio_replay_limit=task.audio_replay_limit,
+        order_index=(last_order or 0) + 1,
+        metadata_json=dict(task.metadata_json or {}),
+    )
+    db.add(copy)
+    await db.flush()
+    new_questions = [
+        Question(
+            task_id=copy.id, prompt=q.prompt, rich_content=dict(q.rich_content or {}),
+            options=list(q.options or []), correct_answer=q.correct_answer,
+            accepted_answers=list(q.accepted_answers or []), points=q.points,
+            explanation=q.explanation, difficulty=q.difficulty, is_example=q.is_example,
+            case_sensitive=q.case_sensitive, normalize_spaces=q.normalize_spaces,
+            order_index=q.order_index,
+        )
+        for q in sorted(task.questions, key=lambda x: x.order_index)
+    ]
+    for question in new_questions:
+        db.add(question)
+    if new_questions:
+        await db.flush()
+        renumber_questions(new_questions)
+    await write_audit(
+        db, admin.id, "task.duplicate", "Task", str(copy.id),
+        {"source_task": str(task_id)}, request.client.host if request.client else None,
+    )
+    await db.commit()
+    return {"id": copy.id, "title": copy.title}
 
 
 @router.post("/tasks/{task_id}/questions", status_code=201)
@@ -572,204 +894,29 @@ async def unpublish_variant(
     return {"id": variant.id, "status": variant.status}
 
 
-@router.post("/imports", status_code=202)
-async def upload_package(
-    request: Request,
-    package: UploadFile = File(...),
-    admin: User = Depends(require_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    suffix = Path(package.filename or "").suffix.lower()
-    if suffix not in {".zip", ".rar"}:
-        raise HTTPException(415, "Upload a ZIP or RAR package.")
-    settings.storage_path.mkdir(parents=True, exist_ok=True)
-    target = settings.storage_path / f"{uuid.uuid4()}{suffix}"
-    size = 0
-    with target.open("wb") as output:
-        while chunk := await package.read(1024 * 1024):
-            size += len(chunk)
-            if size > settings.max_upload_mb * 1024 * 1024:
-                output.close()
-                target.unlink(missing_ok=True)
-                raise HTTPException(413, "The package is too large.")
-            output.write(chunk)
-    job = ImportJob(file_name=package.filename or target.name, source_path=str(target), created_by=admin.id)
-    db.add(job)
-    await db.flush()
-    await write_audit(db, admin.id, "import.enqueue", "ImportJob", str(job.id), {"file_name": job.file_name}, request.client.host if request.client else None)
-    await db.commit()
-    import_package.delay(str(job.id))
-    return {"job_id": job.id, "status": job.status}
-
-
-@router.get("/imports/{job_id}")
-async def import_preview(job_id: uuid.UUID, _: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
-    job = await db.get(ImportJob, job_id)
-    if not job:
-        raise HTTPException(404, "Import job not found.")
-    return {
-        "id": job.id, "file_name": job.file_name, "status": job.status, "progress": job.progress,
-        "manifest": job.manifest, "warnings": job.warnings, "result": job.result,
-    }
-
-
-@router.patch("/imports/{job_id}/exercises/{exercise_ref}")
-async def update_import_exercise(
-    job_id: uuid.UUID, exercise_ref: str, payload: ImportExerciseUpdate, request: Request,
+@router.delete("/content")
+async def reset_all_content(
+    payload: ResetContent, request: Request,
     admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
 ):
-    job = await db.get(ImportJob, job_id)
-    if not job:
-        raise HTTPException(404, "Import job not found.")
-    located = find_exercise(job.result or {}, exercise_ref)
-    if not located:
-        raise HTTPException(404, "Exercise not found in this import.")
-    _test, section, exercise = located
-    values = payload.model_dump(exclude_unset=True)
-    if "instructions" in values:
-        exercise["instructions"] = values["instructions"]
-    if "question_type" in values and values["question_type"]:
-        exercise["question_type"] = values["question_type"]
-        exercise["suggested_type"] = values["question_type"]
-        exercise["confidence"] = 1.0
-        exercise["needs_review"] = False
-        exercise["reasons"] = ["Manually set by admin."]
-        if not values.get("interaction"):
-            exercise["interaction"] = infer_interaction(
-                values["question_type"], exercise.get("instructions", ""), section.get("title", ""),
-            )
-    if values.get("interaction"):
-        exercise["interaction"] = values["interaction"]
-    flag_modified(job, "result")
+    """One-shot wipe of every test variant (and its sections/tasks/questions)
+    plus every attempt, so the platform can be re-seeded manually from scratch.
+    Gated behind the admin's own password. Attempts are removed first because
+    their FK to test_variants has no cascade; everything below a variant is
+    cleared by the DB-level ON DELETE CASCADE."""
+    if not verify_password(payload.password, admin.password_hash):
+        raise HTTPException(403, "Incorrect password.")
+    tests_removed = await db.scalar(select(func.count()).select_from(TestVariant))
+    attempts_removed = await db.scalar(select(func.count()).select_from(Attempt))
+    await db.execute(delete(Attempt))
+    await db.execute(delete(TestVariant))
     await write_audit(
-        db, admin.id, "import.exercise_update", "ImportJob", f"{job_id}:{exercise_ref}",
-        values, request.client.host if request.client else None,
+        db, admin.id, "content.reset", "TestVariant", None,
+        {"tests_removed": int(tests_removed or 0), "attempts_removed": int(attempts_removed or 0)},
+        request.client.host if request.client else None,
     )
     await db.commit()
-    return exercise
-
-
-@router.patch("/imports/{job_id}/exercises/{exercise_ref}/questions/{number}")
-async def update_import_question(
-    job_id: uuid.UUID, exercise_ref: str, number: int, payload: ImportQuestionUpdate, request: Request,
-    admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
-):
-    job = await db.get(ImportJob, job_id)
-    if not job:
-        raise HTTPException(404, "Import job not found.")
-    located = find_exercise(job.result or {}, exercise_ref)
-    if not located:
-        raise HTTPException(404, "Exercise not found in this import.")
-    _test, _section, exercise = located
-    question = next((item for item in exercise.get("questions", []) if item.get("number") == number), None)
-    if not question:
-        raise HTTPException(404, "Question not found in this exercise.")
-    values = payload.model_dump(exclude_unset=True)
-    question.update(values)
-    flag_modified(job, "result")
-    await write_audit(
-        db, admin.id, "import.question_update", "ImportJob", f"{job_id}:{exercise_ref}:{number}",
-        values, request.client.host if request.client else None,
-    )
-    await db.commit()
-    return question
-
-
-@router.post("/imports/{job_id}/exercises/{exercise_ref}/reclassify")
-async def reclassify_import_exercise(
-    job_id: uuid.UUID, exercise_ref: str, request: Request,
-    admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
-):
-    job = await db.get(ImportJob, job_id)
-    if not job:
-        raise HTTPException(404, "Import job not found.")
-    located = find_exercise(job.result or {}, exercise_ref)
-    if not located:
-        raise HTTPException(404, "Exercise not found in this import.")
-    _test, section, exercise = located
-    classification = classify_task(exercise.get("instructions", ""), section.get("title", ""))
-    exercise["question_type"] = classification.question_type
-    exercise["confidence"] = classification.confidence
-    exercise["needs_review"] = classification.needs_review
-    exercise["reasons"] = classification.reasons
-    if classification.question_type:
-        exercise["interaction"] = infer_interaction(
-            classification.question_type, exercise.get("instructions", ""), section.get("title", ""),
-        )
-    flag_modified(job, "result")
-    await write_audit(
-        db, admin.id, "import.reclassify", "ImportJob", f"{job_id}:{exercise_ref}",
-        {"question_type": classification.question_type}, request.client.host if request.client else None,
-    )
-    await db.commit()
-    return exercise
-
-
-@router.post("/imports/{job_id}/commit")
-async def commit_import(
-    job_id: uuid.UUID, request: Request,
-    admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
-):
-    job = await db.get(ImportJob, job_id)
-    if not job:
-        raise HTTPException(404, "Import job not found.")
-    data = job.result or {}
-    if not isinstance(data, dict) or "tests" not in data:
-        raise HTTPException(409, "This import is outdated and cannot be committed. Please re-upload the file.")
-    parsed_tests = draft_to_parsed_tests(data)
-    if not parsed_tests:
-        raise HTTPException(422, "This import has no tests to commit.")
-
-    levels = (await db.execute(select(Level))).scalars().all()
-    exam_types = (await db.execute(select(ExamType))).scalars().all()
-    if not levels or not exam_types:
-        raise HTTPException(422, "No levels or exam types are configured yet.")
-    level_names = [row.name for row in levels]
-
-    created: list[dict] = []
-    skipped: list[str] = []
-    for test_dict, parsed in zip(data.get("tests", []), parsed_tests):
-        level_row = next((row for row in levels if row.name == parsed.level), None)
-        if not level_row:
-            match = process.extractOne(parsed.level, level_names, scorer=fuzz.partial_ratio, score_cutoff=60)
-            level_row = next((row for row in levels if row.name == match[0]), None) if match else None
-            level_row = level_row or levels[0]
-        exam_row = next((row for row in exam_types if row.slug == parsed.exam_slug), exam_types[0])
-
-        existing = await db.scalar(select(TestVariant.id).where(
-            TestVariant.level_id == level_row.id,
-            TestVariant.exam_type_id == exam_row.id,
-            TestVariant.variant_number == parsed.variant,
-        ))
-        if existing:
-            skipped.append(parsed.title)
-            continue
-
-        exercise_needs_review = any(
-            exercise.get("needs_review")
-            for section in test_dict.get("sections", [])
-            for exercise in section.get("exercises", [])
-        )
-        status = ContentStatus.NEEDS_REVIEW if (
-            exercise_needs_review or level_row.name != parsed.level or exam_row.slug != parsed.exam_slug
-        ) else ContentStatus.PUBLISHED
-
-        # Numbering is always server-computed, 1..N within each exercise —
-        # persist_parsed() does this itself (and keeps cloze_passage
-        # templates in sync with the renumbering), so it isn't duplicated here.
-        variant = await persist_parsed(
-            db, parsed, level_row, exam_row, admin.id,
-            source_document=str(parsed.source_path), status=status,
-        )
-        await db.flush()
-        created.append({"id": str(variant.id), "title": variant.title})
-        await write_audit(
-            db, admin.id, "import.commit", "TestVariant", str(variant.id),
-            {"job_id": str(job_id), "title": variant.title}, request.client.host if request.client else None,
-        )
-    job.status = ImportStatus.COMPLETED
-    await db.commit()
-    return {"variants": created, "skipped": skipped}
+    return {"tests_removed": int(tests_removed or 0), "attempts_removed": int(attempts_removed or 0)}
 
 
 @router.get("/students")
@@ -860,7 +1007,12 @@ async def grade_submission(
         raise HTTPException(422, f"Points cannot exceed {float(question.points):g}.")
     answer.points_awarded = payload.points_awarded
     answer.feedback = payload.feedback
-    answer.rubric_scores = payload.rubric_scores
+    # Marked errors ride along in the rubric JSON so no migration is needed;
+    # the student's review page renders them as highlights.
+    answer.rubric_scores = {
+        **payload.rubric_scores,
+        "annotations": [a.model_dump() for a in payload.annotations],
+    }
     answer.graded_by = admin.id
     answer.is_correct = payload.points_awarded > 0
     answer.graded_at = datetime.now(timezone.utc)

@@ -14,6 +14,13 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
     telegram_bot_token: str = ""
     telegram_bot_username: str = ""
+    anthropic_api_key: str = ""
+    docx_ai_model: str = "claude-haiku-4-5"
+    openrouter_api_key: str = ""
+    openrouter_model: str = "anthropic/claude-haiku-4.5"
+    # OpenRouter pre-reserves credits for max_tokens; keep this within your
+    # account balance. 4096 is plenty for question-text JSON.
+    openrouter_max_tokens: int = 4096
     access_token_minutes: int = 20
     refresh_token_days: int = 14
     cookie_secure: bool = False

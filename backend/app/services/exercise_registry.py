@@ -36,6 +36,13 @@ EXERCISE_REGISTRY: dict[str, ExerciseSpec] = {
         "matching", frozenset({"matching_pairs"}), "MatchingExercise",
         "selected_value", requires_options=True,
     ),
+    # Two-part exercise from coursebooks: fill each question's gap with a word
+    # from a box, THEN match the question with a reply. Questions alternate:
+    # odd order_index = the word gap (text answer), even = the reply (letter).
+    "gap_match": ExerciseSpec(
+        "gap_match", frozenset({"gap_fill"}), "GapMatchExercise",
+        "exact_or_accepted", requires_options=True,
+    ),
     "matching_headings": ExerciseSpec(
         "matching_headings", frozenset({"matching_headings"}),
         "MatchingHeadingsExercise", "selected_value", requires_options=True,
@@ -55,6 +62,10 @@ EXERCISE_REGISTRY: dict[str, ExerciseSpec] = {
     "short_answer": ExerciseSpec(
         "short_answer", frozenset({"short_answer"}), "ShortAnswerExercise",
         "exact_or_accepted",
+    ),
+    "dropdown_gap_fill": ExerciseSpec(
+        "dropdown_gap_fill", frozenset({"dropdown_gap_fill"}),
+        "DropdownGapFillExercise", "selected_value", requires_options=True,
     ),
     "long_text": ExerciseSpec(
         "long_text", frozenset({"writing", "rich_text_question", "speaking_prompt_placeholder"}),
@@ -104,6 +115,7 @@ DEFAULT_KIND_BY_TASK_TYPE = {
     "sentence_ordering": "ordering",
     "word_ordering": "ordering",
     "gap_fill": "guided_input",
+    "dropdown_gap_fill": "dropdown_gap_fill",
     "error_correction": "correction",
     "short_answer": "short_answer",
     "writing": "long_text",

@@ -4,8 +4,7 @@ import secrets
 import uuid
 from datetime import timedelta
 
-import httpx
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response
 from redis.asyncio import Redis
 from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
@@ -18,18 +17,43 @@ from app.core.security import (
     create_token, decode_token, hash_otp, hash_password, new_otp, normalize_phone, verify_password,
 )
 from app.models import TelegramLink, User
+from app.services.telegram import TelegramDeliveryError, send_telegram_message
 from app.schemas.auth import (
-    AuthResponse, LoginRequest, OTPRequest, OTPVerify, PasswordChange, PasswordReset,
+    AuthResponse, BotContact, LoginRequest, OTPRequest, OTPVerify, PasswordChange, PasswordReset,
     ProfileUpdate, RegisterRequest, UserOut,
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
-NEUTRAL_OTP_MESSAGE = "If this phone number is registered and linked to Telegram, we've sent a verification code."
+NEUTRAL_OTP_MESSAGE = (
+    "Open the ExamFlow bot, tap Start, and share your phone number. "
+    "If it matches an active account, the bot sends your code right away."
+)
 logger = logging.getLogger(__name__)
 
 
 def redis_client() -> Redis:
     return Redis.from_url(settings.redis_url, decode_responses=True)
+
+
+async def issue_otp(chat_id: str, phone: str, purpose: str, user_id: str) -> None:
+    """Generate a fresh code, deliver it over Telegram, and store its hash so
+    verify-otp can check it. Raises TelegramDeliveryError if delivery fails."""
+    code = new_otp()
+    action = "sign in" if purpose == "login" else "reset your password"
+    await send_telegram_message(
+        chat_id,
+        "🔐 <b>ExamFlow verification code</b>\n\n"
+        f"Your code to {action}:\n<code>{code}</code>\n\n"
+        "⏱ This code expires in 5 minutes.\n"
+        "Never share this code with anyone.",
+        parse_mode="HTML",
+    )
+    async with redis_client() as redis:
+        await redis.setex(
+            f"otp:{phone}:{purpose}",
+            300,
+            json.dumps({"hash": hash_otp(code), "attempts": 0, "user_id": user_id}),
+        )
 
 
 def user_output(user: User) -> UserOut:
@@ -115,23 +139,29 @@ async def refresh_session(
 
 @router.post("/telegram/link/start")
 async def telegram_link_start(user: User = Depends(current_user)):
+    if not settings.telegram_bot_token or not settings.telegram_bot_username:
+        raise HTTPException(503, "Telegram linking is temporarily unavailable. Please contact support.")
     token = secrets.token_urlsafe(24)
-    redis = redis_client()
-    await redis.setex(f"telegram-link:{token}", 600, json.dumps({"user_id": str(user.id), "phone": user.phone_number}))
+    async with redis_client() as redis:
+        await redis.setex(
+            f"telegram-link:{token}",
+            600,
+            json.dumps({"user_id": str(user.id), "phone": user.phone_number}),
+        )
     return {
         "token": token,
-        "deep_link": f"https://t.me/{settings.telegram_bot_username}?start=link_{token}",
+        "deep_link": f"https://t.me/{settings.telegram_bot_username.lstrip('@')}?start=link_{token}",
         "expires_in": 600,
     }
 
 
 @router.post("/telegram/link/complete")
 async def telegram_link_complete(token: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
-    redis = redis_client()
-    pending = await redis.get(f"telegram-link:{token}")
-    contact = await redis.lpop(f"telegram-contact:{token}")
+    async with redis_client() as redis:
+        pending = await redis.get(f"telegram-link:{token}")
+        contact = await redis.get(f"telegram-contact:{token}")
     if not pending or not contact:
-        raise HTTPException(409, "Telegram verification is not complete yet.")
+        raise HTTPException(409, "Waiting for contact confirmation in Telegram.")
     request_data = json.loads(pending)
     chat_id, telegram_user_id, raw_phone = contact.split("|", 2)
     try:
@@ -155,52 +185,116 @@ async def telegram_link_complete(token: str, user: User = Depends(current_user),
     else:
         db.add(TelegramLink(user_id=user.id, chat_id=chat_id, telegram_user_id=telegram_user_id, verified_phone=verified_phone))
     await db.commit()
-    await redis.delete(f"telegram-link:{token}")
-    return {"linked": True}
+    async with redis_client() as redis:
+        await redis.delete(f"telegram-link:{token}", f"telegram-contact:{token}")
+    try:
+        await send_telegram_message(
+            chat_id,
+            "✅ <b>Telegram connected successfully!</b>\n\n"
+            "You can now receive ExamFlow sign-in and password recovery codes in this chat.",
+            parse_mode="HTML",
+        )
+    except TelegramDeliveryError:
+        logger.warning("Telegram link saved, but confirmation delivery failed.", exc_info=True)
+    return {"linked": True, "message": "Telegram connected successfully."}
 
 
 @router.post("/telegram/request-otp")
 async def request_otp(payload: OTPRequest, request: Request):
-    redis = redis_client()
     try:
         phone = normalize_phone(payload.phone_number)
     except ValueError:
         phone = payload.phone_number
     ip = request.client.host if request.client else "unknown"
     rate_key = f"otp-rate:{ip}:{hash_otp(phone)}"
-    count = await redis.incr(rate_key)
-    if count == 1:
-        await redis.expire(rate_key, 3600)
-    if count > 5:
-        raise HTTPException(429, "Too many requests. Please try again later.")
-    cooldown_key = f"otp-cooldown:{hash_otp(phone)}:{payload.purpose}"
-    if not await redis.set(cooldown_key, "1", ex=60, nx=True):
-        raise HTTPException(429, "Please wait before requesting another code.")
+    async with redis_client() as redis:
+        count = await redis.incr(rate_key)
+        if count == 1:
+            await redis.expire(rate_key, 3600)
+        if count > 5:
+            raise HTTPException(429, "Too many requests. Please try again in one hour.")
+        cooldown_key = f"otp-cooldown:{hash_otp(phone)}:{payload.purpose}"
+        if not await redis.set(cooldown_key, "1", ex=60, nx=True):
+            raise HTTPException(429, "Please wait 60 seconds before requesting another code.")
+        # Record the pending request so that, if the account is not linked yet,
+        # sharing the phone in the bot completes it and delivers this code.
+        await redis.setex(f"otp-pending:{phone}", 600, payload.purpose)
     async with SessionLocal() as db:
         user = await db.scalar(
             select(User).where(User.phone_number == phone).options(selectinload(User.telegram_link))
         )
+        # Already linked → deliver immediately and clear the pending marker.
         if user and user.telegram_link and settings.telegram_bot_token:
-            code = new_otp()
             try:
-                async with httpx.AsyncClient(timeout=10) as client:
-                    telegram_response = await client.post(
-                        f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage",
-                        json={
-                            "chat_id": user.telegram_link.chat_id,
-                            "text": f"Your ExamFlow verification code is {code}. It expires in 5 minutes.",
-                        },
-                    )
-                    telegram_response.raise_for_status()
-                    if not telegram_response.json().get("ok"):
-                        raise RuntimeError("Telegram rejected the verification message.")
-                await redis.setex(
-                    f"otp:{phone}:{payload.purpose}", 300,
-                    json.dumps({"hash": hash_otp(code), "attempts": 0, "user_id": str(user.id)}),
-                )
-            except (httpx.HTTPError, RuntimeError, ValueError):
+                await issue_otp(user.telegram_link.chat_id, phone, payload.purpose, str(user.id))
+                async with redis_client() as redis:
+                    await redis.delete(f"otp-pending:{phone}")
+            except TelegramDeliveryError:
                 logger.exception("Telegram OTP delivery failed.")
-    return {"message": NEUTRAL_OTP_MESSAGE, "resend_after": 60}
+    return {
+        "message": NEUTRAL_OTP_MESSAGE,
+        "resend_after": 60,
+        "bot_url": (
+            f"https://t.me/{settings.telegram_bot_username.lstrip('@')}"
+            if settings.telegram_bot_username
+            else None
+        ),
+    }
+
+
+@router.post("/telegram/bot-contact")
+async def telegram_bot_contact(
+    payload: BotContact,
+    x_bot_secret: str = Header(default=""),
+    db: AsyncSession = Depends(get_db),
+):
+    """Internal endpoint the bot calls after a user shares their phone. It matches
+    the Telegram-verified number to an account, links it automatically, and — if a
+    code was requested on the web — issues that code. Guarded by a shared secret
+    (the bot token) so only the bot can call it."""
+    if not settings.telegram_bot_token or not secrets.compare_digest(x_bot_secret, settings.telegram_bot_token):
+        raise HTTPException(403, "Forbidden.")
+    try:
+        phone = normalize_phone(payload.phone)
+    except ValueError:
+        return {"matched": False, "reason": "bad_phone"}
+    user = await db.scalar(
+        select(User).where(User.phone_number == phone).options(selectinload(User.telegram_link))
+    )
+    if not user or not user.is_active:
+        return {"matched": False, "reason": "no_account"}
+    conflict = await db.scalar(select(TelegramLink).where(
+        TelegramLink.user_id != user.id,
+        or_(
+            TelegramLink.chat_id == payload.chat_id,
+            TelegramLink.telegram_user_id == payload.telegram_user_id,
+        ),
+    ))
+    if conflict:
+        return {"matched": False, "reason": "conflict"}
+    if user.telegram_link:
+        user.telegram_link.chat_id = payload.chat_id
+        user.telegram_link.telegram_user_id = payload.telegram_user_id
+        user.telegram_link.verified_phone = phone
+    else:
+        db.add(TelegramLink(
+            user_id=user.id, chat_id=payload.chat_id,
+            telegram_user_id=payload.telegram_user_id, verified_phone=phone,
+        ))
+    await db.commit()
+
+    async with redis_client() as redis:
+        purpose = await redis.get(f"otp-pending:{phone}")
+    code_sent = False
+    if purpose:
+        try:
+            await issue_otp(payload.chat_id, phone, purpose, str(user.id))
+            code_sent = True
+            async with redis_client() as redis:
+                await redis.delete(f"otp-pending:{phone}")
+        except TelegramDeliveryError:
+            logger.exception("bot-contact OTP delivery failed.")
+    return {"matched": True, "code_sent": code_sent}
 
 
 @router.post("/telegram/verify-otp")
@@ -209,28 +303,32 @@ async def verify_otp(payload: OTPVerify, response: Response, db: AsyncSession = 
         phone = normalize_phone(payload.phone_number)
     except ValueError as exc:
         raise HTTPException(401, "Invalid or expired verification code.") from exc
-    redis = redis_client()
     key = f"otp:{phone}:{payload.purpose}"
-    raw = await redis.get(key)
+    async with redis_client() as redis:
+        raw = await redis.get(key)
     if not raw:
-        raise HTTPException(401, "Invalid or expired verification code.")
+        raise HTTPException(401, "Code not found or expired. Request a new code and share your phone in the ExamFlow bot.")
     data = json.loads(raw)
     data["attempts"] += 1
     if data["attempts"] > 5:
-        await redis.delete(key)
+        async with redis_client() as redis:
+            await redis.delete(key)
         raise HTTPException(429, "This code is no longer valid. Request a new one.")
     if not secrets.compare_digest(data["hash"], hash_otp(payload.code)):
-        ttl = await redis.ttl(key)
-        if ttl > 0:
-            await redis.setex(key, ttl, json.dumps(data))
-        raise HTTPException(401, "Invalid or expired verification code.")
+        async with redis_client() as redis:
+            ttl = await redis.ttl(key)
+            if ttl > 0:
+                await redis.setex(key, ttl, json.dumps(data))
+        raise HTTPException(401, "Incorrect code. Check the latest message from the ExamFlow bot.")
     user = await db.get(User, uuid.UUID(data["user_id"]))
     if not user or not user.is_active:
         raise HTTPException(401, "Invalid or expired verification code.")
-    await redis.delete(key)
+    async with redis_client() as redis:
+        await redis.delete(key)
     if payload.purpose == "reset":
         reset_token = secrets.token_urlsafe(32)
-        await redis.setex(f"password-reset:{reset_token}", 600, str(user.id))
+        async with redis_client() as redis:
+            await redis.setex(f"password-reset:{reset_token}", 600, str(user.id))
         return {
             "message": "Verification successful. Set a new password.",
             "reset_token": reset_token,
@@ -242,8 +340,8 @@ async def verify_otp(payload: OTPVerify, response: Response, db: AsyncSession = 
 
 @router.post("/forgot-password/reset")
 async def reset_password(payload: PasswordReset, db: AsyncSession = Depends(get_db)):
-    redis = redis_client()
-    user_id = await redis.get(f"password-reset:{payload.reset_token}")
+    async with redis_client() as redis:
+        user_id = await redis.get(f"password-reset:{payload.reset_token}")
     if not user_id:
         raise HTTPException(401, "This password reset session is invalid or expired.")
     user = await db.get(User, uuid.UUID(user_id))
@@ -251,7 +349,8 @@ async def reset_password(payload: PasswordReset, db: AsyncSession = Depends(get_
         raise HTTPException(401, "This password reset session is invalid or expired.")
     user.password_hash = hash_password(payload.password)
     await db.commit()
-    await redis.delete(f"password-reset:{payload.reset_token}")
+    async with redis_client() as redis:
+        await redis.delete(f"password-reset:{payload.reset_token}")
     return {"message": "Password updated. You can now sign in."}
 
 

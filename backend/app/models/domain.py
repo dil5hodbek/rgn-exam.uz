@@ -1,6 +1,6 @@
 import enum
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
@@ -12,6 +12,10 @@ from app.core.database import Base
 
 def uuid4() -> uuid.UUID:
     return uuid.uuid4()
+
+
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class Role(str, enum.Enum):
@@ -52,7 +56,7 @@ class User(Base):
     role: Mapped[Role] = mapped_column(Enum(Role), default=Role.STUDENT)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     theme: Mapped[str] = mapped_column(String(16), default="system")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     telegram_link: Mapped["TelegramLink | None"] = relationship(
         back_populates="user", cascade="all, delete-orphan", lazy="selectin"
     )
@@ -65,7 +69,7 @@ class TelegramLink(Base):
     chat_id: Mapped[str] = mapped_column(String(64), unique=True)
     telegram_user_id: Mapped[str] = mapped_column(String(64), unique=True)
     verified_phone: Mapped[str] = mapped_column(String(16))
-    linked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    linked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     user: Mapped[User] = relationship(back_populates="telegram_link")
 
 
@@ -96,11 +100,11 @@ class TestVariant(Base):
     instructions: Mapped[str] = mapped_column(Text, default="")
     time_limit_minutes: Mapped[int] = mapped_column(Integer, default=60)
     passing_percentage: Mapped[int] = mapped_column(Integer, default=60)
-    retake_allowed: Mapped[bool] = mapped_column(Boolean, default=False)
+    retake_allowed: Mapped[bool] = mapped_column(Boolean, default=True)
     review_allowed: Mapped[bool] = mapped_column(Boolean, default=True)
     status: Mapped[ContentStatus] = mapped_column(Enum(ContentStatus), default=ContentStatus.DRAFT)
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     sections: Mapped[list["Section"]] = relationship(cascade="all, delete-orphan", order_by="Section.order_index")
 
 
@@ -121,7 +125,7 @@ class MediaAsset(Base):
     mime_type: Mapped[str] = mapped_column(String(80))
     transcript: Mapped[str | None] = mapped_column(Text)
     uploaded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
 class Task(Base):
@@ -163,7 +167,7 @@ class Attempt(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     test_variant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("test_variants.id"))
     status: Mapped[AttemptStatus] = mapped_column(Enum(AttemptStatus), default=AttemptStatus.IN_PROGRESS)
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     total_score: Mapped[float | None] = mapped_column(Numeric(8, 2))
     max_score: Mapped[float | None] = mapped_column(Numeric(8, 2))
@@ -186,7 +190,7 @@ class AttemptAnswer(Base):
     rubric_scores: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     graded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     graded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
 class ImportJob(Base):
@@ -200,7 +204,7 @@ class ImportJob(Base):
     warnings: Mapped[list[Any]] = mapped_column(JSONB, default=list)
     result: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
 class AdminAuditLog(Base):
@@ -212,4 +216,4 @@ class AdminAuditLog(Base):
     entity_id: Mapped[str | None] = mapped_column(String(80))
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     ip_address: Mapped[str | None] = mapped_column(String(64))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

@@ -1,3 +1,5 @@
+name: examflow
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -32,7 +34,6 @@ services:
         required: false
     volumes:
       - uploads:/data/uploads
-      - ./resources/source-archive:/data/source-archive:ro
     ports:
       - "${BACKEND_PORT:-18000}:8000"
     healthcheck:
@@ -47,22 +48,10 @@ services:
       redis:
         condition: service_healthy
 
-  celery-worker:
-    build: ./backend
-    command: celery -A app.worker.celery worker --loglevel=INFO
-    env_file:
-      - path: .env.example
-      - path: .env
-        required: false
-    volumes:
-      - uploads:/data/uploads
-      - ./resources/source-archive:/data/source-archive:ro
-    depends_on:
-      - backend
-      - redis
-
   bot:
     build: ./bot
+    environment:
+      BACKEND_INTERNAL_URL: http://backend:8000
     env_file:
       - path: .env.example
       - path: .env

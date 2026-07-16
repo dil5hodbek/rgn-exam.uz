@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowRight, Bot, Check, Eye, EyeOff, LockKeyhole, ShieldCheck } from "lucide-react";
+import { ArrowRight, Bot, Eye, EyeOff, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,8 @@ export function AuthCard({ initialTab = "sign-in" }: { initialTab?: "sign-in" | 
   const [otpMode, setOtpMode] = useState(false);
   const [otp, setOtp] = useState("");
   const [otpCooldown, setOtpCooldown] = useState(0);
+  const [otpNotice, setOtpNotice] = useState("");
+  const [botUrl, setBotUrl] = useState("");
   const router = useRouter();
   type AuthResult = { user: { role: "STUDENT" | "ADMIN" | "SUPER_ADMIN" } };
   useEffect(() => {
@@ -71,12 +73,16 @@ export function AuthCard({ initialTab = "sign-in" }: { initialTab?: "sign-in" | 
     setError("");
     setLoading(true);
     try {
-      await api("/auth/telegram/request-otp", {
+      const result = await api<{ message: string; bot_url?: string }>("/auth/telegram/request-otp", {
         method: "POST",
         body: JSON.stringify({ phone_number: phone, purpose: "login" }),
       });
+      const url = result.bot_url ?? "";
       setOtpMode(true);
       setOtpCooldown(60);
+      setOtpNotice(result.message);
+      setBotUrl(url);
+      if (url) window.open(url, "_blank", "noopener");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to request a code.");
     } finally {
@@ -87,8 +93,8 @@ export function AuthCard({ initialTab = "sign-in" }: { initialTab?: "sign-in" | 
   return (
     <div className="w-full max-w-md rounded-[28px] border border-line bg-canvas p-2 shadow-soft">
       <div className="grid grid-cols-2 rounded-2xl bg-surface p-1">
-        <button onClick={() => { setTab("sign-in"); setOtpMode(false); setError(""); }} className={`rounded-xl px-4 py-2.5 text-sm font-bold transition ${tab === "sign-in" ? "bg-canvas text-ink shadow-sm" : "text-muted"}`}>Sign In</button>
-        <button onClick={() => { setTab("create"); setOtpMode(false); setError(""); }} className={`rounded-xl px-4 py-2.5 text-sm font-bold transition ${tab === "create" ? "bg-canvas text-ink shadow-sm" : "text-muted"}`}>Create Account</button>
+        <button onClick={() => { setTab("sign-in"); setOtpMode(false); setOtpNotice(""); setError(""); }} className={`rounded-xl px-4 py-2.5 text-sm font-bold transition ${tab === "sign-in" ? "bg-canvas text-ink shadow-sm" : "text-muted"}`}>Sign In</button>
+        <button onClick={() => { setTab("create"); setOtpMode(false); setOtpNotice(""); setError(""); }} className={`rounded-xl px-4 py-2.5 text-sm font-bold transition ${tab === "create" ? "bg-canvas text-ink shadow-sm" : "text-muted"}`}>Create Account</button>
       </div>
       <div className="px-5 pb-6 pt-7 sm:px-8">
         <div className="mb-7">
@@ -121,9 +127,11 @@ export function AuthCard({ initialTab = "sign-in" }: { initialTab?: "sign-in" | 
             <label className="block space-y-2 text-sm font-semibold text-ink">Confirm Password<Input type="password" placeholder="Repeat your password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required /></label>
           )}
           {otpMode && <label className="block space-y-2 text-sm font-semibold text-ink">Verification Code<Input className="text-center font-mono text-lg tracking-[.45em]" inputMode="numeric" maxLength={5} placeholder="00000" value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, ""))} required /></label>}
+          {otpNotice && <div className="rounded-xl bg-sky-500/10 px-3 py-3 text-sm leading-5 text-sky-800"><p>{otpNotice}</p></div>}
+          {otpMode && botUrl && <a href={botUrl} target="_blank" rel="noreferrer" className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-4 py-3 text-sm font-bold text-white transition hover:opacity-90">📱 Open ExamFlow bot</a>}
           {error && <p role="alert" className="rounded-xl bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-600">{error}</p>}
           {tab === "sign-in" && !otpMode && <div className="flex justify-end"><Link href="/forgot-password" className="text-sm font-semibold text-brand hover:underline">Forgot password?</Link></div>}
-          <Button className="w-full" size="lg" disabled={loading}>
+          <Button className="w-full" size="lg" disabled={loading || (otpMode && otp.length !== 5)}>
             {loading ? "Please wait…" : otpMode ? "Verify & Sign In" : tab === "sign-in" ? "Sign In" : "Create Account"} {!loading && <ArrowRight className="h-4 w-4" />}
           </Button>
         </form>

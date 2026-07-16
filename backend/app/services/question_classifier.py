@@ -7,8 +7,29 @@ from app.services.exercise_registry import default_kind
 
 def clean_text(value: str) -> str:
     value = value.replace("\xa0", " ").replace("\t", " | ")
+    # The test document and the separate answer-key document don't always use
+    # the same apostrophe/quote style (Word's smart quotes vs. plain typing) —
+    # normalizing both to the plain ASCII form keeps option and answer text
+    # comparable, or a correct answer silently fails to match its own option.
+    value = value.translate(str.maketrans({
+        "‘": "'", "’": "'", "‚": "'", "′": "'",
+        "“": '"', "”": '"', "„": '"', "″": '"',
+    }))
     value = re.sub(r"[ ]{2,}", " ", value)
     return value.strip()
+
+
+def _has_choice_slash(value: str) -> bool:
+    """True if `value` has a "he/she", "right/wrong" style binary word-choice
+    slash. The common "and/or" conjunction isn't an answer choice, but it can
+    appear elsewhere in the same instructions alongside a real choice slash —
+    so each slash match is checked individually rather than blanket-excluding
+    the whole string whenever "and/or" appears anywhere in it.
+    """
+    return any(
+        not re.fullmatch(r"and\s*/\s*or", match, re.IGNORECASE)
+        for match in re.findall(r"\b[\w'’-]+\s*/\s*[\w'’-]+\b", value)
+    )
 
 
 def infer_type(instructions: str, section: str) -> str:
@@ -31,7 +52,7 @@ def infer_type(instructions: str, section: str) -> str:
         return "sentence_ordering"
     if (
         re.search(r"\b(choose|tick|circle|underline|find the correct answers?|correct answer|correct option|correct alternative|wrong word)\b", value)
-        or re.search(r"\b[\w'’-]+\s*/\s*[\w'’-]+\b", value)
+        or _has_choice_slash(value)
     ):
         return "multiple_choice"
     if re.search(r"\b(fill|complete|one word|missing words?|words? (?:and phrases )?in the box|first letter)\b", value):
@@ -77,6 +98,34 @@ def extract_labelled_options(value: str) -> tuple[list[dict[str, str]], int | No
         if label:
             result.append({"value": marker.group(1).casefold(), "label": label})
     return result, best[0].start() if result else None
+
+
+def word_list_choices(prompt: str) -> list[str] | None:
+    """If `prompt` is nothing but a slash-separated list of words or short
+    phrases ("taxi / train / plane / drive", "British / The UK / The US /
+    Turkey"), return every item as a choice.
+
+    This is a "circle the odd one out" style question with as many options
+    as there are items — distinct from a two-way inline choice embedded in a
+    full sentence ("he/she is a doctor"), which extract_alternative_pair()
+    below handles instead. Sentence-like segments always carry punctuation
+    (?/.,:) or run past a few words, so capping at 3 words with no
+    punctuation keeps that case out even though it also allows multi-word
+    items. A trailing duplicate word on its own line, or a stray "|" left
+    over from a source table-cell join, sometimes bleeds into a segment;
+    strip those before checking, so one dirty segment doesn't disqualify an
+    otherwise-clean list.
+    """
+    segments = [
+        segment.split("\n")[0].strip(" ,.;:|")
+        for segment in prompt.split("/")
+    ]
+    segments = [segment for segment in segments if segment]
+    if len(segments) > 2 and all(
+        re.fullmatch(r"[\w'’-]+(?:\s+[\w'’-]+){0,2}", segment) for segment in segments
+    ):
+        return segments
+    return None
 
 
 def extract_alternative_pair(prompt: str, answer: Any | None) -> dict[str, str] | None:
@@ -158,8 +207,7 @@ _CLASSIFICATION_RULES: list[tuple[Any, str, float, str]] = [
     (
         lambda value, section: bool(
             re.search(r"\b(choose|tick|circle|underline|find the correct answers?|correct answer|correct option|correct alternative|wrong word)\b", value)
-            or re.search(r"\b[\w'’-]+\s*/\s*[\w'’-]+\b", value)
-        ),
+        ) or _has_choice_slash(value),
         "multiple_choice", 0.8,
         "Instructions ask to choose/circle/underline a correct option.",
     ),
