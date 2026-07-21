@@ -163,9 +163,9 @@ export default function TeacherReview() {
     api<Submission[]>("/admin/submissions/pending").then(setRows).catch((reason) => setError(String(reason)));
   }, []);
   return <div className="mx-auto max-w-6xl p-4 sm:p-8">
-    <p className="text-xs font-bold uppercase tracking-[.18em] text-brand">Manual grading</p>
-    <h1 className="mt-2 text-3xl font-extrabold text-ink">Teacher Review</h1>
-    <p className="mt-2 text-sm text-muted">Writing and speaking answers waiting for a teacher. Mark errors right inside the student’s text, add feedback and a score.</p>
+    <p className="text-xs font-bold uppercase tracking-[.18em] text-brand">Fallback grading</p>
+    <h1 className="mt-2 text-3xl font-extrabold text-ink">Writing Fallback</h1>
+    <p className="mt-2 text-sm text-muted">Writing is graded automatically by AI. Answers only appear here if the AI was unavailable when a test was submitted — grade them by hand as a backstop.</p>
     {error && <p className="mt-4 rounded-xl bg-red-500/10 p-3 text-sm font-semibold text-red-600">{error}</p>}
     <div className="mt-7 divide-y divide-line overflow-hidden rounded-2xl border border-line bg-canvas">
       {rows.length

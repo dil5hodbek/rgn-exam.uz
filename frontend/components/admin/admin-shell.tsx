@@ -11,7 +11,7 @@ import { api, ApiError } from "@/lib/api";
 const items = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard, exact: true },
   { href: "/admin/tests", label: "Test Library", icon: BookOpenCheck },
-  { href: "/admin/submissions", label: "Teacher Review", icon: GraduationCap },
+  { href: "/admin/submissions", label: "Writing Fallback", icon: GraduationCap },
   { href: "/admin/students", label: "Students", icon: Users },
   { href: "/admin/audit-log", label: "Audit Log", icon: Activity },
 ];

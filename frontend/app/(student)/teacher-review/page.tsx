@@ -47,14 +47,14 @@ export default function TeacherReviewPage() {
 
   return <div className="mx-auto max-w-4xl p-4 sm:p-8">
     <p className="text-xs font-bold uppercase tracking-[.18em] text-brand">Feedback</p>
-    <h1 className="mt-2 text-3xl font-extrabold text-ink">Teacher Review</h1>
-    <p className="mt-2 text-sm text-muted">Your writing and speaking answers: what the teacher marked, scored and commented.</p>
+    <h1 className="mt-2 text-3xl font-extrabold text-ink">Writing Feedback</h1>
+    <p className="mt-2 text-sm text-muted">Your writing and speaking answers, graded automatically by AI with a score and a short comment.</p>
     {error && <p className="mt-4 rounded-xl bg-red-500/10 p-3 text-sm font-semibold text-red-600">{error}</p>}
 
     {rows === null ? <div className="grid place-items-center py-24"><span className="h-9 w-9 animate-spin rounded-full border-4 border-indigo-100 border-t-brand" /></div> : <>
 
     {pending.length > 0 && <section className="mt-8">
-      <h2 className="flex items-center gap-2 text-sm font-extrabold uppercase tracking-wider text-amber-600"><Clock3 className="h-4 w-4" /> Waiting for the teacher ({pending.length})</h2>
+      <h2 className="flex items-center gap-2 text-sm font-extrabold uppercase tracking-wider text-amber-600"><Clock3 className="h-4 w-4" /> Being graded ({pending.length})</h2>
       <div className="mt-3 space-y-3">
         {pending.map((row) => <article key={row.id} className="rounded-2xl border border-amber-300/60 bg-canvas p-5">
           <p className="text-xs font-bold text-muted">{row.test_title}</p>
@@ -69,7 +69,7 @@ export default function TeacherReviewPage() {
       <h2 className="flex items-center gap-2 text-sm font-extrabold uppercase tracking-wider text-emerald-600"><CheckCircle2 className="h-4 w-4" /> Graded ({graded.length})</h2>
       {graded.length === 0 && pending.length === 0 && <div className="mt-3 grid place-items-center rounded-2xl border border-dashed border-line p-12 text-center">
         <FilePenLine className="h-8 w-8 text-muted" />
-        <p className="mt-3 text-sm font-semibold text-muted">Nothing here yet — solve a test with a writing exercise and it will appear here for teacher review.</p>
+        <p className="mt-3 text-sm font-semibold text-muted">Nothing here yet — finish a test with a writing exercise and the AI feedback will appear here.</p>
       </div>}
       <div className="mt-3 space-y-4">
         {graded.map((row) => {
@@ -94,8 +94,8 @@ export default function TeacherReviewPage() {
                 <span className="min-w-0 text-ink"><b className="text-red-600">“{text.slice(mark.start, mark.end)}”</b>{mark.comment ? <> — {mark.comment}</> : null}</span>
               </li>)}
             </ol>}
-            {row.feedback && <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-indigo-200 bg-indigo-500/5 p-3.5">
-              <MessageSquareText className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
+            {row.feedback && <div className="mt-4 rounded-xl border border-indigo-200 bg-indigo-500/5 p-3.5">
+              <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-brand"><MessageSquareText className="h-3.5 w-3.5" /> AI feedback</p>
               <p className="text-sm leading-6 text-ink">{row.feedback}</p>
             </div>}
           </article>;

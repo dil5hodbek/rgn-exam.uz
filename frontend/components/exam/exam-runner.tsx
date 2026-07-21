@@ -822,7 +822,7 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
       const inRange = (!minimum || count >= minimum) && (!maximum || count <= maximum);
       return <div className="mt-4">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs font-bold">
-          <span className="rounded-full bg-amber-500/10 px-3 py-1 text-amber-700">✍ Teacher review</span>
+          <span className="rounded-full bg-indigo-500/10 px-3 py-1 text-brand">🤖 AI graded</span>
           <span className={cn(
             "rounded-full px-3 py-1 transition-colors",
             count === 0 ? "bg-surface text-muted"
@@ -1296,7 +1296,7 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
                   flagged.includes(question.id)
                     ? "bg-orange-500/10 text-orange-500"
                     : "text-muted/50 hover:bg-orange-500/10 hover:text-orange-500 sm:opacity-0 sm:group-hover/card:opacity-100",
-                )}><Bookmark className={cn("h-4 w-4", flagged.includes(question.id) && "fill-current")} /></button>}</div>{question.is_example && <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-sky-500/10 px-3 py-1 text-xs font-bold text-sky-600"><CheckCircle2 className="h-3.5 w-3.5" /> Example — not scored</p>}{renderAnswer(exercise, question)}{checked && result === null && <p className="mt-3 text-xs font-bold text-amber-600">This answer needs teacher review.</p>}</div>
+                )}><Bookmark className={cn("h-4 w-4", flagged.includes(question.id) && "fill-current")} /></button>}</div>{question.is_example && <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-sky-500/10 px-3 py-1 text-xs font-bold text-sky-600"><CheckCircle2 className="h-3.5 w-3.5" /> Example — not scored</p>}{renderAnswer(exercise, question)}{checked && result === null && <p className="mt-3 text-xs font-bold text-brand">🤖 The AI will grade this after you submit the test.</p>}</div>
               </div>
             </article>;
           })}

@@ -613,16 +613,18 @@ def ai_available() -> bool:
                 or (settings.anthropic_api_key or "").strip())
 
 
-async def _complete_async(system: str, text: str) -> str | None:
+async def _complete_async(system: str, text: str, max_tokens: int | None = None, retries: int = 4) -> str | None:
     """Async LLM call: OpenRouter when configured, else Anthropic. Retries
-    transient failures (rate limits). Returns None when all attempts fail."""
+    transient failures (rate limits). Returns None when all attempts fail.
+    Pass a small max_tokens for cheap short outputs (e.g. grading)."""
     from app.core.config import settings
 
     openrouter_key = (settings.openrouter_api_key or "").strip()
     anthropic_key = (settings.anthropic_api_key or "").strip()
-    max_tokens = getattr(settings, "openrouter_max_tokens", 4096)
+    if max_tokens is None:
+        max_tokens = getattr(settings, "openrouter_max_tokens", 4096)
 
-    for attempt in range(4):
+    for attempt in range(retries):
         if attempt:
             await asyncio.sleep(5 * attempt)
         try:

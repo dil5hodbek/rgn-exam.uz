@@ -15,6 +15,8 @@ from app.models import (
     Task, TestVariant, User,
 )
 from app.schemas.content import AnswerBatch
+from app.services.ai_grading import ai_grade_text
+from app.services.exercise_registry import MANUAL_TASK_TYPES
 from app.services.grading import grade_answer
 
 router = APIRouter(tags=["Attempts"])
@@ -336,6 +338,29 @@ async def submit(attempt_id: uuid.UUID, user: User = Depends(current_user), db: 
                     continue
                 if answer.student_answer in (None, "", []):
                     answer.is_correct, answer.points_awarded = False, 0
+                    continue
+                # Open writing/speaking answers are graded by the AI right here
+                # (no teacher hand-off). Auto-gradable types keep the fast path.
+                if task.type in MANUAL_TASK_TYPES:
+                    interaction = (task.metadata_json or {}).get("interaction") or {}
+                    verdict = await ai_grade_text(
+                        task.instructions or "", question.prompt or "",
+                        str(answer.student_answer or ""), float(question.points),
+                        interaction.get("min_words"), interaction.get("max_words"),
+                    )
+                    if verdict is not None:
+                        score, feedback = verdict
+                        answer.points_awarded = score
+                        answer.is_correct = score > 0
+                        answer.feedback = feedback
+                        answer.graded_at = datetime.now(timezone.utc)
+                        answer.graded_by = None  # AI, not a human reviewer
+                        total += score
+                    else:
+                        # AI unavailable — fall back to human review so the
+                        # answer is never silently zeroed.
+                        answer.is_correct, answer.points_awarded = None, None
+                        pending = True
                     continue
                 result = grade_answer(
                     task.type, answer.student_answer, question.correct_answer, question.accepted_answers,

@@ -13,7 +13,7 @@ import { api, ApiError } from "@/lib/api";
 const studentNav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/solved-tests", label: "Solved Tests", icon: BarChart3 },
-  { href: "/teacher-review", label: "Teacher Review", icon: FilePenLine },
+  { href: "/teacher-review", label: "Writing Feedback", icon: FilePenLine },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
