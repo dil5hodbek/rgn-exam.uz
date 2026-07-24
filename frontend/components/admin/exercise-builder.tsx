@@ -335,9 +335,24 @@ export function ExerciseBuilder({
           it.correct_answer = q.correctText.trim();
         }
         if (per("correct_alt")) {
-          const m = q.prompt.match(/([\p{L}'’-]+)\s*\/\s*([\p{L}'’-]+)/u);
-          if (!m && !q.isExample) errs.push(`Question ${num}: write "word1 / word2".`);
-          else if (m) { it.options = [m[1], m[2]]; it.correct_answer = q.correctText.trim() || m[1]; }
+          // Multi-word alternatives ("Two brothers / a sister is(are) smart.") are
+          // bounded by the "/" and by the verb-form marker that follows — try that
+          // first so phrases aren't cut down to their last/first word. Falls back to
+          // the plain single-word split ("deal with / at this") when there's no
+          // such marker.
+          const phrase = q.prompt.match(/^(.+?)\s*\/\s*(.+?)(?=\s+\S*\([^)]*\))/);
+          const word = q.prompt.match(/([\p{L}'’-]+)\s*\/\s*([\p{L}'’-]+)/u);
+          const m = phrase || word;
+          if (!m && !q.isExample) errs.push(`Question ${num}: write "word1 / word2" (or "phrase one / phrase two" followed by a verb form like "is(are)").`);
+          else if (m) {
+            const opt1 = m[1].trim(), opt2 = m[2].trim();
+            it.options = [opt1, opt2];
+            const chosen = q.correctText.trim();
+            if (!chosen && !q.isExample) errs.push(`Question ${num}: mark which alternative is correct (it defaulted silently before — now it's required).`);
+            else if (chosen && ![opt1, opt2].some((o) => o.toLowerCase() === chosen.toLowerCase()) && !q.isExample)
+              errs.push(`Question ${num}: correct answer "${chosen}" doesn't match either "${opt1}" or "${opt2}".`);
+            it.correct_answer = chosen || opt1;
+          }
         }
         if (per("accepted") && q.accepted.trim())
           it.accepted_answers = q.accepted.split("\n").map((s) => s.trim()).filter(Boolean);
@@ -477,7 +492,7 @@ export function ExerciseBuilder({
                 <div className="flex-1 space-y-2">
                   {(per("prompt") || per("prompt_gap") || per("prompt_alt")) &&
                     <input value={q.prompt} onChange={(e) => setQ(i, { prompt: e.target.value })} className={inputClass}
-                      placeholder={per("prompt_gap") ? "They ___ to 10 countries. (travel)" : per("prompt_alt") ? "Do you deal with / at this?" : "Question text"} />}
+                      placeholder={per("prompt_gap") ? "They ___ to 10 countries. (travel)" : per("prompt_alt") ? "Do you deal with / at this?  —or—  Two brothers / a sister is(are) smart." : "Question text"} />}
 
                   {per("options") && <div className="space-y-1.5">
                     {q.options.map((o, oi) => {
@@ -503,7 +518,7 @@ export function ExerciseBuilder({
                   </div>}
 
                   {per("correct_text") && <input value={q.correctText} onChange={(e) => setQ(i, { correctText: e.target.value })} className={`${inputClass} max-w-[340px]`} placeholder={type === "error_correction" ? "corrected word" : "correct answer"} />}
-                  {per("correct_alt") && <input value={q.correctText} onChange={(e) => setQ(i, { correctText: e.target.value })} className={`${inputClass} max-w-[240px]`} placeholder="correct word (e.g. with)" />}
+                  {per("correct_alt") && <input value={q.correctText} onChange={(e) => setQ(i, { correctText: e.target.value })} className={`${inputClass} max-w-[340px]`} placeholder="correct word or phrase (e.g. with, or Two brothers)" />}
                   {tpl?.manual && <p className="text-xs text-amber-500">No answer needed — graded by the teacher.</p>}
 
                   {!tpl?.manual && <button onClick={() => setQ(i, { open: !q.open })} className="text-xs text-muted hover:text-ink">
