@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { FileText, Loader2, Plus, X } from "lucide-react";
+import { FileText, Loader2, Plus, Shuffle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RichTextField } from "@/components/admin/rich-text-editor";
 import { api } from "@/lib/api";
@@ -60,6 +60,74 @@ const inputClass = "w-full rounded-lg border border-line bg-canvas px-3 py-2 tex
 const taClass = `${inputClass} min-h-[52px] resize-y`;
 const dashBtn = "rounded-lg border border-dashed border-line px-3 py-1 text-xs font-semibold text-brand hover:bg-surface";
 const letter = (i: number) => String.fromCharCode(97 + i);
+
+// Finds where the two known alternative phrases sit around the "/" in the
+// prompt, the same way exam-runner's inlineAlternative() locates them for
+// students — trusting the actual stored option VALUES (which may be multi-word,
+// like "have got") rather than re-deriving words from the sentence, which
+// can't tell "have" from "have got". Returns the matched span plus which
+// option came first, or null if the prompt no longer contains both.
+function locateAlternatives(prompt: string, options: string[]) {
+  if (options.length !== 2 || !prompt.includes("/")) return null;
+  const [a, b] = options.map((o) => o.trim());
+  if (!a || !b) return null;
+  const slash = prompt.indexOf("/");
+  const tryOrder = (first: string, second: string) => {
+    const start = prompt.lastIndexOf(first, slash);
+    const end = prompt.indexOf(second, slash);
+    if (start < 0 || end < 0) return null;
+    return { start, end: end + second.length, first, second };
+  };
+  return tryOrder(a, b) || tryOrder(b, a);
+}
+
+// Falls back to parsing "word1 / word2" straight out of the sentence when
+// there's no usable stored options yet (a brand-new question). Kept in sync
+// with the parsing logic in build().
+function matchAlternatives(prompt: string) {
+  const phrase = prompt.match(/^(.+?)\s*\/\s*(.+?)(?=\s+\S*\([^)]*\))/);
+  const word = prompt.match(/([\p{L}'’-]+)\s*\/\s*([\p{L}'’-]+)/u);
+  return phrase || word;
+}
+
+// Randomly reorders a question's options (or its inline "a / b" alternatives)
+// so the correct answer isn't predictably always in the same position —
+// remaps correctSingle/correctMulti to keep pointing at the same value.
+function shuffleQuestionOrder(q: Question, hasCorrectAlt: boolean): Question {
+  if (hasCorrectAlt) {
+    const located = locateAlternatives(q.prompt, q.options);
+    if (located) {
+      if (Math.random() < 0.5) return q;
+      const { start, end, first, second } = located;
+      const swapped = `${second} / ${first}`;
+      return {
+        ...q,
+        prompt: q.prompt.slice(0, start) + swapped + q.prompt.slice(end),
+        options: [second, first],
+      };
+    }
+    const m = matchAlternatives(q.prompt);
+    if (!m || Math.random() < 0.5) return q;
+    const idx = q.prompt.indexOf(m[0]);
+    if (idx < 0) return q;
+    const opt1 = m[1].trim(), opt2 = m[2].trim();
+    const swapped = `${opt2} / ${opt1}`;
+    return { ...q, prompt: q.prompt.slice(0, idx) + swapped + q.prompt.slice(idx + m[0].length), options: [opt2, opt1] };
+  }
+  const order = q.options.map((_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  const options = order.map((i) => q.options[i]);
+  const remap = new Map(order.map((originalIndex, newIndex) => [originalIndex, newIndex]));
+  return {
+    ...q,
+    options,
+    correctSingle: remap.get(q.correctSingle) ?? q.correctSingle,
+    correctMulti: q.correctMulti.map((i) => remap.get(i) ?? i),
+  };
+}
 
 export function ExerciseBuilder({
   testId, label, exerciseNumber, task, onClose, onSaved,
@@ -235,6 +303,104 @@ export function ExerciseBuilder({
   const setQ = (i: number, patch: Partial<Question>) =>
     setQuestions((qs) => qs.map((q, j) => (j === i ? { ...q, ...patch } : q)));
 
+  // Only meaningful when there's an actual position to scramble: a fixed
+  // option list, or two inline alternatives embedded in the prompt.
+  const canRandomize = per("options") || per("correct_alt");
+  const randomizeOrder = () =>
+    setQuestions((qs) => qs.map((q) => (q.isExample ? q : shuffleQuestionOrder(q, per("correct_alt")))));
+
+  // Reads whatever is currently on screen — the repeat questions list, or one
+  // of the composite editors (matching/ordering/cloze) — into a shared shape,
+  // using the CURRENT template's per-fields to know how "correct" is encoded.
+  function extractItems(): { prompt: string; correct: string; options: string[]; isExample: boolean }[] {
+    if (isRepeat) {
+      return questions.map((q) => {
+        let correct = "";
+        if (per("correct_multi")) correct = q.correctMulti.map((i) => q.options[i]).filter(Boolean).join(", ");
+        else if (per("correct_single")) correct = q.options[q.correctSingle] ?? "";
+        else if (per("correct_binary") || per("correct_tfng")) correct = q.correctBinary;
+        else if (per("correct_text") || per("correct_alt")) correct = q.correctText;
+        return { prompt: q.prompt, correct, options: q.options.filter(Boolean), isExample: q.isExample };
+      });
+    }
+    if (comp === "matching") {
+      return mLeft.map((p, i) => {
+        const idx = mMap[i] ? mRight.findIndex((_, j) => letter(j) === mMap[i]) : -1;
+        return { prompt: p, correct: idx >= 0 ? mRight[idx] : "", options: mRight.filter(Boolean), isExample: false };
+      });
+    }
+    if (comp === "ordering" || comp === "wordorder") {
+      const items = orderItems.filter(Boolean);
+      if (!items.length) return [];
+      return [{
+        prompt: comp === "wordorder" ? items.join(" ") : "Arrange in the correct order",
+        correct: items.join(", "), options: items, isExample: false,
+      }];
+    }
+    if (comp === "cloze") {
+      return clozeGaps.map((g) => ({
+        prompt: `Gap ${g.n}`, correct: g.answer,
+        options: g.options.split("/").map((s) => s.trim()).filter(Boolean), isExample: false,
+      }));
+    }
+    return [];
+  }
+
+  // Rebuilds whichever state the NEW type needs from the extracted items, so
+  // switching "Question type" carries prompts/answers over instead of
+  // silently swapping in an empty editor.
+  function applyItems(items: { prompt: string; correct: string; options: string[]; isExample: boolean }[], newTpl: Template) {
+    const withContent = items.filter((i) => i.prompt.trim() || i.correct.trim() || i.options.length);
+    if (newTpl.mode === "repeat") {
+      if (!withContent.length) { setQuestions([emptyQ()]); return; }
+      setQuestions(withContent.map((item) => {
+        const q = emptyQ();
+        q.prompt = item.prompt;
+        q.isExample = item.isExample;
+        if (newTpl.per?.includes("options") || newTpl.per?.includes("correct_alt")) {
+          const opts = item.options.length ? item.options : [item.correct, ""].filter((v, i, a) => v || i === 0);
+          q.options = opts.length >= 2 ? opts : [...opts, ...Array(2 - opts.length).fill("")];
+          const idx = q.options.findIndex((o) => o === item.correct);
+          if (newTpl.per.includes("correct_multi")) q.correctMulti = idx >= 0 ? [idx] : [];
+          else q.correctSingle = idx >= 0 ? idx : 0;
+        }
+        if (newTpl.per?.includes("correct_binary") || newTpl.per?.includes("correct_tfng"))
+          q.correctBinary = ["True", "False", "Not Given"].includes(item.correct) ? item.correct : "True";
+        if (newTpl.per?.includes("correct_text") || newTpl.per?.includes("correct_alt")) q.correctText = item.correct;
+        return q;
+      }));
+      return;
+    }
+    const comp2 = newTpl.mode?.startsWith("composite") ? newTpl.mode.split(":")[1] : null;
+    if (comp2 === "matching") {
+      const rightVals = Array.from(new Set(withContent.map((i) => i.correct).filter(Boolean)));
+      setMLeft(withContent.length ? withContent.map((i) => i.prompt) : ["", ""]);
+      setMRight(rightVals.length >= 2 ? rightVals : [...rightVals, "", ""].slice(0, Math.max(2, rightVals.length)));
+      const map: Record<number, string> = {};
+      withContent.forEach((item, i) => {
+        const idx = rightVals.indexOf(item.correct);
+        if (idx >= 0) map[i] = letter(idx);
+      });
+      setMMap(map);
+    } else if (comp2 === "ordering" || comp2 === "wordorder") {
+      const flat = withContent.flatMap((i) => (i.options.length ? i.options : i.prompt ? [i.prompt] : []));
+      setOrderItems(flat.length >= 2 ? flat : ["", ""]);
+    } else if (comp2 === "cloze") {
+      setClozeGaps(withContent.length
+        ? withContent.map((item, i) => ({ n: i + 1, answer: item.correct, options: item.options.join(" / ") }))
+        : [{ n: 1, answer: "", options: "" }]);
+      if (!clozeText.trim() && withContent.length)
+        setClozeText(withContent.map((item, i) => `${item.prompt} {{${i + 1}}}`).join(" "));
+    }
+  }
+
+  function changeType(newKey: string) {
+    const newTpl = templates[newKey];
+    if (newTpl && newKey !== type) applyItems(extractItems(), newTpl);
+    setType(newKey);
+    setErrors([]);
+  }
+
   async function onFile(file: File, kind: string) {
     setUploading(true);
     try {
@@ -335,17 +501,20 @@ export function ExerciseBuilder({
           it.correct_answer = q.correctText.trim();
         }
         if (per("correct_alt")) {
-          // Multi-word alternatives ("Two brothers / a sister is(are) smart.") are
-          // bounded by the "/" and by the verb-form marker that follows — try that
-          // first so phrases aren't cut down to their last/first word. Falls back to
-          // the plain single-word split ("deal with / at this") when there's no
-          // such marker.
-          const phrase = q.prompt.match(/^(.+?)\s*\/\s*(.+?)(?=\s+\S*\([^)]*\))/);
-          const word = q.prompt.match(/([\p{L}'’-]+)\s*\/\s*([\p{L}'’-]+)/u);
+          // Prefer the already-known option values (from a prior save, or a
+          // shuffle) over re-parsing the sentence: a plain word/word regex
+          // can't tell "have" from "have got", so re-deriving on every save
+          // would silently truncate multi-word alternatives that lack a
+          // trailing verb-form marker like "is(are)". Only fall back to
+          // parsing when there's nothing usable yet (a brand-new question).
+          const located = locateAlternatives(q.prompt, q.options);
+          const phrase = !located ? q.prompt.match(/^(.+?)\s*\/\s*(.+?)(?=\s+\S*\([^)]*\))/) : null;
+          const word = !located ? q.prompt.match(/([\p{L}'’-]+)\s*\/\s*([\p{L}'’-]+)/u) : null;
           const m = phrase || word;
-          if (!m && !q.isExample) errs.push(`Question ${num}: write "word1 / word2" (or "phrase one / phrase two" followed by a verb form like "is(are)").`);
-          else if (m) {
-            const opt1 = m[1].trim(), opt2 = m[2].trim();
+          const opt1 = located ? located.first : m?.[1]?.trim();
+          const opt2 = (located ? located.second : m?.[2]?.trim()) ?? "";
+          if (!opt1 && !q.isExample) errs.push(`Question ${num}: write "word1 / word2" (or "phrase one / phrase two" followed by a verb form like "is(are)").`);
+          else if (opt1) {
             it.options = [opt1, opt2];
             const chosen = q.correctText.trim();
             if (!chosen && !q.isExample) errs.push(`Question ${num}: mark which alternative is correct (it defaulted silently before — now it's required).`);
@@ -445,7 +614,7 @@ export function ExerciseBuilder({
           {/* ── exercise-level ── */}
           <div className="rounded-2xl border border-line bg-canvas p-4">
             <label className="block text-xs font-bold text-muted">Question type
-              <select value={type} onChange={(e) => { setType(e.target.value); setErrors([]); }} className={`${inputClass} mt-1 cursor-pointer`}>
+              <select value={type} onChange={(e) => changeType(e.target.value)} className={`${inputClass} mt-1 cursor-pointer`}>
                 {Object.entries(templates).map(([k, t]) => <option key={k} value={k}>{t.label}</option>)}
               </select>
             </label>
@@ -485,7 +654,12 @@ export function ExerciseBuilder({
 
           {/* ── REPEAT questions ── */}
           {isRepeat && <div className="space-y-2">
-            <p className="text-xs font-bold uppercase tracking-wide text-muted">Questions {tpl?.manual ? "· teacher-graded" : ""}</p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-bold uppercase tracking-wide text-muted">Questions {tpl?.manual ? "· teacher-graded" : ""}</p>
+              {canRandomize && <button onClick={randomizeOrder} className={dashBtn} title="Shuffle which position the correct answer lands in for every question">
+                <Shuffle className="mr-1 inline h-3 w-3" /> Randomize order
+              </button>}
+            </div>
             {questions.map((q, i) => (
               <div key={i} className={`flex gap-3 rounded-xl border bg-canvas p-3 ${q.isExample ? "border-amber-400" : "border-line"}`}>
                 <div className={`min-w-[22px] pt-1.5 font-mono text-sm font-bold ${q.isExample ? "text-amber-500" : "text-brand"}`}>{q.isExample ? "e.g" : i + 1}</div>
