@@ -180,8 +180,10 @@ async def list_tests(_: User = Depends(require_admin), db: AsyncSession = Depend
             if not (task.metadata_json or {}).get("superseded")
         ),
         "questions_count": sum(
-            len(task.questions) for section in variant.sections for task in section.tasks
+            1 for section in variant.sections for task in section.tasks
             if not (task.metadata_json or {}).get("superseded")
+            for question in task.questions
+            if not (question.rich_content or {}).get("superseded")
         ),
     } for variant, level, exam_type in rows]
 
@@ -230,7 +232,10 @@ async def admin_test_detail(
                     "is_example": question.is_example, "case_sensitive": question.case_sensitive,
                     "normalize_spaces": question.normalize_spaces,
                     "order_index": question.order_index,
-                } for question in task.questions],
+                } for question in task.questions
+                  # Frozen copies of already-answered questions stay in the DB
+                  # for scoring history, but the admin only edits the live set.
+                  if not (question.rich_content or {}).get("superseded")],
             })
         sections.append({"id": section.id, "title": section.title, "order_index": section.order_index, "tasks": tasks})
     return {
@@ -304,8 +309,12 @@ async def update_task(
         raise HTTPException(404, "Media asset not found.")
 
     # When the exercise builder edits the whole exercise it resends every
-    # question — validate up front, then swap the question set atomically. This
-    # is blocked once students have answered (their answers would be orphaned).
+    # question — validate up front, then swap the question set atomically.
+    # Admins can always edit: if students have already answered, the OLD
+    # questions are frozen (superseded) rather than deleted/mutated, so their
+    # results keep scoring exactly as they did. The edited set becomes the
+    # active version everyone gets from their next attempt onward.
+    has_answers = False
     if replace_questions:
         problems = validate_task_payload(
             template_key, values["type"], [q.model_dump() for q in payload.questions],
@@ -313,13 +322,11 @@ async def update_task(
         )
         if problems:
             raise HTTPException(422, {"message": "Exercise cannot be saved.", "errors": problems})
-        has_answers = await db.scalar(
+        has_answers = bool(await db.scalar(
             select(func.count()).select_from(AttemptAnswer)
             .join(Question, Question.id == AttemptAnswer.question_id)
             .where(Question.task_id == task_id)
-        )
-        if has_answers:
-            raise HTTPException(409, "This exercise has student answers and can no longer be edited.")
+        ))
 
     for key, value in values.items():
         setattr(task, key, value)
@@ -330,9 +337,16 @@ async def update_task(
 
     new_questions: list[Question] = []
     if replace_questions:
-        for existing in list(task.questions):
-            await db.delete(existing)
-        await db.flush()
+        if has_answers:
+            # Freeze, don't touch: an AttemptAnswer FK points at these rows,
+            # and their prompt/correct_answer must stay exactly what the
+            # student saw and was scored against.
+            for existing in task.questions:
+                existing.rich_content = {**(existing.rich_content or {}), "superseded": True}
+        else:
+            for existing in list(task.questions):
+                await db.delete(existing)
+            await db.flush()
         new_questions = build_task_questions(task.id, [q.model_dump() for q in payload.questions])
         for question in new_questions:
             db.add(question)
@@ -342,7 +356,11 @@ async def update_task(
 
     await write_audit(
         db, admin.id, "task.update", "Task", str(task.id),
-        {"title": task.title, "type": task.type, "questions": len(new_questions) if replace_questions else None},
+        {
+            "title": task.title, "type": task.type,
+            "questions": len(new_questions) if replace_questions else None,
+            "superseded_previous_version": has_answers,
+        },
         request.client.host if request.client else None,
     )
     await db.commit()
@@ -784,11 +802,12 @@ async def create_question(
     task = await db.get(Task, task_id, options=[selectinload(Task.questions)])
     if not task:
         raise HTTPException(404, "Task not found.")
-    last_order = await db.scalar(select(func.max(Question.order_index)).where(Question.task_id == task_id))
-    question = Question(task_id=task_id, order_index=(last_order or 0) + 1, **payload.model_dump())
+    active = [q for q in task.questions if not (q.rich_content or {}).get("superseded")]
+    last_order = max((q.order_index for q in active), default=0)
+    question = Question(task_id=task_id, order_index=last_order + 1, **payload.model_dump())
     db.add(question)
     await db.flush()
-    renumber_questions([*task.questions, question])
+    renumber_questions([*active, question])
     await write_audit(
         db, admin.id, "question.create", "Question", str(question.id),
         {"task_id": str(task_id), "prompt": question.prompt},
@@ -809,6 +828,11 @@ async def update_question(
     question = await db.get(Question, question_id)
     if not question:
         raise HTTPException(404, "Question not found.")
+    has_answers = await db.scalar(
+        select(func.count()).select_from(AttemptAnswer).where(AttemptAnswer.question_id == question_id)
+    )
+    if has_answers:
+        raise HTTPException(409, "This question has student answers; edit the whole exercise instead so the change is versioned safely.")
     for key, value in payload.model_dump().items():
         setattr(question, key, value)
     await write_audit(db, admin.id, "question.update", "Question", str(question.id), payload.model_dump(mode="json"), request.client.host if request.client else None)

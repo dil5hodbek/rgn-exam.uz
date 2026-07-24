@@ -317,10 +317,14 @@ async def submit(attempt_id: uuid.UUID, user: User = Depends(current_user), db: 
     pending = False
     for section in variant.sections:
         for task in section.tasks:
-            if (task.metadata_json or {}).get("superseded"):
-                continue
+            task_superseded = (task.metadata_json or {}).get("superseded")
             for question in task.questions:
-                if (question.rich_content or {}).get("superseded"):
+                # An exercise/question edited out from under an in-progress
+                # attempt is skipped for everyone EXCEPT a student who already
+                # has an answer recorded against it — their in-flight work
+                # still gets fairly scored on the frozen pre-edit question.
+                question_superseded = (question.rich_content or {}).get("superseded")
+                if (task_superseded or question_superseded) and question.id not in answer_map:
                     continue
                 if not question.is_example:
                     maximum += float(question.points)
@@ -475,10 +479,15 @@ async def attempt_result(
     for section in variant.sections:
         earned = maximum = 0.0
         for task in section.tasks:
-            if (task.metadata_json or {}).get("superseded"):
-                continue
             for question in task.questions:
-                if (question.rich_content or {}).get("superseded"):
+                # This endpoint only ever serves a completed attempt (checked
+                # above), and submit() already wrote exactly one AttemptAnswer
+                # per question that was active at submission time — including
+                # unanswered ones. So membership here IS the historical
+                # snapshot: it naturally excludes anything the admin added
+                # afterward, and naturally keeps whatever the student actually
+                # saw, even if that exercise/question is superseded by now.
+                if question.id not in answer_map:
                     continue
                 if question.is_example:
                     continue
