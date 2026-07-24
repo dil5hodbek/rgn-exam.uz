@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Copy, FileText, GripVertical, Loader2, Pencil, Plus, Save, Send, Trash2, Undo2 } from "lucide-react";
+import { Copy, FileText, GripVertical, Loader2, Pencil, Plus, Save, Send, Settings, Trash2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ExerciseBuilder } from "@/components/admin/exercise-builder";
@@ -127,6 +127,9 @@ export function TestBuilder({ variantId }: { variantId: string }) {
   const [busy, setBusy] = useState(false);
   // The adaptive builder, open either to add (no task) or edit (task set) an exercise.
   const [builder, setBuilder] = useState<{ task?: Task } | null>(null);
+  // Test-level settings (instructions, timing, pass mark, retake/review) live in
+  // a collapsible panel — most edits are exercise-level, so this stays out of the way.
+  const [showSettings, setShowSettings] = useState(false);
   // Exercise currently being dragged to reorder (null = none).
   const [dragId, setDragId] = useState<string | null>(null);
   // Whole-document AI import state.
@@ -296,10 +299,41 @@ export function TestBuilder({ variantId }: { variantId: string }) {
         <Input className="mt-1 h-10 max-w-lg border-0 px-0 text-xl font-extrabold" value={test.title} onChange={(event) => setTest({ ...test, title: event.target.value })} />
       </div>
       <div className="flex gap-2">
+        <Button variant="secondary" onClick={() => setShowSettings((v) => !v)}><Settings className="h-4 w-4" /> Test Settings</Button>
         <Button variant="secondary" onClick={togglePublished}>{test.status === "PUBLISHED" ? <Undo2 className="h-4 w-4" /> : <Send className="h-4 w-4" />}{test.status === "PUBLISHED" ? "Move to Draft" : "Publish"}</Button>
         <Button onClick={saveTest} disabled={busy}><Save className="h-4 w-4" /> Save Test</Button>
       </div>
     </div>
+    {showSettings && <div className="mx-4 mt-4 space-y-4 rounded-2xl border border-line bg-canvas p-4 sm:mx-8">
+      <label className="block text-xs font-bold text-muted">Test instructions (shown to the student before they start)
+        <textarea
+          value={test.instructions}
+          onChange={(event) => setTest({ ...test, instructions: event.target.value })}
+          className="mt-1 min-h-[80px] w-full rounded-xl border border-line bg-surface p-3 text-sm text-ink outline-none focus:border-brand"
+          placeholder="Read each section carefully before answering."
+        />
+      </label>
+      <div className="flex flex-wrap gap-4">
+        <label className="text-xs font-bold text-muted">Time limit (minutes)
+          <input type="number" min={1} value={test.time_limit_minutes}
+            onChange={(event) => setTest({ ...test, time_limit_minutes: +event.target.value })}
+            className="mt-1 block w-28 rounded-xl border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand" />
+        </label>
+        <label className="text-xs font-bold text-muted">Passing percentage
+          <input type="number" min={0} max={100} value={test.passing_percentage}
+            onChange={(event) => setTest({ ...test, passing_percentage: +event.target.value })}
+            className="mt-1 block w-28 rounded-xl border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand" />
+        </label>
+      </div>
+      <div className="flex flex-wrap gap-4">
+        <label className="flex items-center gap-1.5 text-xs font-bold text-muted">
+          <input type="checkbox" checked={test.retake_allowed} onChange={(event) => setTest({ ...test, retake_allowed: event.target.checked })} /> Retake allowed
+        </label>
+        <label className="flex items-center gap-1.5 text-xs font-bold text-muted">
+          <input type="checkbox" checked={test.review_allowed} onChange={(event) => setTest({ ...test, review_allowed: event.target.checked })} /> Review allowed after submit
+        </label>
+      </div>
+    </div>}
     {(message || error) && <p className={`mx-4 mt-4 rounded-xl p-3 text-sm font-semibold sm:mx-8 ${error ? "bg-red-500/10 text-red-600" : "bg-emerald-500/10 text-emerald-700"}`}>{error || message}</p>}
     {importWarnings.length > 0 && <div className="mx-4 mt-3 rounded-xl border border-amber-300 bg-amber-500/10 p-3 sm:mx-8">
       <div className="flex items-center justify-between">
