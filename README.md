@@ -14,8 +14,10 @@ aiogram Telegram bot.
 5. API documentation is available at `http://localhost:18000/docs`.
 
 On Windows, you can instead run
-`launcher\Windows Run\Run ExamFlow.bat`. It prepares `.env`, starts Docker
-Desktop when needed, builds every service, and opens the web application.
+`launcher\Windows Run\Clean Rebuild.bat`. It prepares `.env`, starts Docker
+Desktop when needed, rebuilds every service from a clean cache, and opens the
+web application. Use `Stop ExamFlow.bat` to stop it; the database is preserved
+across both.
 
 The first startup applies the database migration and seeds infrastructure
 rows. Super admin credentials come from `ADMIN_PHONE` and `ADMIN_PASSWORD` in

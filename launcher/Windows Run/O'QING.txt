@@ -3,22 +3,21 @@ ExamFlow - Windows launcher
 
 Bu papkadagi fayllar (ustiga ikki marta bosib ishga tushiring):
 
-1. Run ExamFlow.bat
-   - Docker ni tekshiradi (kerak bo'lsa o'zi ishga tushiradi)
-   - Barcha servislarni quradi va ishga tushiradi
-   - Brauzerda http://localhost:13000 ni ochadi
+1. Clean Rebuild.bat
+   - Docker ni tekshiradi (kerak bo'lsa o'zi ishga tushiradi).
+   - Eski konteyner va Docker image keshini to'liq tozalaydi.
+   - Kodni boshidan (keshsiz) qayta quradi va ishga tushiradi.
+   - Ma'lumotlar bazasi (testlar, javoblar) SAQLANIB QOLADI.
+   - Faqat mahalliy (localhost:13000) ishlaydi - internetga chiqmaydi.
+   - Tayyor bo'lgach brauzerda avtomatik ochiladi.
    Birinchi marta bir necha daqiqa ketishi mumkin, keyingi safar tez.
 
 2. Stop ExamFlow.bat
    - Barcha servislarni to'xtatadi.
    - Ma'lumotlar bazasi (testlar, javoblar) saqlanib qoladi.
-
-3. Share Online.bat
-   - Ilovani internetga ochadi (Cloudflare tunnel) va tasodifiy havola beradi.
-   - Havolani istalgan odamga yuborib, telefon/kompyuterdan kirish mumkin.
-   - MUHIM: bu oyna ochiq turishi kerak; yopsangiz havola o'chadi.
-   - cloudflared o'rnatilgan bo'lishi kerak.
+   - Qayta ishga tushirish: "Clean Rebuild.bat".
 
 Eslatma:
 - Kirish uchun admin telefon/parol .env faylida.
 - Ilova sizning kompyuteringizda ishlaydi; kompyuter o'chsa ilova ham to'xtaydi.
+- Internetga ulashish funksiyasi olib tashlangan - ilova faqat mahalliy ishlaydi.

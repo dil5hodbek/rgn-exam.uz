@@ -26,7 +26,7 @@ if errorlevel 1 (
 echo.
 echo [OK] Barcha ExamFlow servislari to'xtatildi.
 echo      Ma'lumotlar bazasi (testlar, javoblar) saqlanib qoldi.
-echo      Qayta ishga tushirish: "Run ExamFlow.bat".
+echo      Qayta ishga tushirish: "Clean Rebuild.bat".
 
 :done
 :end
