@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   ArrowLeft, BookOpen, Bookmark, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock3, GripVertical,
-  Headphones, Lock, LogOut, PenLine, RotateCcw, Send, X, XCircle,
+  Headphones, Lock, LogOut, PenLine, Pin, PinOff, RotateCcw, Send, X, XCircle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { AudioPlayer } from "@/components/exam/audio-player";
@@ -36,6 +36,7 @@ type ApiTask = {
     min_words?: number | null;
     max_words?: number | null;
     manual_review?: boolean;
+    word_box?: string[];
   };
 };
 type ApiSection = { id: string; title: string; tasks: ApiTask[] };
@@ -173,6 +174,9 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
   const sidebarPinned = useRef(false);
   const [sidebarThumb, setSidebarThumb] = useState({ top: 0, height: 100 });
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Pin toggle: on by default — keeps the exercises panel open and stops it
+  // from auto-collapsing on load or on mouse-out.
+  const [sidebarPinnedOn, setSidebarPinnedOn] = useState(true);
 
   // Draggable divider between the reading passage and the questions. The user
   // grabs it and drags left/right to give either side more room. Default 56%.
@@ -219,11 +223,13 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
     if (sidebarTimer.current) { clearTimeout(sidebarTimer.current); sidebarTimer.current = null; }
   }
 
-  // Open the exercises panel, then auto-collapse after `durationMs` (used on load).
+  // Open the exercises panel, then auto-collapse after `durationMs` (used on load) —
+  // unless the persistent pin is on, in which case it just stays open.
   function openSidebarFor(durationMs: number) {
     sidebarPinned.current = false;
     setSidebarOpen(true);
     clearSidebarTimer();
+    if (sidebarPinnedOn) return;
     sidebarTimer.current = setTimeout(() => setSidebarOpen(false), durationMs);
   }
 
@@ -234,14 +240,16 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
     if (!sidebarPinned.current) clearSidebarTimer();
   }
 
-  // Hover out: collapse shortly after leaving, unless it was pinned open via the handle.
+  // Hover out: collapse shortly after leaving, unless pinned (via the handle, or the
+  // persistent pin toggle).
   function releaseSidebar() {
-    if (sidebarPinned.current) return;
+    if (sidebarPinnedOn || sidebarPinned.current) return;
     clearSidebarTimer();
     sidebarTimer.current = setTimeout(() => setSidebarOpen(false), 700);
   }
 
-  // The round handle: `<` collapses the whole panel now; `>` opens it, pinned for 15s.
+  // The round handle: `<` collapses the whole panel now; `>` opens it, pinned for 15s
+  // (or indefinitely, if the persistent pin toggle is on).
   function toggleSidebar() {
     clearSidebarTimer();
     if (sidebarOpen) {
@@ -251,8 +259,23 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
       sidebarPinned.current = true;
       setSidebarOpen(true);
       requestAnimationFrame(updateSidebarThumb);
-      sidebarTimer.current = setTimeout(() => { sidebarPinned.current = false; setSidebarOpen(false); }, 15000);
+      if (!sidebarPinnedOn) {
+        sidebarTimer.current = setTimeout(() => { sidebarPinned.current = false; setSidebarOpen(false); }, 15000);
+      }
     }
+  }
+
+  // The pin toggle in the panel header: turning it on keeps the panel open for good;
+  // turning it off restores the normal hover/auto-collapse behaviour.
+  function toggleSidebarPin() {
+    setSidebarPinnedOn((current) => {
+      const next = !current;
+      if (next) {
+        clearSidebarTimer();
+        setSidebarOpen(true);
+      }
+      return next;
+    });
   }
 
   const exercises = useMemo<Exercise[]>(
@@ -498,8 +521,6 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
   }
 
   function setAnswer(questionId: string, answer: AnswerValue) {
-    const owner = exercises.find((item) => item.questions.some((question) => question.id === questionId));
-    if (owner && checkedTaskIds.includes(owner.id)) return;
     setAnswers((current) => ({ ...current, [questionId]: answer }));
     setExerciseResults((current) => {
       if (!(questionId in current)) return current;
@@ -507,24 +528,6 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
       delete updated[questionId];
       return updated;
     });
-  }
-
-  // Unlock a finished exercise so the student can change their answers —
-  // keeps everything they entered, only removes the "checked" lock.
-  async function unlockExercise(exercise: Exercise) {
-    try {
-      await api(`/attempts/${attemptId}/tasks/${exercise.id}/check`, { method: "DELETE" });
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to unlock this exercise.");
-      return;
-    }
-    setCheckedTaskIds((current) => current.filter((id) => id !== exercise.id));
-    setExerciseResults((current) => {
-      const updated = { ...current };
-      exercise.questions.forEach((question) => delete updated[question.id]);
-      return updated;
-    });
-    setError("");
   }
 
   async function clearExercise(exercise: Exercise) {
@@ -833,10 +836,14 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
             {count} words{minimum || maximum ? ` · guide ${minimum ?? 0}–${maximum ?? "∞"}` : ""}{count > 0 && inRange ? " ✓" : ""}
           </span>
         </div>
-        {/* The writing sheet fills the rest of the screen — a full page, not a small box. */}
+        {/* Short answers (a sentence or two) get a compact box; essays without a
+            tight word cap still get the full-page writing sheet. */}
         <textarea
           aria-label={`Answer ${questionNumbers.get(question.id)}`}
-          className="min-h-[52vh] w-full resize-y rounded-2xl border border-line bg-canvas p-5 text-[15px] leading-8 outline-none transition focus:border-brand focus:ring-4 focus:ring-indigo-500/10"
+          className={cn(
+            "w-full resize-y rounded-2xl border border-line bg-canvas p-5 text-[15px] leading-8 outline-none transition focus:border-brand focus:ring-4 focus:ring-indigo-500/10",
+            maximum && maximum <= 40 ? "min-h-[120px]" : "min-h-[52vh]",
+          )}
           value={content}
           onChange={(event) => setAnswer(question.id, event.target.value)}
           placeholder="Write your answer…"
@@ -1062,9 +1069,12 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
   const exercise = exercises[Math.min(currentExercise, exercises.length - 1)];
   // A reading text may be typed into the dedicated (rich-text) passage field OR
   // into the instructions field. Either way, treat a long block as the passage
-  // so the screen splits (text ↔ questions) instead of hiding it in a header.
+  // so the screen splits (text ↔ questions) instead of hiding it in a header —
+  // but not for listening exercises, where a long instruction is just a long
+  // instruction, not a "Reading passage" (the audio player covers the content).
+  const isListeningTask = !!exercise.media?.mime_type?.startsWith("audio/");
   const passageHtml = exercise.passage_html?.trim() || "";
-  const passagePlain = !passageHtml && exercise.instructions.trim().length > 160 ? exercise.instructions.trim() : "";
+  const passagePlain = !passageHtml && !isListeningTask && exercise.instructions.trim().length > 160 ? exercise.instructions.trim() : "";
   const passageText = passageHtml || passagePlain;
   // The same split panel serves two jobs: a reading text for reading
   // exercises, and the task brief for writing/speaking exercises — the label
@@ -1156,7 +1166,21 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
           onScroll={updateSidebarThumb}
           className="no-scrollbar h-full w-60 overflow-y-auto rounded-2xl border border-line bg-canvas p-3"
         >
-          <p className="px-2 text-xs font-bold uppercase tracking-wider text-muted">Exercises</p>
+          <div className="flex items-center justify-between px-2">
+            <p className="text-xs font-bold uppercase tracking-wider text-muted">Exercises</p>
+            <button
+              type="button"
+              onClick={toggleSidebarPin}
+              title={sidebarPinnedOn ? "Unpin (auto-collapse on)" : "Pin panel open"}
+              aria-label={sidebarPinnedOn ? "Unpin exercises panel" : "Pin exercises panel open"}
+              className={cn(
+                "grid h-6 w-6 shrink-0 place-items-center rounded-md transition",
+                sidebarPinnedOn ? "bg-brand/15 text-brand" : "text-muted hover:bg-indigo-500/10 hover:text-brand",
+              )}
+            >
+              {sidebarPinnedOn ? <Pin className="h-3.5 w-3.5" /> : <PinOff className="h-3.5 w-3.5" />}
+            </button>
+          </div>
           {test.sections.map((section) => {
             const sectionExercises = exercises.map((item, index) => ({ item, index })).filter(({ item }) => item.section.id === section.id);
             const sectionQuestions = scorableQuestions(sectionExercises.flatMap(({ item }) => item.questions));
@@ -1265,9 +1289,14 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
               <p className="text-xs font-extrabold uppercase tracking-wider text-brand">Exercise {currentExercise + 1} <span className="font-bold text-muted">of {exercises.length}</span></p>
               {headerInstructions && <h2 className="mt-1.5 text-lg font-extrabold leading-8 text-ink sm:text-[21px] sm:leading-9">{headerInstructions}</h2>}
             </div>
-            {checkedTaskIds.includes(exercise.id) && <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-500/10 px-4 py-3">
-              <p className="flex items-center gap-2 text-sm font-bold text-amber-700"><Lock className="h-4 w-4 shrink-0" /> This exercise is finished — answers are locked.</p>
-              <button type="button" onClick={() => unlockExercise(exercise)} className="rounded-lg border border-amber-400 px-3 py-1.5 text-xs font-bold text-amber-700 transition hover:bg-amber-500/15">Unlock & edit</button>
+            {!!exercise.interaction?.word_box?.length && <div className="mb-4 rounded-2xl border border-line bg-surface p-4">
+              <p className="mb-2.5 text-xs font-extrabold uppercase tracking-wider text-muted">Word box</p>
+              <div className="flex flex-wrap gap-2">
+                {exercise.interaction.word_box.map((word, index) => <span
+                  key={`${word}-${index}`}
+                  className="rounded-lg border border-line bg-canvas px-3 py-1.5 text-sm font-bold text-ink"
+                >{word}</span>)}
+              </div>
             </div>}
             {exercise.interaction?.kind === "cloze_passage" ? renderClozePassage(exercise)
               : isGapMatch ? renderGapMatch(exercise)

@@ -24,6 +24,7 @@ type Task = {
     template?: string;
     words?: string[];
     min_words?: number; max_words?: number; prep_seconds?: number;
+    word_box?: string[];
   };
   media?: { id?: string; file_name: string; url: string; mime_type?: string }; questions: Question[];
 };
@@ -61,6 +62,7 @@ function ExercisePreview({ task }: { task: Task }) {
           : <audio controls className="h-10 w-full" src={mediaUrl(task.media.url)} />}
     </div>}
     {task.passage_html && <div className="passage-content rounded-2xl border border-line bg-surface p-4 text-sm leading-7 text-ink" dangerouslySetInnerHTML={{ __html: sanitizeHtml(task.passage_html) }} />}
+    {!!task.interaction?.word_box?.length && <div className="rounded-xl border border-line bg-surface p-3 text-sm text-ink"><b className="text-brand">Word box:</b> {task.interaction.word_box.join("  ·  ")}</div>}
 
     {kind === "gap_match" ? (() => {
       const words = task.interaction?.words ?? [];
