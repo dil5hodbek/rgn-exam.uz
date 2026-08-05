@@ -1,16 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+
+# Env & secrets
 .env
 .agents/
 .claude/
-__pycache__/
-.pytest_cache/
-.mypy_cache/
-*.py[cod]
-.next/
-node_modules/
+
+# Database & uploads
 uploads/
 resources/
-
 backups/
+*.db
+*.sqlite
 
+# Node / Next.js
+node_modules/
+.next/
+out/
+tsconfig.tsbuildinfo
+
+# OS & temp
+.DS_Store
+Thumbs.db
 ~$*
 *.tmp
+*.log
+
+# Media & source test content
+Mid and End course yangi  testlar Road Map/
