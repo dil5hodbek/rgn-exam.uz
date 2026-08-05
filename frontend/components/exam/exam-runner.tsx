@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   ArrowLeft, BookOpen, Bookmark, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock3, GripVertical,
   Headphones, Lock, LogOut, PenLine, Pin, PinOff, RotateCcw, Send, X, XCircle,
@@ -61,6 +61,45 @@ function hasAnswer(value: AnswerValue | undefined) {
 
 function textAnswer(value: AnswerValue | undefined) {
   return typeof value === "string" ? value : "";
+}
+
+// Writing/task instructions are stored as plain text with "- " bullet lines
+// (e.g. "Write about:\n - how often you do it,\n - who you do it with").
+// Render those as an actual bulleted list instead of one run-on paragraph so
+// students can see each required point at a glance.
+function renderInstructionBlocks(text: string, headingFirstLine: boolean) {
+  const lines = text.split(/\n/);
+  const blocks: ReactNode[] = [];
+  let list: string[] = [];
+  let firstParagraph = true;
+  const flushList = () => {
+    if (!list.length) return;
+    blocks.push(
+      <ul key={`list-${blocks.length}`} className="my-2 list-disc space-y-1.5 pl-5 marker:text-brand">
+        {list.map((item, index) => <li key={index} className="leading-relaxed">{item}</li>)}
+      </ul>,
+    );
+    list = [];
+  };
+  lines.forEach((rawLine, index) => {
+    const trimmed = rawLine.trim();
+    const bullet = trimmed.match(/^[-•*]\s+(.*)$/);
+    if (bullet) {
+      list.push(bullet[1]);
+      return;
+    }
+    flushList();
+    if (!trimmed) return;
+    const isHeading = headingFirstLine && firstParagraph;
+    firstParagraph = false;
+    blocks.push(
+      <p key={`p-${index}`} className={isHeading ? "text-lg font-extrabold leading-8 text-ink sm:text-[21px] sm:leading-9" : "leading-relaxed"}>
+        {trimmed}
+      </p>,
+    );
+  });
+  flushList();
+  return blocks;
 }
 
 function answerChoices(exercise: Exercise, question: ApiQuestion) {
@@ -670,6 +709,48 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
       }
       return <p className="whitespace-pre-wrap text-base font-bold leading-7 text-ink sm:text-lg">{question.prompt}</p>;
     }
+    // Gap-fill sentence: put a small input right inside each blank instead of
+    // one detached box below (multi-blank sentences need one box per blank,
+    // not one box for the whole sentence).
+    if (!alternative && !answerChoices(exercise, question).length && /_{2,}/.test(question.prompt)) {
+      const segments = question.prompt.split(/_{2,}/);
+      const blankValues = textAnswer(answers[question.id]).split(",").map((part) => part.trim());
+      const setBlank = (index: number, value: string) => {
+        const next = [...blankValues];
+        while (next.length < segments.length - 1) next.push("");
+        next[index] = value;
+        setAnswer(question.id, next.join(", "));
+      };
+      const children: ReactNode[] = [];
+      segments.forEach((segment, index) => {
+        if (index >= segments.length - 1) {
+          children.push(<span key={`text-${index}`}>{segment}</span>);
+          return;
+        }
+        // A single letter stuck to the blank with no space before it (e.g.
+        // "a s___ ") is a starting-letter hint, not ordinary sentence text —
+        // show it as the box's placeholder (disappears the instant the
+        // student types, like any normal placeholder) instead of loose in
+        // the sentence.
+        const hintMatch = segment.match(/(?:^|\s)([A-Za-z])$/);
+        const hintLetter = hintMatch?.[1] ?? "";
+        const displaySegment = hintLetter ? segment.slice(0, segment.length - hintLetter.length) : segment;
+        children.push(<span key={`text-${index}`}>{displaySegment}</span>);
+        const fullValue = blankValues[index] ?? "";
+        children.push(
+          <input
+            key={`blank-${index}`}
+            aria-label={`Answer ${questionNumbers.get(question.id)} — blank ${index + 1}`}
+            value={fullValue}
+            placeholder={hintLetter}
+            onChange={(event) => setBlank(index, event.target.value)}
+            size={Math.max(3, fullValue.length || hintLetter.length || 5)}
+            className="mx-1 inline-block min-w-8 max-w-full rounded-lg border-2 border-line bg-canvas px-2 py-1 text-center align-baseline font-bold text-ink outline-none transition placeholder:font-bold placeholder:text-muted focus:border-brand focus:ring-4 focus:ring-indigo-500/10"
+          />,
+        );
+      });
+      return <p className="whitespace-pre-wrap text-base font-bold leading-9 text-ink sm:text-lg">{children}</p>;
+    }
     if (!alternative) {
       return <p className="whitespace-pre-wrap text-base font-bold leading-7 text-ink sm:text-lg">{question.prompt}</p>;
     }
@@ -859,6 +940,9 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
         placeholder="Rewrite the correct sentence…"
       /></div>;
     }
+    // Gap-fill blanks are now typed inline inside the sentence (see renderPrompt) —
+    // no separate box needed below.
+    if (/_{2,}/.test(question.prompt)) return null;
     return <div className="mt-5"><Input
       aria-label={`Answer ${questionNumbers.get(question.id)}`}
       value={textAnswer(answer)}
@@ -1273,7 +1357,7 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
           </div>
           {passageHtml
             ? <div className="passage-content text-ink" style={{ fontSize: `${passageZoom}px`, lineHeight: 1.85 }} dangerouslySetInnerHTML={{ __html: sanitizeHtml(passageHtml) }} />
-            : <div className="whitespace-pre-wrap text-ink" style={{ fontSize: `${passageZoom}px`, lineHeight: 1.85 }}>{passagePlain}</div>}
+            : <div className="text-ink" style={{ fontSize: `${passageZoom}px`, lineHeight: 1.85 }}>{renderInstructionBlocks(passagePlain, false)}</div>}
         </aside>
         <div onPointerDown={startSplitDrag} title="Drag to resize" className="group hidden shrink-0 cursor-col-resize touch-none items-center justify-center px-2 lg:flex">
           <div className="h-16 w-1.5 rounded-full bg-line transition group-hover:bg-brand" />
@@ -1287,7 +1371,11 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
                 in a readable size (the sticky header only keeps the test title). */}
             <div className="pb-2">
               <p className="text-xs font-extrabold uppercase tracking-wider text-brand">Exercise {currentExercise + 1} <span className="font-bold text-muted">of {exercises.length}</span></p>
-              {headerInstructions && <h2 className="mt-1.5 text-lg font-extrabold leading-8 text-ink sm:text-[21px] sm:leading-9">{headerInstructions}</h2>}
+              {headerInstructions && (
+                /^[^\n]*\n\s*[-•*]\s+/.test(headerInstructions)
+                  ? <div className="mt-1.5">{renderInstructionBlocks(headerInstructions, true)}</div>
+                  : <h2 className="mt-1.5 text-lg font-extrabold leading-8 text-ink sm:text-[21px] sm:leading-9">{headerInstructions}</h2>
+              )}
             </div>
             {!!exercise.interaction?.word_box?.length && <div className="mb-4 rounded-2xl border border-line bg-surface p-4">
               <p className="mb-2.5 text-xs font-extrabold uppercase tracking-wider text-muted">Word box</p>

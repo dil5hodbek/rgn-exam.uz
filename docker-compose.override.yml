@@ -1,0 +1,11 @@
+services:
+  postgres:
+    restart: unless-stopped
+  redis:
+    restart: unless-stopped
+  backend:
+    restart: unless-stopped
+  bot:
+    restart: unless-stopped
+  frontend:
+    restart: unless-stopped
