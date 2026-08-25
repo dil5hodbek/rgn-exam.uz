@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, Clock3, Play } from "lucide-react";
+import { ArrowLeft, Clock3, Play, Shuffle } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 
@@ -18,6 +19,8 @@ type Variant = {
 export default function VariantsPage({ params }: { params: { level: string; examType: string } }) {
   const [variants, setVariants] = useState<Variant[]>([]);
   const [error, setError] = useState("");
+  const [startingRandom, setStartingRandom] = useState(false);
+  const router = useRouter();
   const pretty = (value: string) => value.split("-").map((part) => part[0].toUpperCase() + part.slice(1)).join(" ");
 
   useEffect(() => {
@@ -26,9 +29,28 @@ export default function VariantsPage({ params }: { params: { level: string; exam
       .catch((reason) => setError(reason instanceof Error ? reason.message : "Unable to load tests."));
   }, [params.level, params.examType]);
 
+  async function startRandomTest() {
+    setStartingRandom(true);
+    try {
+      const attempt = await api<{ test_variant_id: string }>(
+        `/levels/${params.level}/exam-types/${params.examType}/random-attempt`, { method: "POST" },
+      );
+      router.push(`/dashboard/${params.level}/${params.examType}/${attempt.test_variant_id}/attempt`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to start a test.");
+      setStartingRandom(false);
+    }
+  }
+
   return <div className="mx-auto max-w-6xl px-4 py-8 sm:px-8">
     <Link href={`/dashboard/${params.level}`} className="inline-flex items-center gap-2 text-sm font-bold text-muted hover:text-ink"><ArrowLeft className="h-4 w-4" /> Back to {pretty(params.level)}</Link>
     <div className="mt-7"><p className="text-xs font-bold uppercase tracking-[.18em] text-brand">{pretty(params.level)}</p><h1 className="mt-2 text-4xl font-extrabold tracking-tight text-ink">{pretty(params.examType)}</h1><p className="mt-3 text-muted">Choose a real test from the imported Road Map package. Answers save automatically.</p></div>
+    {variants.length > 1 && <div className="mt-7 rounded-3xl border border-line bg-canvas p-6 shadow-sm">
+      <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+        <div><h2 className="text-lg font-extrabold text-ink">Test</h2><p className="mt-1 text-sm text-muted">Get a random variant, with exercises shuffled just for you.</p></div>
+        <Button onClick={startRandomTest} disabled={startingRandom} className="w-full sm:w-auto"><Shuffle className="h-4 w-4" /> {startingRandom ? "Starting…" : "Start Test"}</Button>
+      </div>
+    </div>}
     {error && <p className="mt-6 rounded-xl bg-red-500/10 p-4 text-sm font-semibold text-red-600">{error}</p>}
     {!variants.length && !error && <div className="mt-9 grid gap-4 sm:grid-cols-2">{[1, 2].map((item) => <div key={item} className="h-52 animate-pulse rounded-3xl bg-canvas" />)}</div>}
     <div className="mt-9 grid gap-4 sm:grid-cols-2">{variants.map((variant) =>

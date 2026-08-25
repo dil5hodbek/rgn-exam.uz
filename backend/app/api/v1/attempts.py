@@ -1,4 +1,5 @@
 import asyncio
+import random
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -54,21 +55,33 @@ async def attempt_state(db: AsyncSession, attempt: Attempt) -> dict:
             "flagged": row.flagged,
         } for row in rows],
         "checked_task_ids": list(checked_task_ids),
+        # Exercise order shuffled once at attempt creation (see
+        # shuffled_task_order) — the client reorders its rendered exercise list
+        # to match instead of the raw Task.order_index from GET /tests/{id}.
+        "task_order": attempt.task_order,
     }
 
 
-@router.post("/tests/{test_id}/attempts")
-async def start_attempt(test_id: uuid.UUID, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
-    variant = await db.scalar(
-        select(TestVariant).where(
-            TestVariant.id == test_id,
-            TestVariant.status == ContentStatus.PUBLISHED,
-        )
-    )
-    if not variant:
-        raise HTTPException(404, "Published test not found.")
+async def shuffled_task_order(db: AsyncSession, test_id: uuid.UUID) -> list[str]:
+    """Shuffle exercises (Tasks) within each Section independently, so the
+    section grouping students see stays intact but the order of exercises
+    inside it is randomized once per attempt. Question order within a Task
+    is never touched."""
+    sections = (await db.execute(
+        select(Section).where(Section.test_variant_id == test_id).order_by(Section.order_index)
+        .options(selectinload(Section.tasks))
+    )).scalars().all()
+    order: list[str] = []
+    for section in sections:
+        task_ids = [str(task.id) for task in section.tasks]
+        random.shuffle(task_ids)
+        order.extend(task_ids)
+    return order
+
+
+async def create_attempt(db: AsyncSession, user_id: uuid.UUID, variant: TestVariant) -> Attempt:
     existing = await db.scalar(select(Attempt).where(
-        Attempt.user_id == user.id, Attempt.test_variant_id == test_id,
+        Attempt.user_id == user_id, Attempt.test_variant_id == variant.id,
         Attempt.status == AttemptStatus.IN_PROGRESS,
     ))
     if existing:
@@ -83,19 +96,54 @@ async def start_attempt(test_id: uuid.UUID, user: User = Depends(current_user), 
                 await redis.delete(f"attempt-paused:{existing.id}")
         finally:
             await redis.aclose()
-        return await attempt_state(db, existing)
+        return existing
     completed = await db.scalar(select(Attempt.id).where(
-        Attempt.user_id == user.id,
-        Attempt.test_variant_id == test_id,
+        Attempt.user_id == user_id,
+        Attempt.test_variant_id == variant.id,
         Attempt.status != AttemptStatus.IN_PROGRESS,
     ).limit(1))
     if completed and not variant.retake_allowed:
         raise HTTPException(409, "Retaking this test is not allowed.")
-    attempt = Attempt(user_id=user.id, test_variant_id=test_id)
+    task_order = await shuffled_task_order(db, variant.id)
+    attempt = Attempt(user_id=user_id, test_variant_id=variant.id, task_order=task_order)
     db.add(attempt)
     await db.commit()
     await db.refresh(attempt)
+    return attempt
+
+
+@router.post("/tests/{test_id}/attempts")
+async def start_attempt(test_id: uuid.UUID, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    variant = await db.scalar(
+        select(TestVariant).where(
+            TestVariant.id == test_id,
+            TestVariant.status == ContentStatus.PUBLISHED,
+        )
+    )
+    if not variant:
+        raise HTTPException(404, "Published test not found.")
+    attempt = await create_attempt(db, user.id, variant)
     return await attempt_state(db, attempt)
+
+
+@router.post("/levels/{level_slug}/exam-types/{type_slug}/random-attempt")
+async def start_random_attempt(
+    level_slug: str, type_slug: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
+):
+    """Picks one published variant at random for this level+exam type and
+    starts (or resumes) an attempt on it — the student never sees or chooses
+    the variant number."""
+    variant_ids = (await db.execute(
+        select(TestVariant.id)
+        .join(Level, TestVariant.level_id == Level.id)
+        .join(ExamType, TestVariant.exam_type_id == ExamType.id)
+        .where(Level.slug == level_slug, ExamType.slug == type_slug, TestVariant.status == ContentStatus.PUBLISHED)
+    )).scalars().all()
+    if not variant_ids:
+        raise HTTPException(404, "No published test is available for this level yet.")
+    variant = await db.get(TestVariant, random.choice(variant_ids))
+    attempt = await create_attempt(db, user.id, variant)
+    return {"test_variant_id": variant.id, **(await attempt_state(db, attempt))}
 
 
 async def owned_attempt(db: AsyncSession, attempt_id: uuid.UUID, user_id: uuid.UUID) -> Attempt:

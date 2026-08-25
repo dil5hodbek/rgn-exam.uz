@@ -50,6 +50,7 @@ type AttemptState = {
   answers: { question_id: string; answer: AnswerValue; flagged: boolean }[];
   checked_task_ids?: string[];
   answers_updated_at?: string | null;
+  task_order?: string[] | null;
 };
 type ExerciseResult = Record<string, boolean | null>;
 
@@ -190,6 +191,7 @@ function exampleAnswerText(question: ApiQuestion) {
 export function ExamRunner({ testId, resultBasePath }: { testId: string; resultBasePath: string }) {
   const [test, setTest] = useState<TestDetail | null>(null);
   const [attemptId, setAttemptId] = useState("");
+  const [taskOrder, setTaskOrder] = useState<string[] | null>(null);
   const [currentExercise, setCurrentExercise] = useState(0);
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
   const [flagged, setFlagged] = useState<string[]>([]);
@@ -317,10 +319,18 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
     });
   }
 
-  const exercises = useMemo<Exercise[]>(
-    () => test?.sections.flatMap((section) => section.tasks.map((task) => ({ ...task, section }))) ?? [],
-    [test],
-  );
+  const exercises = useMemo<Exercise[]>(() => {
+    if (!test) return [];
+    // Exercises render in Task.order_index order by default. When the attempt
+    // carries a shuffled task_order (set once at attempt creation, see
+    // shuffled_task_order on the backend), reorder each section's tasks to
+    // match it instead — the section grouping itself never changes.
+    const rank = taskOrder ? new Map(taskOrder.map((id, index) => [id, index])) : null;
+    return test.sections.flatMap((section) => {
+      const tasks = rank ? [...section.tasks].sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0)) : section.tasks;
+      return tasks.map((task) => ({ ...task, section }));
+    });
+  }, [test, taskOrder]);
   const questions = useMemo(
     () => exercises.flatMap((exercise) => exercise.questions),
     [exercises],
@@ -353,6 +363,7 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
     ]).then(([detail, attempt]) => {
       setTest(detail);
       setAttemptId(attempt.id);
+      setTaskOrder(attempt.task_order ?? null);
       const serverAnswers = Object.fromEntries((attempt.answers ?? []).map((row) => [row.question_id, row.answer]));
       let serverFlagged = (attempt.answers ?? []).filter((row) => row.flagged).map((row) => row.question_id);
       // The local backup holds whatever was on the screen at the moment of a

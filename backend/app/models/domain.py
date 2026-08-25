@@ -173,6 +173,10 @@ class Attempt(Base):
     max_score: Mapped[float | None] = mapped_column(Numeric(8, 2))
     percentage: Mapped[float | None] = mapped_column(Numeric(6, 2))
     time_spent_seconds: Mapped[int | None] = mapped_column(Integer)
+    # Exercise (Task) order shuffled once when the attempt starts, as a list of
+    # task ID strings within their section — null means "use Task.order_index
+    # as-is" (older attempts, or a variant with shuffling disabled).
+    task_order: Mapped[list[str] | None] = mapped_column(JSONB)
     answers: Mapped[list["AttemptAnswer"]] = relationship(cascade="all, delete-orphan")
 
 
