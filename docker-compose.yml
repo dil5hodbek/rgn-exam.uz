@@ -1,4 +1,4 @@
-name: examflow
+name: examflow-copy
 
 services:
   postgres:
@@ -35,7 +35,7 @@ services:
     volumes:
       - uploads:/data/uploads
     ports:
-      - "${BACKEND_PORT:-18000}:8000"
+      - "127.0.0.1:${BACKEND_PORT:-18001}:8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
       interval: 5s
@@ -69,7 +69,7 @@ services:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api/v1}
       BACKEND_INTERNAL_URL: http://backend:8000
     ports:
-      - "${FRONTEND_PORT:-13000}:3000"
+      - "127.0.0.1:${FRONTEND_PORT:-13001}:3000"
     depends_on:
       backend:
         condition: service_healthy
