@@ -2,7 +2,7 @@ import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from redis.asyncio import Redis
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +18,7 @@ from app.models import (
 from app.schemas.content import AnswerBatch
 from app.services.ai_grading import ai_grade_text
 from app.services.exercise_registry import MANUAL_TASK_TYPES
+from app.services.certificate import generate_certificate_pdf
 from app.services.grading import grade_answer
 
 router = APIRouter(tags=["Attempts"])
@@ -555,3 +556,40 @@ async def attempt_result(
         "sections": sections,
         "review": review,
     }
+
+
+@router.get("/attempts/{attempt_id}/certificate")
+async def attempt_certificate(
+    attempt_id: uuid.UUID,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    attempt = await owned_attempt(db, attempt_id, user.id)
+    if attempt.status != AttemptStatus.GRADED:
+        raise HTTPException(409, "The certificate is available once grading is complete.")
+    row = (await db.execute(
+        select(TestVariant, Level, ExamType)
+        .join(Level, TestVariant.level_id == Level.id)
+        .join(ExamType, TestVariant.exam_type_id == ExamType.id)
+        .where(TestVariant.id == attempt.test_variant_id)
+    )).first()
+    if not row:
+        raise HTTPException(404, "Test variant not found.")
+    variant, level, exam_type = row
+    percentage = float(attempt.percentage or 0)
+    if percentage < variant.passing_percentage:
+        raise HTTPException(403, "Certificate is only available for passing attempts.")
+
+    pdf_bytes = generate_certificate_pdf(
+        full_name=f"{user.first_name} {user.last_name}",
+        phone_number=user.phone_number,
+        level_name=level.name,
+        exam_type_name=exam_type.name,
+        percentage=percentage,
+    )
+    filename = f"certificate-{attempt.id}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
