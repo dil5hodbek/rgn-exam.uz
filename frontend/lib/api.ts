@@ -38,6 +38,28 @@ async function refreshSession(): Promise<boolean> {
   return refreshPromise;
 }
 
+// The tunnel in front of this app briefly recycles its connection every so
+// often; any request in flight at that exact moment fails at the network
+// level (fetch throws, not an HTTP error) with "Failed to fetch". That's a
+// transient last-mile blip, not a real failure, so retry a couple of times
+// with a short backoff before giving up — but never for a request that might
+// not be safe to repeat blindly.
+const RETRYABLE_METHODS = new Set(["GET", "HEAD", "PATCH"]);
+
+async function fetchWithRetry(url: string, requestInit: RequestInit): Promise<Response> {
+  const method = (requestInit.method ?? "GET").toUpperCase();
+  const attempts = RETRYABLE_METHODS.has(method) ? 3 : 1;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await fetch(url, requestInit);
+    } catch (reason) {
+      if (attempt === attempts) throw reason;
+      await new Promise((resolve) => setTimeout(resolve, attempt * 400));
+    }
+  }
+  throw new Error("unreachable");
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
   const requestInit: RequestInit = {
@@ -45,7 +67,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     credentials: "include",
     headers: isFormData ? init?.headers : { "Content-Type": "application/json", ...init?.headers },
   };
-  let response = await fetch(`${API_URL}${path}`, requestInit);
+  let response = await fetchWithRetry(`${API_URL}${path}`, requestInit);
 
   const isAuthenticationRequest = [
     "/auth/login",
@@ -57,7 +79,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (response.status === 401 && !isAuthenticationRequest) {
     if (await refreshSession()) {
-      response = await fetch(`${API_URL}${path}`, requestInit);
+      response = await fetchWithRetry(`${API_URL}${path}`, requestInit);
     }
   }
 

@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -315,6 +316,11 @@ async def submit(attempt_id: uuid.UUID, user: User = Depends(current_user), db: 
     total = 0.0
     maximum = 0.0
     pending = False
+    # AI-graded (writing/speaking) answers are collected here instead of being
+    # awaited one at a time — a test with several such questions used to pay
+    # their OpenRouter latency sequentially (multiplying submit time by the
+    # question count). They're fired concurrently after this loop instead.
+    ai_jobs: list[tuple[AttemptAnswer, Task, Question]] = []
     for section in variant.sections:
         for task in section.tasks:
             task_superseded = (task.metadata_json or {}).get("superseded")
@@ -343,28 +349,11 @@ async def submit(attempt_id: uuid.UUID, user: User = Depends(current_user), db: 
                 if answer.student_answer in (None, "", []):
                     answer.is_correct, answer.points_awarded = False, 0
                     continue
-                # Open writing/speaking answers are graded by the AI right here
-                # (no teacher hand-off). Auto-gradable types keep the fast path.
+                # Open writing/speaking answers are graded by the AI — queued
+                # here and run concurrently below (no teacher hand-off).
+                # Auto-gradable types keep the fast path.
                 if task.type in MANUAL_TASK_TYPES:
-                    interaction = (task.metadata_json or {}).get("interaction") or {}
-                    verdict = await ai_grade_text(
-                        task.instructions or "", question.prompt or "",
-                        str(answer.student_answer or ""), float(question.points),
-                        interaction.get("min_words"), interaction.get("max_words"),
-                    )
-                    if verdict is not None:
-                        score, feedback = verdict
-                        answer.points_awarded = score
-                        answer.is_correct = score > 0
-                        answer.feedback = feedback
-                        answer.graded_at = datetime.now(timezone.utc)
-                        answer.graded_by = None  # AI, not a human reviewer
-                        total += score
-                    else:
-                        # AI unavailable — fall back to human review so the
-                        # answer is never silently zeroed.
-                        answer.is_correct, answer.points_awarded = None, None
-                        pending = True
+                    ai_jobs.append((answer, task, question))
                     continue
                 result = grade_answer(
                     task.type, answer.student_answer, question.correct_answer, question.accepted_answers,
@@ -373,6 +362,31 @@ async def submit(attempt_id: uuid.UUID, user: User = Depends(current_user), db: 
                 answer.is_correct, answer.points_awarded = result.is_correct, result.points
                 pending = pending or result.needs_review
                 total += float(result.points or 0)
+
+    if ai_jobs:
+        verdicts = await asyncio.gather(*(
+            ai_grade_text(
+                task.instructions or "", question.prompt or "",
+                str(answer.student_answer or ""), float(question.points),
+                ((task.metadata_json or {}).get("interaction") or {}).get("min_words"),
+                ((task.metadata_json or {}).get("interaction") or {}).get("max_words"),
+            )
+            for answer, task, question in ai_jobs
+        ))
+        for (answer, _task, _question), verdict in zip(ai_jobs, verdicts):
+            if verdict is not None:
+                score, feedback = verdict
+                answer.points_awarded = score
+                answer.is_correct = score > 0
+                answer.feedback = feedback
+                answer.graded_at = datetime.now(timezone.utc)
+                answer.graded_by = None  # AI, not a human reviewer
+                total += score
+            else:
+                # AI unavailable — fall back to human review so the answer is
+                # never silently zeroed.
+                answer.is_correct, answer.points_awarded = None, None
+                pending = True
     attempt.total_score, attempt.max_score = total, maximum
     attempt.percentage = round(total / maximum * 100, 2) if maximum else 0
     attempt.submitted_at = datetime.now(timezone.utc)
