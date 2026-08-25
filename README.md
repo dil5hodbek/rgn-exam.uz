@@ -4,6 +4,8 @@
 
 **Live demo:** [rgn-exam.uz](https://rgn-exam.uz)
 
+<!-- lokal -> GitHub -> server zanjiri sinovi -->
+
 ---
 
 ## Loyiha haqida
