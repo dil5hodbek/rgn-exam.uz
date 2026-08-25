@@ -177,6 +177,11 @@ class Attempt(Base):
     # task ID strings within their section — null means "use Task.order_index
     # as-is" (older attempts, or a variant with shuffling disabled).
     task_order: Mapped[list[str] | None] = mapped_column(JSONB)
+    # "Random test" mixes in a slice of exercises borrowed from the OTHER exam
+    # type at the same level (e.g. 25% End-course tasks inside a Mid-course
+    # attempt) — their Task IDs live here, on top of test_variant_id's own
+    # sections/tasks/questions. Null/empty for a pure single-variant attempt.
+    extra_task_ids: Mapped[list[str] | None] = mapped_column(JSONB)
     answers: Mapped[list["AttemptAnswer"]] = relationship(cascade="all, delete-orphan")
 
 
