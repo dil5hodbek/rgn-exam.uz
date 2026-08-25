@@ -357,10 +357,13 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
   }, [exercises]);
 
   useEffect(() => {
-    Promise.all([
-      api<TestDetail>(`/tests/${testId}`),
-      api<AttemptState>(`/tests/${testId}/attempts`, { method: "POST" }),
-    ]).then(([detail, attempt]) => {
+    api<AttemptState>(`/tests/${testId}/attempts`, { method: "POST" }).then((attempt) =>
+      // Fetched per-attempt (not GET /tests/{testId}) because a "random test"
+      // attempt may carry extra_task_ids borrowed from the other exam type —
+      // those live outside this variant's own sections, so only the
+      // attempt-scoped endpoint knows to include them.
+      api<TestDetail>(`/attempts/${attempt.id}/test`).then((detail) => [detail, attempt] as const),
+    ).then(([detail, attempt]) => {
       setTest(detail);
       setAttemptId(attempt.id);
       setTaskOrder(attempt.task_order ?? null);
