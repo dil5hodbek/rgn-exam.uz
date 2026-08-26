@@ -182,6 +182,13 @@ class Attempt(Base):
     # attempt) — their Task IDs live here, on top of test_variant_id's own
     # sections/tasks/questions. Null/empty for a pure single-variant attempt.
     extra_task_ids: Mapped[list[str] | None] = mapped_column(JSONB)
+    # "Level test" narrows test_variant_id's own sections down to only these
+    # Task IDs (instead of using all of them) — used together with
+    # extra_task_ids so a level-wide test can draw ~50% of its exercises from
+    # the primary variant and ~50% from the other exam type, rather than the
+    # primary variant contributing 100% of its own tasks. Null means "use all
+    # of the primary variant's tasks" (every other attempt kind).
+    primary_task_ids: Mapped[list[str] | None] = mapped_column(JSONB)
     answers: Mapped[list["AttemptAnswer"]] = relationship(cascade="all, delete-orphan")
 
 
