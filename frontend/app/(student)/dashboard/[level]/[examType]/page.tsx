@@ -45,9 +45,9 @@ export default function VariantsPage({ params }: { params: { level: string; exam
   return <div className="mx-auto max-w-6xl px-4 py-8 sm:px-8">
     <Link href={`/dashboard/${params.level}`} className="inline-flex items-center gap-2 text-sm font-bold text-muted hover:text-ink"><ArrowLeft className="h-4 w-4" /> Back to {pretty(params.level)}</Link>
     <div className="mt-7"><p className="text-xs font-bold uppercase tracking-[.18em] text-brand">{pretty(params.level)}</p><h1 className="mt-2 text-4xl font-extrabold tracking-tight text-ink">{pretty(params.examType)}</h1><p className="mt-3 text-muted">Choose a real test from the imported Road Map package. Answers save automatically.</p></div>
-    {variants.length > 1 && <div className="mt-7 rounded-3xl border border-line bg-canvas p-6 shadow-sm">
+    {variants.length > 0 && <div className="mt-7 rounded-3xl border border-line bg-canvas p-6 shadow-sm">
       <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
-        <div><h2 className="text-lg font-extrabold text-ink">Test</h2><p className="mt-1 text-sm text-muted">Get a random variant, with exercises shuffled just for you.</p></div>
+        <div><h2 className="text-lg font-extrabold text-ink">Test</h2><p className="mt-1 text-sm text-muted">A shuffled test mixed with exercises from the other exam type.</p></div>
         <Button onClick={startRandomTest} disabled={startingRandom} className="w-full sm:w-auto"><Shuffle className="h-4 w-4" /> {startingRandom ? "Starting…" : "Start Test"}</Button>
       </div>
     </div>}
