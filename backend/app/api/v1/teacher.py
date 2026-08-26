@@ -46,7 +46,11 @@ async def writing_submissions(_: User = Depends(require_teacher), db: AsyncSessi
             AttemptAnswer.student_answer.isnot(None),
             (AttemptAnswer.is_correct.is_(None)) | (AttemptAnswer.graded_at >= visibility_cutoff),
         )
-        .order_by(AttemptAnswer.updated_at.desc())
+        # Sort by when the student actually submitted the attempt (not the
+        # answer's last autosave, and never touched by later grading), so the
+        # most recently submitted work is always first and every writing
+        # answer from the same attempt stays grouped together in the list.
+        .order_by(func.coalesce(Attempt.submitted_at, AttemptAnswer.updated_at).desc())
     )).all()
     return [{
         "id": answer.id, "attempt_id": answer.attempt_id, "question_id": answer.question_id,
@@ -60,7 +64,7 @@ async def writing_submissions(_: User = Depends(require_teacher), db: AsyncSessi
         # graded_by is None but is_correct is set = the AI graded it.
         "status": "awaiting" if answer.is_correct is None else ("ai_graded" if answer.graded_by is None else "teacher_graded"),
         "graded_at": answer.graded_at,
-        "updated_at": answer.updated_at,
+        "submitted_at": attempt.submitted_at or answer.updated_at,
     } for answer, question, task, attempt, student, variant in rows]
 
 

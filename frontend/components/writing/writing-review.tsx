@@ -10,8 +10,14 @@ type Submission = {
   prompt: string; max_points: number; test_title: string; student_name: string;
   points_awarded: number | null; feedback: string | null; annotations: Annotation[];
   status: "awaiting" | "ai_graded" | "teacher_graded";
-  updated_at: string;
+  submitted_at: string;
 };
+
+function formatSubmittedAt(value: string) {
+  return new Date(value).toLocaleString(undefined, {
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+}
 type Annotation = { start: number; end: number; comment: string };
 
 const STATUS_META: Record<Submission["status"], { label: string; className: string }> = {
@@ -121,7 +127,7 @@ function ReviewCard({ row, onGraded, onError }: {
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-orange-500/10 text-orange-500"><FilePenLine className="h-5 w-5" /></span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-extrabold text-ink">{row.student_name}</p>
-          <p className="truncate text-xs text-muted">{row.test_title}</p>
+          <p className="truncate text-xs text-muted">{row.test_title} · submitted {formatSubmittedAt(row.submitted_at)}</p>
         </div>
         <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${meta.className}`}>{row.status === "ai_graded" && <Sparkles className="mr-1 inline h-3 w-3" />}{meta.label}</span>
       </div>
