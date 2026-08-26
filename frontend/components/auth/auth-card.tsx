@@ -24,7 +24,12 @@ export function AuthCard({ initialTab = "sign-in" }: { initialTab?: "sign-in" | 
   const [otpNotice, setOtpNotice] = useState("");
   const [botUrl, setBotUrl] = useState("");
   const router = useRouter();
-  type AuthResult = { user: { role: "STUDENT" | "ADMIN" | "SUPER_ADMIN" } };
+  type AuthResult = { user: { role: "STUDENT" | "TEACHER" | "ADMIN" | "SUPER_ADMIN" } };
+  function landingFor(role: AuthResult["user"]["role"]) {
+    if (role === "STUDENT") return "/dashboard";
+    if (role === "TEACHER") return "/monitor";
+    return "/admin";
+  }
   useEffect(() => {
     if (!otpCooldown) return;
     const timer = window.setInterval(() => setOtpCooldown((value) => Math.max(0, value - 1)), 1000);
@@ -41,7 +46,7 @@ export function AuthCard({ initialTab = "sign-in" }: { initialTab?: "sign-in" | 
           method: "POST",
           body: JSON.stringify({ phone_number: phone, code: otp, purpose: "login" }),
         });
-        router.push(result.user.role === "STUDENT" ? "/dashboard" : "/admin");
+        router.push(landingFor(result.user.role));
       } else if (tab === "create") {
         await api<AuthResult>("/auth/register", {
           method: "POST",
@@ -56,7 +61,7 @@ export function AuthCard({ initialTab = "sign-in" }: { initialTab?: "sign-in" | 
           method: "POST",
           body: JSON.stringify({ phone_number: phone, password }),
         });
-        router.push(result.user.role === "STUDENT" ? "/dashboard" : "/admin");
+        router.push(landingFor(result.user.role));
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to continue.");

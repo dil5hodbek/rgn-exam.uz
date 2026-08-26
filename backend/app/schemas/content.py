@@ -14,6 +14,13 @@ QuestionType = Literal[
 ]
 
 
+class TeacherCreate(BaseModel):
+    first_name: str = Field(min_length=1, max_length=80)
+    last_name: str = Field(min_length=1, max_length=80)
+    phone_number: str
+    password: str = Field(min_length=8, max_length=128)
+
+
 class QuestionInput(BaseModel):
     prompt: str = Field(min_length=1)
     options: list[Any] = Field(default_factory=list)
