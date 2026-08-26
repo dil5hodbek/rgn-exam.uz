@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
@@ -16,13 +16,24 @@ from app.services.audit import write_audit
 router = APIRouter(prefix="/teacher", tags=["Monitor"])
 
 
+# How long a graded submission stays visible in the review list after being
+# graded — like a notification that's been "read": it lingers briefly so a
+# teacher can spot-check their own (or the AI's) recent work, then drops off
+# so the list doesn't accumulate every graded answer forever. The underlying
+# AttemptAnswer/grade is never deleted — only this list-visibility window.
+GRADED_VISIBILITY_HOURS = 24
+
+
 @router.get("/submissions")
 async def writing_submissions(_: User = Depends(require_teacher), db: AsyncSession = Depends(get_db)):
-    """Every writing/speaking answer that needs a human eye: ones the AI
-    graded (so a teacher can check/correct the score) and ones still awaiting
-    any grade at all (AI was unavailable). Distinguished by `graded_by`:
-    null means AI (or ungraded), so the UI badges "AI graded" vs "Awaiting
-    review" from `is_correct is None`."""
+    """Writing/speaking answers that need a human eye, restricted to what a
+    student actually submitted (never a blank/skipped answer) and to a
+    review-relevant window: every ungraded one, plus graded ones from the
+    last GRADED_VISIBILITY_HOURS — older graded answers still exist and
+    still count toward the student's score/certificate, they just age out of
+    this list. Distinguished by `graded_by`: null means AI (or ungraded), so
+    the UI badges "AI graded" vs "Awaiting review" from `is_correct is None`."""
+    visibility_cutoff = datetime.now(timezone.utc) - timedelta(hours=GRADED_VISIBILITY_HOURS)
     rows = (await db.execute(
         select(AttemptAnswer, Question, Task, Attempt, User, TestVariant)
         .join(Question, Question.id == AttemptAnswer.question_id)
@@ -30,7 +41,11 @@ async def writing_submissions(_: User = Depends(require_teacher), db: AsyncSessi
         .join(Attempt, Attempt.id == AttemptAnswer.attempt_id)
         .join(User, User.id == Attempt.user_id)
         .join(TestVariant, TestVariant.id == Attempt.test_variant_id)
-        .where(Task.type.in_(("writing", "speaking_prompt_placeholder", "rich_text_question")))
+        .where(
+            Task.type.in_(("writing", "speaking_prompt_placeholder", "rich_text_question")),
+            AttemptAnswer.student_answer.isnot(None),
+            (AttemptAnswer.is_correct.is_(None)) | (AttemptAnswer.graded_at >= visibility_cutoff),
+        )
         .order_by(AttemptAnswer.updated_at.desc())
     )).all()
     return [{

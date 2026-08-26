@@ -46,7 +46,7 @@ function CreateTeacherDialog({ onClose, onCreated }: { onClose: () => void; onCr
           <Input className="rounded-l-none" inputMode="numeric" placeholder="90 123 45 67" value={phone} onChange={(event) => setPhone(event.target.value)} required />
         </div>
       </label>
-      <label className="mt-4 block space-y-2 text-sm font-semibold text-ink">Password<Input type="password" placeholder="At least 8 characters" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} /></label>
+      <label className="mt-4 block space-y-2 text-sm font-semibold text-ink">Password<Input type="password" placeholder="Their password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
       {error && <p className="mt-3 rounded-xl bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-600">{error}</p>}
       <Button type="submit" className="mt-5 w-full" disabled={saving}>{saving ? "Creating…" : "Create teacher"}</Button>
     </form>

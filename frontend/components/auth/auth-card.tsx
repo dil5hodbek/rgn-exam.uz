@@ -124,7 +124,7 @@ export function AuthCard({ initialTab = "sign-in" }: { initialTab?: "sign-in" | 
           {!otpMode && <label className="block space-y-2 text-sm font-semibold text-ink">
             Password
             <div className="relative">
-              <Input type={showPassword ? "text" : "password"} placeholder="At least 8 characters" value={password} onChange={(event) => setPassword(event.target.value)} required />
+              <Input type={showPassword ? "text" : "password"} placeholder="Your password" value={password} onChange={(event) => setPassword(event.target.value)} required />
               <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label="Show password" className="absolute right-3 top-3 text-muted">{showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}</button>
             </div>
           </label>}
