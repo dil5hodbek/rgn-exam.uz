@@ -389,8 +389,9 @@ async def my_teacher_reviews(user: User = Depends(current_user), db: AsyncSessio
             Attempt.user_id == user.id,
             Attempt.status != AttemptStatus.IN_PROGRESS,
             Task.type.in_(manual_types),
+            func.jsonb_typeof(AttemptAnswer.student_answer) != "null",
         )
-        .order_by(AttemptAnswer.updated_at.desc())
+        .order_by(func.coalesce(Attempt.submitted_at, AttemptAnswer.updated_at).desc())
     )).all()
     return [{
         "id": answer.id,

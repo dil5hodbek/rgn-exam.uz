@@ -43,7 +43,10 @@ async def writing_submissions(_: User = Depends(require_teacher), db: AsyncSessi
         .join(TestVariant, TestVariant.id == Attempt.test_variant_id)
         .where(
             Task.type.in_(("writing", "speaking_prompt_placeholder", "rich_text_question")),
-            AttemptAnswer.student_answer.isnot(None),
+            # student_answer can be SQL NULL (never saved) or a stored JSON
+            # `null` (saved as empty) — both mean "nothing submitted", so
+            # jsonb_typeof must be checked too, not just SQL NULL.
+            func.jsonb_typeof(AttemptAnswer.student_answer) != "null",
             (AttemptAnswer.is_correct.is_(None)) | (AttemptAnswer.graded_at >= visibility_cutoff),
         )
         # Sort by when the student actually submitted the attempt (not the
