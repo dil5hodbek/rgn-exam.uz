@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Copy, FileText, GripVertical, Loader2, Pencil, Plus, Save, Send, Settings, Trash2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { ExerciseBuilder } from "@/components/admin/exercise-builder";
 import { api, ApiError, mediaUrl } from "@/lib/api";
 import { sanitizeHtml } from "@/lib/sanitize";
@@ -138,6 +139,7 @@ export function TestBuilder({ variantId }: { variantId: string }) {
   const [importingDoc, setImportingDoc] = useState(false);
   const [importingKey, setImportingKey] = useState(false);
   const [importWarnings, setImportWarnings] = useState<string[]>([]);
+  const { confirm, dialog } = useConfirm();
 
   function loadTest() {
     return api<Test>(`/admin/tests/${variantId}`).then((value) => {
@@ -188,8 +190,19 @@ export function TestBuilder({ variantId }: { variantId: string }) {
     } catch (reason) { fail(reason, "Unable to duplicate this exercise."); }
   }
 
-  async function removeTask() {
-    if (!test || !task || !window.confirm("Delete this exercise and all of its questions?")) return;
+  function removeTask() {
+    if (!test || !task) return;
+    confirm({
+      title: "Delete this exercise?",
+      description: "This removes the exercise and all of its questions.",
+      confirmLabel: "Delete",
+      variant: "danger",
+      onConfirm: doRemoveTask,
+    });
+  }
+
+  async function doRemoveTask() {
+    if (!task) return;
     try {
       await api(`/admin/tasks/${task.id}`, { method: "DELETE" });
       const value = await loadTest();
@@ -295,6 +308,7 @@ export function TestBuilder({ variantId }: { variantId: string }) {
   if (!test) return <div className="grid min-h-[70vh] place-items-center"><span className="h-10 w-10 animate-spin rounded-full border-4 border-indigo-100 border-t-brand" /></div>;
 
   return <div className="min-h-[calc(100vh-64px)]">
+    {dialog}
     <div className="flex flex-col justify-between gap-4 border-b border-line bg-canvas px-4 py-4 sm:flex-row sm:items-center sm:px-8">
       <div>
         <p className="text-xs font-bold text-brand">{test.level} · {test.exam_type} · Variant {test.variant_number} · {test.status}</p>

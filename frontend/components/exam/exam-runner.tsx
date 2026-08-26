@@ -8,6 +8,7 @@ import {
 import { useRouter } from "next/navigation";
 import { AudioPlayer } from "@/components/exam/audio-player";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { Input } from "@/components/ui/input";
 import { api, mediaUrl } from "@/lib/api";
@@ -209,6 +210,7 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
   const [mediaPlays, setMediaPlays] = useState<Record<string, number>>({});
   const [error, setError] = useState("");
   const router = useRouter();
+  const { confirm, dialog } = useConfirm();
 
   const sidebarScrollRef = useRef<HTMLDivElement>(null);
   const sidebarTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -512,8 +514,19 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
 
   // Wipe everything and start the test from scratch: answers, exercise locks,
   // results and the timer all reset.
-  async function restartAttempt() {
-    if (!attemptId || !window.confirm("Start the test over? All your answers and results will be erased.")) return;
+  function restartAttempt() {
+    if (!attemptId) return;
+    confirm({
+      title: "Start the test over?",
+      description: "All your answers and results will be erased.",
+      confirmLabel: "Start over",
+      variant: "danger",
+      onConfirm: doRestartAttempt,
+    });
+  }
+
+  async function doRestartAttempt() {
+    if (!attemptId) return;
     try {
       await api(`/attempts/${attemptId}/restart`, { method: "POST" });
     } catch (reason) {
@@ -611,12 +624,23 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
       : [...current, questionId]);
   }
 
-  async function checkExercise(exercise: Exercise) {
+  function checkExercise(exercise: Exercise) {
     if (!attemptId) return;
     const unanswered = scorableQuestions(exercise.questions).filter((question) => !hasAnswer(answers[question.id]));
-    if (unanswered.length && !window.confirm(
-      `You have ${unanswered.length} unanswered question${unanswered.length === 1 ? "" : "s"}. Are you sure you want to finish this exercise?`,
-    )) return;
+    if (unanswered.length) {
+      confirm({
+        title: `${unanswered.length} unanswered question${unanswered.length === 1 ? "" : "s"}`,
+        description: "Are you sure you want to finish this exercise?",
+        confirmLabel: "Finish exercise",
+        onConfirm: () => doCheckExercise(exercise),
+      });
+      return;
+    }
+    doCheckExercise(exercise);
+  }
+
+  async function doCheckExercise(exercise: Exercise) {
+    if (!attemptId) return;
     setCheckingExercise(true);
     setError("");
     try {
@@ -1219,7 +1243,9 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
     </div>
   </div></div>;
 
-  return <div className="min-h-screen bg-surface lg:h-screen lg:overflow-hidden">
+  return <>
+    {dialog}
+    <div className="min-h-screen bg-surface lg:h-screen lg:overflow-hidden">
     <header className="sticky top-0 z-30 border-b border-line bg-canvas/95 backdrop-blur">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5 lg:px-6">
         <div className="flex min-w-0 items-center gap-3">
@@ -1484,5 +1510,6 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
         </div>
       </main>
     </div>
-  </div>;
+  </div>
+  </>;
 }
