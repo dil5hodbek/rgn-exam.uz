@@ -61,7 +61,10 @@ export default function ResultPage({ params }: { params: { level: string; examTy
       if (response.status === 401 && (await refreshSession())) {
         response = await fetch(certificateUrl, { credentials: "include" });
       }
-      if (!response.ok) throw new Error("Unable to generate the certificate.");
+      if (!response.ok) {
+        const detail = await response.json().catch(() => null);
+        throw new Error(detail?.detail || "Unable to generate the certificate.");
+      }
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");

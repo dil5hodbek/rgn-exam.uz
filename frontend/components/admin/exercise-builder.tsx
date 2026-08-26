@@ -29,7 +29,7 @@ type ExistingQuestion = {
 };
 type ExistingTask = {
   id: string; title: string; type: string; instructions: string; passage_html?: string | null;
-  interaction?: { kind?: string; options?: Array<string | { value: string; label: string }>; reuse_options?: boolean; template?: string; min_words?: number; max_words?: number; prep_seconds?: number };
+  interaction?: { kind?: string; options?: Array<string | { value: string; label: string }>; reuse_options?: boolean; template?: string; min_words?: number; max_words?: number; prep_seconds?: number; rubric?: string };
   media?: { id?: string; file_name: string; mime_type?: string; url?: string } | null;
   questions: ExistingQuestion[];
 };
@@ -244,6 +244,7 @@ export function ExerciseBuilder({
     if (it.min_words != null) setMinWords(it.min_words);
     if (it.max_words != null) setMaxWords(it.max_words);
     if (it.prep_seconds != null) setPrep(it.prep_seconds);
+    if (typeof it.rubric === "string") setRubric(it.rubric);
 
     const mode = tplE?.mode ?? "repeat";
     const perE = (f: string) => tplE?.per?.includes(f) ?? false;
@@ -471,7 +472,7 @@ export function ExerciseBuilder({
       audio_replay_limit: null,
       questions: [] as unknown[],
     };
-    if ((tpl.ex_words || tpl.ex_prep) && rubric.trim()) payloadTask.rubric = rubric.trim();
+    if ((tpl.ex_words || tpl.ex_prep) && rubric.trim()) interaction.rubric = rubric.trim();
     if (tpl.passage) { if (!passage.trim()) errs.push("Reading passage is empty."); payloadTask.passage_html = passage.trim(); }
     else if (passage.trim()) payloadTask.passage_html = passage.trim();
 

@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
-import { ChevronDown, Search, Shuffle, UserRound } from "lucide-react";
+import { ChevronDown, Download, Search, Shuffle, UserRound } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { api } from "@/lib/api";
+import { api, API_URL, refreshSession } from "@/lib/api";
 
 type Student = {
   id: string; first_name: string; last_name: string; phone_number: string;
@@ -58,15 +58,45 @@ export default function Students() {
   const [rows, setRows] = useState<Student[]>([]);
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState("");
   async function load(value = "") { setRows(await api<Student[]>(`/admin/students?search=${encodeURIComponent(value)}`)); }
   useEffect(() => { load(); }, []);
   async function toggle(student: Student) {
     await api(`/admin/students/${student.id}/active?active=${!student.is_active}`, { method: "PATCH" });
     setRows(rows.map((item) => item.id === student.id ? { ...item, is_active: !item.is_active } : item));
   }
+  async function exportAttempts() {
+    setExporting(true);
+    setError("");
+    try {
+      const exportUrl = `${API_URL}/admin/reports/attempts.xlsx`;
+      let response = await fetch(exportUrl, { credentials: "include" });
+      if (response.status === 401 && (await refreshSession())) {
+        response = await fetch(exportUrl, { credentials: "include" });
+      }
+      if (!response.ok) throw new Error("Unable to export attempts.");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "attempts.xlsx";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to export attempts.");
+    } finally {
+      setExporting(false);
+    }
+  }
   return <div className="mx-auto max-w-6xl p-4 sm:p-8">
-    <p className="text-xs font-bold uppercase tracking-[.18em] text-brand">Registered users</p>
-    <h1 className="mt-2 text-3xl font-extrabold text-ink">Students</h1>
+    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+      <div><p className="text-xs font-bold uppercase tracking-[.18em] text-brand">Registered users</p><h1 className="mt-2 text-3xl font-extrabold text-ink">Students</h1></div>
+      <Button variant="secondary" onClick={exportAttempts} disabled={exporting}><Download className="h-4 w-4" /> {exporting ? "Exporting…" : "Export attempts (.xlsx)"}</Button>
+    </div>
+    {error && <p className="mt-4 rounded-xl bg-red-500/10 p-3 text-sm font-semibold text-red-600">{error}</p>}
     <div className="relative mt-7 max-w-md"><Search className="absolute left-4 top-3.5 h-4 w-4 text-muted" /><Input className="pl-11" placeholder="Search by name or phone…" value={search} onChange={(event) => { setSearch(event.target.value); load(event.target.value); }} /></div>
     <div className="mt-5 overflow-hidden rounded-2xl border border-line bg-canvas">
       {rows.length ? rows.map((row, index) => {

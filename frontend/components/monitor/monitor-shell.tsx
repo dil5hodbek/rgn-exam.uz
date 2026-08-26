@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 
 const items = [
   { href: "/monitor", label: "Overview", icon: LayoutDashboard, exact: true },
@@ -23,7 +23,11 @@ export function MonitorShell({ children }: { children: React.ReactNode }) {
       if (!["TEACHER", "ADMIN", "SUPER_ADMIN"].includes(user.role)) { router.push("/dashboard"); return; }
       setTeacherName(`${user.first_name} ${user.last_name}`);
     }).catch((error) => {
-      if (error instanceof ApiError && error.status === 401) router.replace("/sign-in");
+      // Any failure — expired session, network error, 5xx — means role
+      // couldn't be verified, so fail closed instead of leaving the shell
+      // rendered with an unverified user.
+      void error;
+      router.replace("/sign-in");
     });
   }, [router]);
   async function signOut() { await api("/auth/logout", { method: "POST" }).catch(() => undefined); router.push("/sign-in"); }
