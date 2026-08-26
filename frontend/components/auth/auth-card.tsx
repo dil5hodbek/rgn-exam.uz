@@ -36,6 +36,14 @@ export function AuthCard({ initialTab = "sign-in" }: { initialTab?: "sign-in" | 
     return () => window.clearInterval(timer);
   }, [otpCooldown]);
 
+  // A visitor who still has a valid session (cookies intact, possibly just
+  // refreshed) but lands on /sign-in directly — an old bookmark, a shared
+  // link — shouldn't have to log in again. Send them straight to their panel.
+  useEffect(() => {
+    api<AuthResult["user"]>("/auth/me").then((user) => router.replace(landingFor(user.role))).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
