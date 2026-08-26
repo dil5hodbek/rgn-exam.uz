@@ -34,3 +34,11 @@ async def require_super_admin(user: User = Depends(current_user)) -> User:
     if user.role != Role.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="Super administrator access required.")
     return user
+
+
+async def require_teacher(user: User = Depends(current_user)) -> User:
+    """Teachers grade writing and view student results (the "monitor" panel);
+    admins can do everything a teacher can, so they're allowed through too."""
+    if user.role not in {Role.TEACHER, Role.ADMIN, Role.SUPER_ADMIN}:
+        raise HTTPException(status_code=403, detail="Teacher access required.")
+    return user

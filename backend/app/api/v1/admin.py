@@ -16,14 +16,14 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import require_admin
-from app.core.security import verify_password
+from app.core.security import hash_password, normalize_phone, verify_password
 from app.models import (
     AdminAuditLog, Attempt, AttemptAnswer, AttemptStatus, ContentStatus, ExamType,
     Level, MediaAsset, Question, Role, Section, Task, TelegramLink, TestVariant, User,
 )
 from app.schemas.content import (
     GradeInput, QuestionCreate, QuestionInput, ReorderTasks, ResetContent,
-    SectionInput, TaskCreate, VariantCreate, VariantUpdate,
+    SectionInput, TaskCreate, TeacherCreate, VariantCreate, VariantUpdate,
 )
 from app.services.audit import write_audit
 from app.services.exercise_registry import registry_payload
@@ -1078,6 +1078,56 @@ async def admin_unlink_telegram(
         await db.delete(link)
     await write_audit(db, admin.id, "student.telegram_unlink", "User", str(student_id), ip_address=request.client.host if request.client else None)
     await db.commit()
+
+
+@router.get("/teachers")
+async def teachers(_: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    rows = (await db.execute(
+        select(User).where(User.role == Role.TEACHER).order_by(User.created_at.desc())
+    )).scalars().all()
+    return [{
+        "id": row.id, "first_name": row.first_name, "last_name": row.last_name,
+        "phone_number": row.phone_number, "is_active": row.is_active, "created_at": row.created_at,
+    } for row in rows]
+
+
+@router.post("/teachers", status_code=201)
+async def create_teacher(
+    payload: TeacherCreate, request: Request,
+    admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
+):
+    try:
+        phone = normalize_phone(payload.phone_number)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if await db.scalar(select(User).where(User.phone_number == phone)):
+        raise HTTPException(409, "An account with this phone number already exists.")
+    teacher = User(
+        first_name=payload.first_name.strip(), last_name=payload.last_name.strip(),
+        phone_number=phone, password_hash=hash_password(payload.password), role=Role.TEACHER,
+    )
+    db.add(teacher)
+    await write_audit(db, admin.id, "teacher.create", "User", None, {"phone_number": phone}, request.client.host if request.client else None)
+    await db.commit()
+    await db.refresh(teacher)
+    return {
+        "id": teacher.id, "first_name": teacher.first_name, "last_name": teacher.last_name,
+        "phone_number": teacher.phone_number, "is_active": teacher.is_active,
+    }
+
+
+@router.patch("/teachers/{teacher_id}/active")
+async def set_teacher_active(
+    teacher_id: uuid.UUID, active: bool, request: Request,
+    admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
+):
+    teacher = await db.get(User, teacher_id)
+    if not teacher or teacher.role != Role.TEACHER:
+        raise HTTPException(404, "Teacher not found.")
+    teacher.is_active = active
+    await write_audit(db, admin.id, "teacher.active", "User", str(teacher.id), {"active": active}, request.client.host if request.client else None)
+    await db.commit()
+    return {"id": teacher.id, "is_active": teacher.is_active}
 
 
 @router.get("/audit-log")

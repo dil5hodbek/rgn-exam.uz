@@ -1222,7 +1222,9 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
     ...bankOptions.filter((option) => exampleText.includes(option.label.toLocaleLowerCase())).map((option) => option.value),
   ]);
 
-  if (showReview) return <div className="min-h-screen bg-surface p-4 sm:p-8"><div className="mx-auto max-w-5xl rounded-3xl border border-line bg-canvas p-6 shadow-soft sm:p-9">
+  if (showReview) return <>
+    {dialog}
+    <div className="min-h-screen bg-surface p-4 sm:p-8"><div className="mx-auto max-w-5xl rounded-3xl border border-line bg-canvas p-6 shadow-soft sm:p-9">
     <span className="grid h-12 w-12 place-items-center rounded-2xl bg-indigo-500/10 text-indigo-500"><Check /></span>
     <h1 className="mt-6 text-3xl font-extrabold text-ink">Ready to submit?</h1>
     <p className="mt-3 text-muted">{answered} of {scoredQuestions.length} questions answered. Open an exercise to review it.</p>
@@ -1241,7 +1243,8 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
       <Button variant="secondary" onClick={() => setShowReview(false)}>Return to Test</Button>
       <Button onClick={submit}><Send className="h-4 w-4" /> Submit Test</Button>
     </div>
-  </div></div>;
+  </div></div>
+  </>;
 
   return <>
     {dialog}
