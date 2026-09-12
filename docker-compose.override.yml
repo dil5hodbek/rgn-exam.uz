@@ -5,6 +5,8 @@ services:
     restart: unless-stopped
   backend:
     restart: unless-stopped
+  worker:
+    restart: unless-stopped
   bot:
     restart: unless-stopped
   frontend:

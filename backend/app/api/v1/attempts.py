@@ -15,6 +15,10 @@ from app.models import (
     Attempt, AttemptAnswer, AttemptStatus, ContentStatus, ExamType, Level, MediaAsset, Question, Section,
     Task, TestVariant, User,
 )
+from app.schemas.attempts import (
+    AttemptStateOut, CheckExerciseOut, HistoryItemOut, SavedQuestionOut, SaveAnswersOut,
+    SubmitResultOut, TeacherReviewOut,
+)
 from app.schemas.content import AnswerBatch
 from app.services.ai_grading import ai_grade_text
 from app.services.exercise_registry import MANUAL_TASK_TYPES
@@ -56,7 +60,7 @@ async def attempt_state(db: AsyncSession, attempt: Attempt) -> dict:
     }
 
 
-@router.post("/tests/{test_id}/attempts")
+@router.post("/tests/{test_id}/attempts", response_model=AttemptStateOut)
 async def start_attempt(test_id: uuid.UUID, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     variant = await db.scalar(
         select(TestVariant).where(
@@ -134,7 +138,7 @@ async def pause_attempt(attempt_id: uuid.UUID, user: User = Depends(current_user
         await redis.aclose()
 
 
-@router.get("/me/teacher-reviews")
+@router.get("/me/teacher-reviews", response_model=list[TeacherReviewOut])
 async def my_teacher_reviews(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     """The student's teacher-graded work (writing/speaking): pending items
     waiting for the teacher plus graded ones with score, feedback and the
@@ -189,7 +193,7 @@ async def restart_attempt(attempt_id: uuid.UUID, user: User = Depends(current_us
         await redis.aclose()
 
 
-@router.patch("/attempts/{attempt_id}/answers")
+@router.patch("/attempts/{attempt_id}/answers", response_model=SaveAnswersOut)
 async def save_answers(attempt_id: uuid.UUID, payload: AnswerBatch, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     attempt = await owned_attempt(db, attempt_id, user.id)
     if attempt.status != AttemptStatus.IN_PROGRESS:
@@ -217,7 +221,7 @@ async def save_answers(attempt_id: uuid.UUID, payload: AnswerBatch, user: User =
     return {"saved": len(submitted), "saved_at": datetime.now(timezone.utc)}
 
 
-@router.post("/attempts/{attempt_id}/tasks/{task_id}/check")
+@router.post("/attempts/{attempt_id}/tasks/{task_id}/check", response_model=CheckExerciseOut)
 async def check_exercise(
     attempt_id: uuid.UUID,
     task_id: uuid.UUID,
@@ -295,7 +299,7 @@ async def clear_exercise_check(
         await redis.aclose()
 
 
-@router.post("/attempts/{attempt_id}/submit")
+@router.post("/attempts/{attempt_id}/submit", response_model=SubmitResultOut)
 async def submit(attempt_id: uuid.UUID, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     attempt = await owned_attempt(db, attempt_id, user.id)
     if attempt.status != AttemptStatus.IN_PROGRESS:
@@ -400,7 +404,7 @@ async def submit(attempt_id: uuid.UUID, user: User = Depends(current_user), db: 
     return {"status": attempt.status, "score": total, "max_score": maximum, "percentage": attempt.percentage}
 
 
-@router.get("/me/attempts")
+@router.get("/me/attempts", response_model=list[HistoryItemOut])
 async def history(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     rows = (await db.execute(
         select(Attempt, TestVariant, Level, ExamType)
@@ -422,7 +426,7 @@ async def history(user: User = Depends(current_user), db: AsyncSession = Depends
     } for attempt, variant, level, exam_type in rows]
 
 
-@router.get("/me/saved-questions")
+@router.get("/me/saved-questions", response_model=list[SavedQuestionOut])
 async def saved_questions(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     """Every question the student bookmarked (flagged) during their attempts,
     newest first — the "Saved questions" review list."""

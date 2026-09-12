@@ -14,7 +14,8 @@ from app.core.config import settings
 from app.core.database import SessionLocal, get_db
 from app.core.deps import current_user
 from app.core.security import (
-    create_token, decode_token, hash_otp, hash_password, new_otp, normalize_phone, verify_password,
+    create_token, decode_token, hash_otp, hash_password, hash_value, new_otp, normalize_phone,
+    verify_password,
 )
 from app.models import TelegramLink, User
 from app.services.telegram import TelegramDeliveryError, send_telegram_message
@@ -218,14 +219,14 @@ async def request_otp(payload: OTPRequest, request: Request):
     except ValueError:
         phone = payload.phone_number
     ip = request.client.host if request.client else "unknown"
-    rate_key = f"otp-rate:{ip}:{hash_otp(phone)}"
+    rate_key = f"otp-rate:{ip}:{hash_value(phone)}"
     async with redis_client() as redis:
         count = await redis.incr(rate_key)
         if count == 1:
             await redis.expire(rate_key, 3600)
         if count > 5:
             raise HTTPException(429, "Too many requests. Please try again in one hour.")
-        cooldown_key = f"otp-cooldown:{hash_otp(phone)}:{payload.purpose}"
+        cooldown_key = f"otp-cooldown:{hash_value(phone)}:{payload.purpose}"
         if not await redis.set(cooldown_key, "1", ex=60, nx=True):
             raise HTTPException(429, "Please wait 60 seconds before requesting another code.")
         # Record the pending request so that, if the account is not linked yet,

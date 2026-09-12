@@ -52,8 +52,13 @@ def decode_token(token: str, expected_type: str = "access") -> dict[str, Any]:
     return payload
 
 
+def hash_value(value: str) -> str:
+    """Deterministic keyed hash used for OTP codes and rate-limit/cooldown keys."""
+    return hashlib.sha256(f"{value}:{settings.csrf_secret}".encode()).hexdigest()
+
+
 def hash_otp(code: str) -> str:
-    return hashlib.sha256(f"{code}:{settings.csrf_secret}".encode()).hexdigest()
+    return hash_value(code)
 
 
 def new_otp() -> str:

@@ -93,8 +93,8 @@ class TestVariant(Base):
     __tablename__ = "test_variants"
     __table_args__ = (UniqueConstraint("level_id", "exam_type_id", "variant_number"),)
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    level_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("levels.id"))
-    exam_type_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("exam_types.id"))
+    level_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("levels.id"), index=True)
+    exam_type_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("exam_types.id"), index=True)
     title: Mapped[str] = mapped_column(String(180))
     variant_number: Mapped[int] = mapped_column(Integer)
     instructions: Mapped[str] = mapped_column(Text, default="")
@@ -103,7 +103,7 @@ class TestVariant(Base):
     retake_allowed: Mapped[bool] = mapped_column(Boolean, default=True)
     review_allowed: Mapped[bool] = mapped_column(Boolean, default=True)
     status: Mapped[ContentStatus] = mapped_column(Enum(ContentStatus), default=ContentStatus.DRAFT)
-    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     sections: Mapped[list["Section"]] = relationship(cascade="all, delete-orphan", order_by="Section.order_index")
 
@@ -111,7 +111,9 @@ class TestVariant(Base):
 class Section(Base):
     __tablename__ = "sections"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    test_variant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("test_variants.id", ondelete="CASCADE"))
+    test_variant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("test_variants.id", ondelete="CASCADE"), index=True
+    )
     title: Mapped[str] = mapped_column(String(120))
     order_index: Mapped[int] = mapped_column(Integer, default=0)
     tasks: Mapped[list["Task"]] = relationship(cascade="all, delete-orphan", order_by="Task.order_index")
@@ -124,19 +126,21 @@ class MediaAsset(Base):
     file_url: Mapped[str] = mapped_column(String(500))
     mime_type: Mapped[str] = mapped_column(String(80))
     transcript: Mapped[str | None] = mapped_column(Text)
-    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
 class Task(Base):
     __tablename__ = "tasks"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    section_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sections.id", ondelete="CASCADE"))
+    section_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("sections.id", ondelete="CASCADE"), index=True
+    )
     type: Mapped[str] = mapped_column(String(50))
     title: Mapped[str] = mapped_column(String(160), default="")
     instructions: Mapped[str] = mapped_column(Text, default="")
     passage_html: Mapped[str | None] = mapped_column(Text)
-    media_asset_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("media_assets.id"))
+    media_asset_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("media_assets.id"), index=True)
     audio_replay_limit: Mapped[int | None] = mapped_column(Integer)
     order_index: Mapped[int] = mapped_column(Integer, default=0)
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
@@ -146,7 +150,7 @@ class Task(Base):
 class Question(Base):
     __tablename__ = "questions"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"))
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
     prompt: Mapped[str] = mapped_column(Text)
     rich_content: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     options: Mapped[list[Any]] = mapped_column(JSONB, default=list)
@@ -164,8 +168,8 @@ class Question(Base):
 class Attempt(Base):
     __tablename__ = "attempts"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
-    test_variant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("test_variants.id"))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    test_variant_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("test_variants.id"), index=True)
     status: Mapped[AttemptStatus] = mapped_column(Enum(AttemptStatus), default=AttemptStatus.IN_PROGRESS)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -180,15 +184,17 @@ class AttemptAnswer(Base):
     __tablename__ = "attempt_answers"
     __table_args__ = (UniqueConstraint("attempt_id", "question_id"),)
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    attempt_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("attempts.id", ondelete="CASCADE"))
-    question_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("questions.id"))
+    attempt_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("attempts.id", ondelete="CASCADE"), index=True
+    )
+    question_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("questions.id"), index=True)
     student_answer: Mapped[Any | None] = mapped_column(JSONB)
     flagged: Mapped[bool] = mapped_column(Boolean, default=False)
     is_correct: Mapped[bool | None] = mapped_column(Boolean)
     points_awarded: Mapped[float | None] = mapped_column(Numeric(8, 2))
     feedback: Mapped[str | None] = mapped_column(Text)
     rubric_scores: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
-    graded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    graded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), index=True)
     graded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
@@ -203,14 +209,14 @@ class ImportJob(Base):
     manifest: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     warnings: Mapped[list[Any]] = mapped_column(JSONB, default=list)
     result: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
-    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
 class AdminAuditLog(Base):
     __tablename__ = "admin_audit_logs"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    actor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    actor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
     action: Mapped[str] = mapped_column(String(100))
     entity_type: Mapped[str] = mapped_column(String(80))
     entity_id: Mapped[str | None] = mapped_column(String(80))

@@ -1,7 +1,14 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_INSECURE_DEFAULTS = {
+    "jwt_secret": "development-only-change-this-secret",
+    "csrf_secret": "development-only-change-this-too",
+    "admin_password": "ChangeMe123!",
+}
 
 
 class Settings(BaseSettings):
@@ -30,6 +37,25 @@ class Settings(BaseSettings):
     admin_password: str = "ChangeMe123!"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @model_validator(mode="after")
+    def _forbid_insecure_defaults_in_production(self) -> "Settings":
+        if self.environment != "production":
+            return self
+        leaked = [
+            field for field, default in _INSECURE_DEFAULTS.items()
+            if getattr(self, field) == default
+        ]
+        if leaked:
+            raise ValueError(
+                "Refusing to start with insecure default values in production for: "
+                f"{', '.join(leaked)}. Set them via environment variables or .env."
+            )
+        if not self.cookie_secure:
+            raise ValueError(
+                "COOKIE_SECURE must be true in production (HTTPS is required)."
+            )
+        return self
 
 
 @lru_cache

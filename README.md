@@ -43,8 +43,8 @@ ExamFlow — bu o'quv markazlar uchun maxsus qurilgan imtihon tizimi. Word hujja
 - JWT autentifikatsiya
 
 **Frontend**
-- Next.js 15 (App Router)
-- React 19 · TypeScript
+- Next.js 14 (App Router)
+- React 18 · TypeScript
 - Tailwind CSS · shadcn/ui
 
 **Bot**
@@ -65,7 +65,8 @@ examflow/
 │   │   ├── core/            # config, database, security, deps
 │   │   ├── models/          # SQLAlchemy domain models
 │   │   ├── schemas/         # Pydantic API contracts
-│   │   └── services/        # grading, audit, AI, docx import, telegram
+│   │   ├── services/        # grading, audit, AI, docx import, telegram, admin_* (thin-router qatlami)
+│   │   └── tasks/           # Celery: async DOCX/javob-kaliti import
 │   ├── alembic/             # DB migratsiyalar
 │   ├── seed/                # Bootstrap: admin, levellar, exam turlari
 │   ├── scripts/             # mass import, dedupe, backup, readiness report
@@ -112,7 +113,8 @@ Admin
   GET    /api/v1/admin/students
   GET    /api/v1/admin/submissions
   GET    /api/v1/admin/audit-log
-  POST   /api/v1/admin/import
+  POST   /api/v1/admin/tests/{variantId}/import-docx   # Celery navbatiga qo'yiladi (202 + job_id)
+  GET    /api/v1/admin/import-jobs/{jobId}              # import holatini so'rash (polling)
   PATCH  /api/v1/admin/variants/{id}
 ```
 
@@ -177,24 +179,36 @@ Import pipeline bosqichlari:
 ## Testlar
 
 ```bash
+# Backend (unit + router-darajasidagi smoke testlar; smoke testlar Postgres/Redis
+# topilmasa avtomatik "skip" bo'ladi — docker compose up postgres redis bilan ishga tushiriladi)
 cd backend
 pytest tests/
+
+# Frontend (pure helper funksiyalar uchun unit testlar)
+cd frontend
+npm run test
 ```
 
-Test qamrovi: question classifier, docx import, grading logic, Telegram linking, question templates.
+Test qamrovi: question classifier, docx import, grading logic, Telegram linking, question templates,
+auth/catalog/attempts/admin router smoke testlari, exam-helpers va question-alternatives unit testlari.
 
 ## Production deploy
 
 ```bash
 # Secretlarni almashtiring
 cp .env.example .env
-# SECRET_KEY, DB kredensiallar, TELEGRAM_BOT_TOKEN, SMTP sozlang
+# JWT_SECRET, CSRF_SECRET, ADMIN_PASSWORD, DB kredensiallar, TELEGRAM_BOT_TOKEN sozlang
+# ENVIRONMENT=production bo'lsa, ushbu qiymatlar default holatda qolganida ilova
+# ishga tushishni rad etadi (app/core/config.py validatori)
 
-# HTTPS sozlangan bo'lsa
+# HTTPS sozlangan bo'lsa (production uchun majburiy)
 COOKIE_SECURE=true
 
 docker compose -f docker-compose.prod.yml up --build -d
 ```
+
+CI (`.github/workflows/deploy.yml`) har push/PR'da backend pytest, frontend typecheck/lint/test/build'ni
+ishga tushiradi; `main`ga push bo'lganda ular o'tgandan keyingina deploy job'i ishga tushadi.
 
 ## Xavfsizlik
 

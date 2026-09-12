@@ -246,6 +246,19 @@ export function TestBuilder({ variantId }: { variantId: string }) {
       .catch((reason) => fail(reason, "Unable to save the new order."));
   }
 
+  // Import jobs run on the Celery worker now (an AI test-paper import can take
+  // a while) — the endpoint just hands back a job id, and we poll for it to
+  // finish instead of blocking the request.
+  async function pollImportJob(jobId: string): Promise<{ status: string; warnings: string[]; result: Record<string, unknown> }> {
+    for (;;) {
+      const job = await api<{ status: string; warnings: string[]; result: Record<string, unknown> }>(
+        `/admin/import-jobs/${jobId}`,
+      );
+      if (job.status === "COMPLETED" || job.status === "FAILED") return job;
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+  }
+
   // AI import of a whole test paper: the backend splits the .docx into
   // exercises, detects each type, and creates them all in this test.
   async function importDoc(file: File) {
@@ -253,12 +266,18 @@ export function TestBuilder({ variantId }: { variantId: string }) {
     try {
       const form = new FormData();
       form.append("file", file);
-      const r = await api<{ created: number; warnings: string[] }>(
+      const queued = await api<{ job_id: string }>(
         `/admin/tests/${variantId}/import-docx`, { method: "POST", body: form },
       );
+      const job = await pollImportJob(queued.job_id);
       await loadTest();
-      notify(`Imported ${r.created} exercise(s) from the document. Review answers and add audio before publishing.`);
-      setImportWarnings(r.warnings ?? []);
+      if (job.status === "FAILED") {
+        fail(new Error(String((job.result as { message?: string })?.message ?? "Import failed.")), "Could not import this document.");
+      } else {
+        const created = (job.result as { created?: number })?.created ?? 0;
+        notify(`Imported ${created} exercise(s) from the document. Review answers and add audio before publishing.`);
+      }
+      setImportWarnings(job.warnings ?? []);
     } catch (reason) { fail(reason, "Could not import this document."); }
     finally { setImportingDoc(false); }
   }
@@ -270,12 +289,18 @@ export function TestBuilder({ variantId }: { variantId: string }) {
     try {
       const form = new FormData();
       form.append("file", file);
-      const r = await api<{ updated: number; warnings: string[] }>(
+      const queued = await api<{ job_id: string }>(
         `/admin/tests/${variantId}/import-answers`, { method: "POST", body: form },
       );
+      const job = await pollImportJob(queued.job_id);
       await loadTest();
-      notify(`Updated ${r.updated} answer(s) from the key. Check the highlighted answers in each exercise.`);
-      setImportWarnings(r.warnings ?? []);
+      if (job.status === "FAILED") {
+        fail(new Error(String((job.result as { message?: string })?.message ?? "Import failed.")), "Could not import the answer key.");
+      } else {
+        const updated = (job.result as { updated?: number })?.updated ?? 0;
+        notify(`Updated ${updated} answer(s) from the key. Check the highlighted answers in each exercise.`);
+      }
+      setImportWarnings(job.warnings ?? []);
     } catch (reason) { fail(reason, "Could not import the answer key."); }
     finally { setImportingKey(false); }
   }

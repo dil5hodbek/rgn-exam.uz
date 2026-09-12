@@ -7,12 +7,14 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.deps import current_user
-from app.models import ContentStatus, ExamType, Level, MediaAsset, Section, Task, TestVariant, User
+from app.models import ContentStatus, ExamType, Level, Section, Task, TestVariant, User
+from app.schemas.catalog import ExamTypeOut, LevelOut, TestDetailOut, VariantSummaryOut
+from app.services.media import batch_media_by_ids
 
 router = APIRouter(tags=["Catalog"])
 
 
-@router.get("/levels")
+@router.get("/levels", response_model=list[LevelOut])
 async def levels(_: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     rows = (await db.execute(select(Level).order_by(Level.order_index))).scalars().all()
     result = []
@@ -27,14 +29,14 @@ async def levels(_: User = Depends(current_user), db: AsyncSession = Depends(get
     return result
 
 
-@router.get("/levels/{level_slug}/exam-types")
+@router.get("/levels/{level_slug}/exam-types", response_model=list[ExamTypeOut])
 async def exam_types(level_slug: str, _: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     level = await db.scalar(select(Level).where(Level.slug == level_slug))
     types = (await db.execute(select(ExamType))).scalars().all()
     return [{"id": row.id, "name": row.name, "slug": row.slug, "level_id": level.id if level else None} for row in types]
 
 
-@router.get("/levels/{level_slug}/exam-types/{type_slug}/variants")
+@router.get("/levels/{level_slug}/exam-types/{type_slug}/variants", response_model=list[VariantSummaryOut])
 async def variants(level_slug: str, type_slug: str, _: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     rows = (await db.execute(
         select(TestVariant)
@@ -49,7 +51,7 @@ async def variants(level_slug: str, type_slug: str, _: User = Depends(current_us
     } for row in rows]
 
 
-@router.get("/tests/{test_id}")
+@router.get("/tests/{test_id}", response_model=TestDetailOut)
 async def test_detail(test_id: uuid.UUID, _: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     variant = await db.scalar(
         select(TestVariant)
@@ -62,13 +64,19 @@ async def test_detail(test_id: uuid.UUID, _: User = Depends(current_user), db: A
     )
     if not variant:
         raise HTTPException(404, "Published test not found.")
+    media_ids = {
+        task.media_asset_id
+        for section in variant.sections for task in section.tasks
+        if task.media_asset_id
+    }
+    media_map = await batch_media_by_ids(db, media_ids)
     sections = []
     for section in variant.sections:
         tasks = []
         for task in section.tasks:
             if (task.metadata_json or {}).get("superseded"):
                 continue
-            media = await db.get(MediaAsset, task.media_asset_id) if task.media_asset_id else None
+            media = media_map.get(task.media_asset_id) if task.media_asset_id else None
             tasks.append({
                 "id": task.id,
                 "type": task.type,
