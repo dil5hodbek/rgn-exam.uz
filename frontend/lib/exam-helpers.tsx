@@ -37,6 +37,7 @@ export type AttemptState = {
   answers: { question_id: string; answer: AnswerValue; flagged: boolean }[];
   checked_task_ids?: string[];
   answers_updated_at?: string | null;
+  task_order?: string[] | null;
 };
 export type ExerciseResult = Record<string, boolean | null>;
 

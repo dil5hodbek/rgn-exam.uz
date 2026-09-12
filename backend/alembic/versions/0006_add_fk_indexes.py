@@ -1,11 +1,11 @@
 """Add indexes on foreign key columns used in frequent joins/filters.
 
-Revision ID: 0002
+Revision ID: 0006
 """
 from alembic import op
 
-revision = "0002"
-down_revision = "0001"
+revision = "0006"
+down_revision = "0005"
 branch_labels = None
 depends_on = None
 

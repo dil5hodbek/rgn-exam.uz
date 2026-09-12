@@ -1,8 +1,7 @@
-import re
 import uuid
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models import Role
 
@@ -11,15 +10,8 @@ class RegisterRequest(BaseModel):
     first_name: str = Field(min_length=1, max_length=80)
     last_name: str = Field(min_length=1, max_length=80)
     phone_number: str
-    password: str = Field(min_length=8, max_length=128)
+    password: str = Field(min_length=1, max_length=128)
     confirm_password: str
-
-    @field_validator("password")
-    @classmethod
-    def strong_password(cls, value: str) -> str:
-        if not re.search(r"[A-Za-z]", value) or not re.search(r"\d", value):
-            raise ValueError("Password must include a letter and a number.")
-        return value
 
     @model_validator(mode="after")
     def passwords_match(self):
@@ -54,15 +46,8 @@ class BotContact(BaseModel):
 
 class PasswordReset(BaseModel):
     reset_token: str
-    password: str = Field(min_length=8, max_length=128)
+    password: str = Field(min_length=1, max_length=128)
     confirm_password: str
-
-    @field_validator("password")
-    @classmethod
-    def strong_reset_password(cls, value: str) -> str:
-        if not re.search(r"[A-Za-z]", value) or not re.search(r"\d", value):
-            raise ValueError("Password must include a letter and a number.")
-        return value
 
     @model_validator(mode="after")
     def reset_passwords_match(self):
@@ -95,11 +80,4 @@ class ProfileUpdate(BaseModel):
 
 class PasswordChange(BaseModel):
     current_password: str
-    new_password: str = Field(min_length=8, max_length=128)
-
-    @field_validator("new_password")
-    @classmethod
-    def strong_new_password(cls, value: str) -> str:
-        if not re.search(r"[A-Za-z]", value) or not re.search(r"\d", value):
-            raise ValueError("Password must include a letter and a number.")
-        return value
+    new_password: str = Field(min_length=1, max_length=128)

@@ -1,10 +1,11 @@
 import asyncio
+import random
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from redis.asyncio import Redis
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -22,6 +23,7 @@ from app.schemas.attempts import (
 from app.schemas.content import AnswerBatch
 from app.services.ai_grading import ai_grade_text
 from app.services.exercise_registry import MANUAL_TASK_TYPES
+from app.services.certificate import generate_certificate_pdf
 from app.services.grading import grade_answer
 
 router = APIRouter(tags=["Attempts"])
@@ -57,22 +59,102 @@ async def attempt_state(db: AsyncSession, attempt: Attempt) -> dict:
             "flagged": row.flagged,
         } for row in rows],
         "checked_task_ids": list(checked_task_ids),
+        # Exercise order shuffled once at attempt creation (see
+        # shuffled_task_order) — the client reorders its rendered exercise list
+        # to match instead of the raw Task.order_index from GET /tests/{id}.
+        "task_order": attempt.task_order,
     }
 
 
-@router.post("/tests/{test_id}/attempts", response_model=AttemptStateOut)
-async def start_attempt(test_id: uuid.UUID, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+EXTRA_SECTION_TITLE = "Bonus exercises"
+
+
+async def attempt_sections(db: AsyncSession, attempt: Attempt) -> list[Section]:
+    """The full set of Sections this attempt draws questions from: the primary
+    TestVariant's own sections, plus (for a mixed random test) one synthetic,
+    unpersisted Section wrapping whichever Tasks were borrowed from the other
+    exam type — see start_random_attempt. Every endpoint that used to walk
+    `variant.sections` walks this instead, so mixed attempts fall out for
+    free without duplicating the section/task/question loop everywhere."""
     variant = await db.scalar(
-        select(TestVariant).where(
-            TestVariant.id == test_id,
-            TestVariant.status == ContentStatus.PUBLISHED,
+        select(TestVariant)
+        .where(TestVariant.id == attempt.test_variant_id)
+        .options(
+            selectinload(TestVariant.sections)
+            .selectinload(Section.tasks)
+            .selectinload(Task.questions)
         )
     )
     if not variant:
-        raise HTTPException(404, "Published test not found.")
+        raise HTTPException(404, "Test variant not found.")
+    sections = list(variant.sections)
+    if attempt.primary_task_ids is not None:
+        # Level test: only a ~50% slice of the primary variant's own tasks is
+        # in play — drop the rest from each section (keep the section itself,
+        # even if it ends up empty, so the count/grouping stays predictable).
+        keep = set(attempt.primary_task_ids)
+        narrowed = []
+        for section in sections:
+            filtered = Section(id=section.id, title=section.title, order_index=section.order_index)
+            filtered.tasks = [task for task in section.tasks if str(task.id) in keep]
+            narrowed.append(filtered)
+        sections = narrowed
+    if attempt.extra_task_ids:
+        extra_tasks = (await db.execute(
+            select(Task).where(Task.id.in_(attempt.extra_task_ids))
+            .options(selectinload(Task.questions))
+        )).scalars().all()
+        if extra_tasks:
+            bonus_section = Section(id=uuid.uuid4(), title=EXTRA_SECTION_TITLE, order_index=len(sections))
+            bonus_section.tasks = list(extra_tasks)
+            sections.append(bonus_section)
+    return sections
+
+
+async def attempt_variant(db: AsyncSession, attempt: Attempt) -> TestVariant:
+    variant = await db.get(TestVariant, attempt.test_variant_id)
+    if not variant:
+        raise HTTPException(404, "Test variant not found.")
+    return variant
+
+
+async def shuffled_task_order(
+    db: AsyncSession, test_id: uuid.UUID,
+    extra_task_ids: list[str] | None = None, primary_task_ids: list[str] | None = None,
+) -> list[str]:
+    """Shuffle exercises (Tasks) within each Section independently, so the
+    section grouping students see stays intact but the order of exercises
+    inside it is randomized once per attempt. Question order within a Task
+    is never touched. Extra (cross-exam-type) tasks form their own shuffled
+    group, appended after the primary variant's own sections. When
+    primary_task_ids is given, only those of the primary variant's tasks are
+    included (a "level test" 50/50 mix) instead of every task."""
+    sections = (await db.execute(
+        select(Section).where(Section.test_variant_id == test_id).order_by(Section.order_index)
+        .options(selectinload(Section.tasks))
+    )).scalars().all()
+    keep = set(primary_task_ids) if primary_task_ids is not None else None
+    order: list[str] = []
+    for section in sections:
+        task_ids = [str(task.id) for task in section.tasks if keep is None or str(task.id) in keep]
+        random.shuffle(task_ids)
+        order.extend(task_ids)
+    if extra_task_ids:
+        bonus_ids = list(extra_task_ids)
+        random.shuffle(bonus_ids)
+        order.extend(bonus_ids)
+    return order
+
+
+async def create_attempt(
+    db: AsyncSession, user_id: uuid.UUID, variant: TestVariant,
+    extra_task_ids: list[str] | None = None, primary_task_ids: list[str] | None = None,
+) -> Attempt:
+    is_level_test = primary_task_ids is not None
     existing = await db.scalar(select(Attempt).where(
-        Attempt.user_id == user.id, Attempt.test_variant_id == test_id,
+        Attempt.user_id == user_id, Attempt.test_variant_id == variant.id,
         Attempt.status == AttemptStatus.IN_PROGRESS,
+        Attempt.primary_task_ids.isnot(None) if is_level_test else Attempt.primary_task_ids.is_(None),
     ))
     if existing:
         # Resume a paused attempt: the clock stopped at "Save & exit", so
@@ -86,19 +168,176 @@ async def start_attempt(test_id: uuid.UUID, user: User = Depends(current_user), 
                 await redis.delete(f"attempt-paused:{existing.id}")
         finally:
             await redis.aclose()
-        return await attempt_state(db, existing)
+        return existing
     completed = await db.scalar(select(Attempt.id).where(
-        Attempt.user_id == user.id,
-        Attempt.test_variant_id == test_id,
+        Attempt.user_id == user_id,
+        Attempt.test_variant_id == variant.id,
         Attempt.status != AttemptStatus.IN_PROGRESS,
     ).limit(1))
     if completed and not variant.retake_allowed:
         raise HTTPException(409, "Retaking this test is not allowed.")
-    attempt = Attempt(user_id=user.id, test_variant_id=test_id)
+    task_order = await shuffled_task_order(db, variant.id, extra_task_ids, primary_task_ids)
+    attempt = Attempt(
+        user_id=user_id, test_variant_id=variant.id, task_order=task_order,
+        extra_task_ids=extra_task_ids, primary_task_ids=primary_task_ids,
+    )
     db.add(attempt)
     await db.commit()
     await db.refresh(attempt)
+    return attempt
+
+
+@router.post("/tests/{test_id}/attempts", response_model=AttemptStateOut)
+async def start_attempt(test_id: uuid.UUID, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    variant = await db.scalar(
+        select(TestVariant).where(
+            TestVariant.id == test_id,
+            TestVariant.status == ContentStatus.PUBLISHED,
+        )
+    )
+    if not variant:
+        raise HTTPException(404, "Published test not found.")
+    attempt = await create_attempt(db, user.id, variant)
     return await attempt_state(db, attempt)
+
+
+# The fraction of a random test's exercises pulled from the OTHER exam type
+# at the same level (e.g. a Mid-course random test is 75% Mid-course + 25%
+# End-course exercises), per the product decision to mix study material
+# across the mid/end split rather than serve either type in isolation.
+CROSS_EXAM_TYPE_SHARE = 0.25
+
+
+async def cross_exam_type_task_ids(
+    db: AsyncSession, level_id: uuid.UUID, primary_exam_type_id: uuid.UUID, primary_task_count: int,
+) -> list[str]:
+    """Picks a random published variant of the OTHER exam type at this level
+    and returns a random ~25%-of-primary-count sample of its Task IDs across
+    all its sections, flattened (no per-section grouping needed here — they
+    land in one bonus section, see attempt_sections). Empty if this level has
+    no variant of the other exam type at all — the test then stays 100%
+    primary-type with no error, per product decision."""
+    other_variant_ids = (await db.execute(
+        select(TestVariant.id).where(
+            TestVariant.level_id == level_id,
+            TestVariant.exam_type_id != primary_exam_type_id,
+            TestVariant.status == ContentStatus.PUBLISHED,
+        )
+    )).scalars().all()
+    if not other_variant_ids:
+        return []
+    other_variant_id = random.choice(other_variant_ids)
+    other_task_ids = (await db.execute(
+        select(Task.id).join(Section, Section.id == Task.section_id)
+        .where(Section.test_variant_id == other_variant_id)
+    )).scalars().all()
+    if not other_task_ids:
+        return []
+    sample_size = max(1, round(primary_task_count * CROSS_EXAM_TYPE_SHARE))
+    sample_size = min(sample_size, len(other_task_ids))
+    return [str(task_id) for task_id in random.sample(other_task_ids, sample_size)]
+
+
+@router.post("/levels/{level_slug}/exam-types/{type_slug}/random-attempt")
+async def start_random_attempt(
+    level_slug: str, type_slug: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
+):
+    """Picks one published variant at random for this level+exam type and
+    starts (or resumes) an attempt on it — the student never sees or chooses
+    the variant number. The attempt is topped up with a slice of exercises
+    borrowed from the other exam type at the same level (see
+    cross_exam_type_task_ids) so a Mid-course random test also touches
+    End-course material, and vice versa."""
+    row = (await db.execute(
+        select(TestVariant.id, TestVariant.level_id, TestVariant.exam_type_id)
+        .join(Level, TestVariant.level_id == Level.id)
+        .join(ExamType, TestVariant.exam_type_id == ExamType.id)
+        .where(Level.slug == level_slug, ExamType.slug == type_slug, TestVariant.status == ContentStatus.PUBLISHED)
+    )).all()
+    if not row:
+        raise HTTPException(404, "No published test is available for this level yet.")
+    variant_id, level_id, exam_type_id = random.choice(row)
+    variant = await db.get(TestVariant, variant_id)
+    primary_task_count = await db.scalar(
+        select(func.count(Task.id)).join(Section, Section.id == Task.section_id)
+        .where(Section.test_variant_id == variant.id)
+    )
+    extra_task_ids = await cross_exam_type_task_ids(db, level_id, exam_type_id, primary_task_count or 0)
+    attempt = await create_attempt(db, user.id, variant, extra_task_ids or None)
+    return {"test_variant_id": variant.id, **(await attempt_state(db, attempt))}
+
+
+# A "Level Test" isn't tied to Mid- vs End-course at all — it draws roughly
+# half its exercises from each, unlike the 75/25 exam-type-specific random
+# test above.
+LEVEL_TEST_SHARE = 0.5
+
+
+@router.post("/levels/{level_slug}/level-test-attempt")
+async def start_level_test_attempt(
+    level_slug: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
+):
+    """A level-wide test: picks one random published Mid-course variant (the
+    "primary" — its time limit and passing percentage govern the attempt)
+    and one random published End-course variant at this level, then mixes
+    roughly half of each side's exercises into a single attempt. If the
+    level has only one exam type published, falls back to that type alone
+    rather than erroring — same no-error-on-missing-content policy as
+    start_random_attempt."""
+    mid_course_rows = (await db.execute(
+        select(TestVariant.id, TestVariant.level_id, TestVariant.exam_type_id)
+        .join(Level, TestVariant.level_id == Level.id)
+        .join(ExamType, TestVariant.exam_type_id == ExamType.id)
+        .where(Level.slug == level_slug, ExamType.slug == "mid-course", TestVariant.status == ContentStatus.PUBLISHED)
+    )).all()
+    end_course_rows = (await db.execute(
+        select(TestVariant.id, TestVariant.level_id, TestVariant.exam_type_id)
+        .join(Level, TestVariant.level_id == Level.id)
+        .join(ExamType, TestVariant.exam_type_id == ExamType.id)
+        .where(Level.slug == level_slug, ExamType.slug == "end-course", TestVariant.status == ContentStatus.PUBLISHED)
+    )).all()
+    if not mid_course_rows and not end_course_rows:
+        raise HTTPException(404, "No published test is available for this level yet.")
+    # Prefer Mid-course as the primary (time limit / passing %) when both
+    # exist; otherwise whichever type is actually available carries it.
+    primary_rows = mid_course_rows or end_course_rows
+    other_rows = end_course_rows if primary_rows is mid_course_rows else []
+    primary_variant_id, level_id, _primary_exam_type_id = random.choice(primary_rows)
+    variant = await db.get(TestVariant, primary_variant_id)
+
+    primary_task_ids_all = (await db.execute(
+        select(Task.id).join(Section, Section.id == Task.section_id)
+        .where(Section.test_variant_id == variant.id)
+    )).scalars().all()
+    other_task_ids_all: list[uuid.UUID] = []
+    if other_rows:
+        other_variant_id, _, _ = random.choice(other_rows)
+        other_task_ids_all = list((await db.execute(
+            select(Task.id).join(Section, Section.id == Task.section_id)
+            .where(Section.test_variant_id == other_variant_id)
+        )).scalars().all())
+
+    if other_task_ids_all:
+        primary_sample_size = max(1, round(len(primary_task_ids_all) * LEVEL_TEST_SHARE))
+        other_sample_size = max(1, round(len(other_task_ids_all) * LEVEL_TEST_SHARE))
+        primary_task_ids = [
+            str(task_id) for task_id in random.sample(primary_task_ids_all, min(primary_sample_size, len(primary_task_ids_all)))
+        ]
+        extra_task_ids = [
+            str(task_id) for task_id in random.sample(other_task_ids_all, min(other_sample_size, len(other_task_ids_all)))
+        ]
+    else:
+        # Only one exam type published at this level — the whole test is
+        # that type, no narrowing.
+        primary_task_ids = None
+        extra_task_ids = []
+
+    attempt = await create_attempt(db, user.id, variant, extra_task_ids or None, primary_task_ids)
+    primary_exam_type_slug = "mid-course" if primary_rows is mid_course_rows else "end-course"
+    return {
+        "test_variant_id": variant.id, "exam_type_slug": primary_exam_type_slug,
+        **(await attempt_state(db, attempt)),
+    }
 
 
 async def owned_attempt(db: AsyncSession, attempt_id: uuid.UUID, user_id: uuid.UUID) -> Attempt:
@@ -154,8 +393,9 @@ async def my_teacher_reviews(user: User = Depends(current_user), db: AsyncSessio
             Attempt.user_id == user.id,
             Attempt.status != AttemptStatus.IN_PROGRESS,
             Task.type.in_(manual_types),
+            func.jsonb_typeof(AttemptAnswer.student_answer) != "null",
         )
-        .order_by(AttemptAnswer.updated_at.desc())
+        .order_by(func.coalesce(Attempt.submitted_at, AttemptAnswer.updated_at).desc())
     )).all()
     return [{
         "id": answer.id,
@@ -203,7 +443,10 @@ async def save_answers(attempt_id: uuid.UUID, payload: AnswerBatch, user: User =
         select(Question.id)
         .join(Task, Task.id == Question.task_id)
         .join(Section, Section.id == Task.section_id)
-        .where(Section.test_variant_id == attempt.test_variant_id)
+        .where(
+            (Section.test_variant_id == attempt.test_variant_id)
+            | (Task.id.in_(attempt.extra_task_ids or []))
+        )
     )).scalars())
     submitted = {item.question_id: item for item in payload.answers}
     invalid_ids = set(submitted) - allowed_question_ids
@@ -235,7 +478,10 @@ async def check_exercise(
     task = await db.scalar(
         select(Task)
         .join(Section, Section.id == Task.section_id)
-        .where(Task.id == task_id, Section.test_variant_id == attempt.test_variant_id)
+        .where(
+            Task.id == task_id,
+            (Section.test_variant_id == attempt.test_variant_id) | (Task.id.in_(attempt.extra_task_ids or [])),
+        )
         .options(selectinload(Task.questions))
     )
     if not task:
@@ -308,15 +554,8 @@ async def submit(attempt_id: uuid.UUID, user: User = Depends(current_user), db: 
         select(AttemptAnswer).where(AttemptAnswer.attempt_id == attempt.id)
     )).scalars().all()
     answer_map = {row.question_id: row for row in saved_answers}
-    variant = await db.scalar(
-        select(TestVariant)
-        .where(TestVariant.id == attempt.test_variant_id)
-        .options(
-            selectinload(TestVariant.sections)
-            .selectinload(Section.tasks)
-            .selectinload(Task.questions)
-        )
-    )
+    variant = await attempt_variant(db, attempt)
+    sections = await attempt_sections(db, attempt)
     total = 0.0
     maximum = 0.0
     pending = False
@@ -325,7 +564,7 @@ async def submit(attempt_id: uuid.UUID, user: User = Depends(current_user), db: 
     # their OpenRouter latency sequentially (multiplying submit time by the
     # question count). They're fired concurrently after this loop instead.
     ai_jobs: list[tuple[AttemptAnswer, Task, Question]] = []
-    for section in variant.sections:
+    for section in sections:
         for task in section.tasks:
             task_superseded = (task.metadata_json or {}).get("superseded")
             for question in task.questions:
@@ -466,22 +705,15 @@ async def attempt_result(
     attempt = await owned_attempt(db, attempt_id, user.id)
     if attempt.status == AttemptStatus.IN_PROGRESS:
         raise HTTPException(409, "Submit the test before viewing results.")
-    variant = await db.scalar(
-        select(TestVariant)
-        .where(TestVariant.id == attempt.test_variant_id)
-        .options(
-            selectinload(TestVariant.sections)
-            .selectinload(Section.tasks)
-            .selectinload(Task.questions)
-        )
-    )
+    variant = await attempt_variant(db, attempt)
+    attempt_secs = await attempt_sections(db, attempt)
     saved = (await db.execute(
         select(AttemptAnswer).where(AttemptAnswer.attempt_id == attempt.id)
     )).scalars().all()
     answer_map = {row.question_id: row for row in saved}
     media_ids = {
         task.media_asset_id
-        for section in variant.sections for task in section.tasks
+        for section in attempt_secs for task in section.tasks
         if task.media_asset_id
     }
     media_map = {}
@@ -491,10 +723,10 @@ async def attempt_result(
             media.id: {"id": media.id, "file_name": media.file_name, "url": media.file_url, "mime_type": media.mime_type}
             for media in media_rows
         }
-    sections = []
+    section_summaries = []
     review = []
     correct_count = incorrect_count = pending_count = 0
-    for section in variant.sections:
+    for section in attempt_secs:
         earned = maximum = 0.0
         for task in section.tasks:
             for question in task.questions:
@@ -535,7 +767,7 @@ async def attempt_result(
                         "explanation": question.explanation,
                         "feedback": answer.feedback if answer else None,
                     })
-        sections.append({
+        section_summaries.append({
             "title": section.title,
             "score": earned,
             "max_score": maximum,
@@ -556,6 +788,43 @@ async def attempt_result(
         "incorrect_count": incorrect_count,
         "pending_count": pending_count,
         "time_spent_seconds": attempt.time_spent_seconds or 0,
-        "sections": sections,
+        "sections": section_summaries,
         "review": review,
     }
+
+
+@router.get("/attempts/{attempt_id}/certificate")
+async def attempt_certificate(
+    attempt_id: uuid.UUID,
+    user: User = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    attempt = await owned_attempt(db, attempt_id, user.id)
+    if attempt.status != AttemptStatus.GRADED:
+        raise HTTPException(409, "The certificate is available once grading is complete.")
+    row = (await db.execute(
+        select(TestVariant, Level, ExamType)
+        .join(Level, TestVariant.level_id == Level.id)
+        .join(ExamType, TestVariant.exam_type_id == ExamType.id)
+        .where(TestVariant.id == attempt.test_variant_id)
+    )).first()
+    if not row:
+        raise HTTPException(404, "Test variant not found.")
+    variant, level, exam_type = row
+    percentage = float(attempt.percentage or 0)
+    if percentage < variant.passing_percentage:
+        raise HTTPException(403, "Certificate is only available for passing attempts.")
+
+    pdf_bytes = generate_certificate_pdf(
+        full_name=f"{user.first_name} {user.last_name}",
+        phone_number=user.phone_number,
+        level_name=level.name,
+        exam_type_name=exam_type.name,
+        percentage=percentage,
+    )
+    filename = f"certificate-{attempt.id}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

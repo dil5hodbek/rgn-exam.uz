@@ -1,4 +1,4 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
 export const API_ORIGIN = API_URL.replace(/\/api\/v1\/?$/, "");
 
 export class ApiError extends Error {
@@ -22,7 +22,7 @@ function detailMessage(detail: unknown): string {
 
 let refreshPromise: Promise<boolean> | null = null;
 
-async function refreshSession(): Promise<boolean> {
+export async function refreshSession(): Promise<boolean> {
   if (!refreshPromise) {
     refreshPromise = fetch(`${API_URL}/auth/refresh`, {
       method: "POST",

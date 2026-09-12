@@ -5,6 +5,7 @@ import { Edit3, Plus, Search, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { CreateTestDialog } from "@/components/admin/create-test-dialog";
 import { api } from "@/lib/api";
 
@@ -20,12 +21,22 @@ export default function TestLibrary() {
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const { confirm, dialog } = useConfirm();
   useEffect(() => { api<TestRow[]>("/admin/tests").then(setRows).catch((reason) => setError(String(reason))); }, []);
   const filtered = useMemo(() => rows.filter((row) => `${row.title} ${row.level} ${row.exam_type}`.toLowerCase().includes(search.toLowerCase())), [rows, search]);
 
   // Delete ONE variant (only possible while no student has attempted it).
-  async function deleteOne(row: TestRow) {
-    if (!window.confirm(`Delete “${row.title}” with its ${row.tasks_count} exercise(s)? This cannot be undone.`)) return;
+  function deleteOne(row: TestRow) {
+    confirm({
+      title: `Delete "${row.title}"?`,
+      description: `This removes its ${row.tasks_count} exercise(s) and cannot be undone.`,
+      confirmLabel: "Delete",
+      variant: "danger",
+      onConfirm: () => doDeleteOne(row),
+    });
+  }
+
+  async function doDeleteOne(row: TestRow) {
     setError("");
     try {
       await api(`/admin/tests/${row.id}`, { method: "DELETE" });
@@ -53,6 +64,7 @@ export default function TestLibrary() {
     }
   }
   return <div className="mx-auto max-w-7xl p-4 sm:p-8">
+    {dialog}
     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
       <div><p className="text-xs font-bold uppercase tracking-[.18em] text-brand">Content</p><h1 className="mt-2 text-3xl font-extrabold text-ink">Test Library</h1><p className="mt-2 text-sm text-muted">{rows.length} test variant{rows.length === 1 ? "" : "s"}. Open any test to edit exercises and answers, or create a new one.</p></div>
       <div className="flex shrink-0 gap-2">

@@ -21,6 +21,7 @@ class AttemptStateOut(BaseModel):
     answers_updated_at: datetime | None
     answers: list[AnswerStateOut]
     checked_task_ids: list[str]
+    task_order: list[str] | None
 
 
 class SaveAnswersOut(BaseModel):

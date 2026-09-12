@@ -24,12 +24,25 @@ export function AuthCard({ initialTab = "sign-in" }: { initialTab?: "sign-in" | 
   const [otpNotice, setOtpNotice] = useState("");
   const [botUrl, setBotUrl] = useState("");
   const router = useRouter();
-  type AuthResult = { user: { role: "STUDENT" | "ADMIN" | "SUPER_ADMIN" } };
+  type AuthResult = { user: { role: "STUDENT" | "TEACHER" | "ADMIN" | "SUPER_ADMIN" } };
+  function landingFor(role: AuthResult["user"]["role"]) {
+    if (role === "STUDENT") return "/dashboard";
+    if (role === "TEACHER") return "/monitor";
+    return "/admin";
+  }
   useEffect(() => {
     if (!otpCooldown) return;
     const timer = window.setInterval(() => setOtpCooldown((value) => Math.max(0, value - 1)), 1000);
     return () => window.clearInterval(timer);
   }, [otpCooldown]);
+
+  // A visitor who still has a valid session (cookies intact, possibly just
+  // refreshed) but lands on /sign-in directly — an old bookmark, a shared
+  // link — shouldn't have to log in again. Send them straight to their panel.
+  useEffect(() => {
+    api<AuthResult["user"]>("/auth/me").then((user) => router.replace(landingFor(user.role))).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -41,7 +54,7 @@ export function AuthCard({ initialTab = "sign-in" }: { initialTab?: "sign-in" | 
           method: "POST",
           body: JSON.stringify({ phone_number: phone, code: otp, purpose: "login" }),
         });
-        router.push(result.user.role === "STUDENT" ? "/dashboard" : "/admin");
+        router.push(landingFor(result.user.role));
       } else if (tab === "create") {
         await api<AuthResult>("/auth/register", {
           method: "POST",
@@ -56,7 +69,7 @@ export function AuthCard({ initialTab = "sign-in" }: { initialTab?: "sign-in" | 
           method: "POST",
           body: JSON.stringify({ phone_number: phone, password }),
         });
-        router.push(result.user.role === "STUDENT" ? "/dashboard" : "/admin");
+        router.push(landingFor(result.user.role));
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to continue.");
@@ -119,7 +132,7 @@ export function AuthCard({ initialTab = "sign-in" }: { initialTab?: "sign-in" | 
           {!otpMode && <label className="block space-y-2 text-sm font-semibold text-ink">
             Password
             <div className="relative">
-              <Input type={showPassword ? "text" : "password"} placeholder="At least 8 characters" value={password} onChange={(event) => setPassword(event.target.value)} required />
+              <Input type={showPassword ? "text" : "password"} placeholder="Your password" value={password} onChange={(event) => setPassword(event.target.value)} required />
               <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label="Show password" className="absolute right-3 top-3 text-muted">{showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}</button>
             </div>
           </label>}

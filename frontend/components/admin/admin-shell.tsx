@@ -1,18 +1,19 @@
 "use client";
-import { Activity, BookOpenCheck, GraduationCap, LayoutDashboard, LogOut, Menu, Users } from "lucide-react";
+import { Activity, BookOpenCheck, GraduationCap, LayoutDashboard, LogOut, Menu, PenLine, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 
 const items = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard, exact: true },
   { href: "/admin/tests", label: "Test Library", icon: BookOpenCheck },
-  { href: "/admin/submissions", label: "Writing Fallback", icon: GraduationCap },
+  { href: "/admin/submissions", label: "Writing Review", icon: GraduationCap },
   { href: "/admin/students", label: "Students", icon: Users },
+  { href: "/admin/teachers", label: "Teachers", icon: PenLine },
   { href: "/admin/audit-log", label: "Audit Log", icon: Activity },
 ];
 
@@ -26,7 +27,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) { router.push("/dashboard"); return; }
       setAdminName(`${user.first_name} ${user.last_name}`); setRole(user.role);
     }).catch((error) => {
-      if (error instanceof ApiError && error.status === 401) router.replace("/sign-in");
+      // Any failure here — expired session, network error, 5xx — means we
+      // couldn't verify admin access, so fail closed rather than leaving the
+      // shell (and whatever page it wraps) rendered with an unverified role.
+      void error;
+      router.replace("/sign-in");
     });
   }, [router]);
   async function signOut() { await api("/auth/logout", { method: "POST" }).catch(() => undefined); router.push("/sign-in"); }

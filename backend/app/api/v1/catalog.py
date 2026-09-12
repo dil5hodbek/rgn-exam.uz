@@ -14,6 +14,48 @@ from app.services.media import batch_media_by_ids
 router = APIRouter(tags=["Catalog"])
 
 
+async def serialize_sections(db: AsyncSession, sections: list[Section]) -> list[dict]:
+    media_ids = {
+        task.media_asset_id
+        for section in sections for task in section.tasks
+        if task.media_asset_id
+    }
+    media_map = await batch_media_by_ids(db, media_ids)
+    result = []
+    for section in sections:
+        tasks = []
+        for task in section.tasks:
+            if (task.metadata_json or {}).get("superseded"):
+                continue
+            media = media_map.get(task.media_asset_id) if task.media_asset_id else None
+            tasks.append({
+                "id": task.id,
+                "type": task.type,
+                "title": task.title,
+                "instructions": task.instructions,
+                "passage_html": task.passage_html,
+                "audio_replay_limit": task.audio_replay_limit,
+                "interaction": (task.metadata_json or {}).get("interaction", {}),
+                "media": ({
+                    "id": media.id, "url": media.file_url, "mime_type": media.mime_type,
+                    "file_name": media.file_name,
+                } if media else None),
+                "questions": [{
+                    "id": question.id,
+                    "prompt": question.prompt,
+                    "options": question.options,
+                    "points": float(question.points),
+                    "is_example": question.is_example,
+                    # Examples show their model answer to the student; real
+                    # questions never leak the answer key.
+                    "example_answer": question.correct_answer if question.is_example else None,
+                    "order_index": question.order_index,
+                } for question in task.questions if not (question.rich_content or {}).get("superseded")],
+            })
+        result.append({"id": section.id, "title": section.title, "order_index": section.order_index, "tasks": tasks})
+    return result
+
+
 @router.get("/levels", response_model=list[LevelOut])
 async def levels(_: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     rows = (await db.execute(select(Level).order_by(Level.order_index))).scalars().all()
@@ -64,44 +106,6 @@ async def test_detail(test_id: uuid.UUID, _: User = Depends(current_user), db: A
     )
     if not variant:
         raise HTTPException(404, "Published test not found.")
-    media_ids = {
-        task.media_asset_id
-        for section in variant.sections for task in section.tasks
-        if task.media_asset_id
-    }
-    media_map = await batch_media_by_ids(db, media_ids)
-    sections = []
-    for section in variant.sections:
-        tasks = []
-        for task in section.tasks:
-            if (task.metadata_json or {}).get("superseded"):
-                continue
-            media = media_map.get(task.media_asset_id) if task.media_asset_id else None
-            tasks.append({
-                "id": task.id,
-                "type": task.type,
-                "title": task.title,
-                "instructions": task.instructions,
-                "passage_html": task.passage_html,
-                "audio_replay_limit": task.audio_replay_limit,
-                "interaction": (task.metadata_json or {}).get("interaction", {}),
-                "media": ({
-                    "id": media.id, "url": media.file_url, "mime_type": media.mime_type,
-                    "file_name": media.file_name,
-                } if media else None),
-                "questions": [{
-                    "id": question.id,
-                    "prompt": question.prompt,
-                    "options": question.options,
-                    "points": float(question.points),
-                    "is_example": question.is_example,
-                    # Examples show their model answer to the student; real
-                    # questions never leak the answer key.
-                    "example_answer": question.correct_answer if question.is_example else None,
-                    "order_index": question.order_index,
-                } for question in task.questions if not (question.rich_content or {}).get("superseded")],
-            })
-        sections.append({"id": section.id, "title": section.title, "order_index": section.order_index, "tasks": tasks})
     return {
         "id": variant.id,
         "title": variant.title,
@@ -109,5 +113,30 @@ async def test_detail(test_id: uuid.UUID, _: User = Depends(current_user), db: A
         "time_limit_minutes": variant.time_limit_minutes,
         "passing_percentage": variant.passing_percentage,
         "review_allowed": variant.review_allowed,
-        "sections": sections,
+        "sections": await serialize_sections(db, list(variant.sections)),
+    }
+
+
+@router.get("/attempts/{attempt_id}/test")
+async def attempt_test_detail(
+    attempt_id: uuid.UUID, user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
+):
+    """Same shape as GET /tests/{test_id}, but for a specific attempt — used
+    instead of that endpoint whenever the attempt might carry extra_task_ids
+    (a "random test" mixed in exercises from the other exam type), since
+    those tasks live outside the primary TestVariant's own sections and
+    GET /tests/{test_id} has no way to know about them."""
+    from app.api.v1.attempts import attempt_sections, attempt_variant, owned_attempt  # noqa: PLC0415
+
+    attempt = await owned_attempt(db, attempt_id, user.id)
+    variant = await attempt_variant(db, attempt)
+    sections = await attempt_sections(db, attempt)
+    return {
+        "id": variant.id,
+        "title": variant.title,
+        "instructions": variant.instructions,
+        "time_limit_minutes": variant.time_limit_minutes,
+        "passing_percentage": variant.passing_percentage,
+        "review_allowed": variant.review_allowed,
+        "sections": await serialize_sections(db, sections),
     }

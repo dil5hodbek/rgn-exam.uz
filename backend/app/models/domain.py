@@ -20,6 +20,7 @@ def utc_now() -> datetime:
 
 class Role(str, enum.Enum):
     STUDENT = "STUDENT"
+    TEACHER = "TEACHER"
     ADMIN = "ADMIN"
     SUPER_ADMIN = "SUPER_ADMIN"
 
@@ -177,6 +178,22 @@ class Attempt(Base):
     max_score: Mapped[float | None] = mapped_column(Numeric(8, 2))
     percentage: Mapped[float | None] = mapped_column(Numeric(6, 2))
     time_spent_seconds: Mapped[int | None] = mapped_column(Integer)
+    # Exercise (Task) order shuffled once when the attempt starts, as a list of
+    # task ID strings within their section — null means "use Task.order_index
+    # as-is" (older attempts, or a variant with shuffling disabled).
+    task_order: Mapped[list[str] | None] = mapped_column(JSONB)
+    # "Random test" mixes in a slice of exercises borrowed from the OTHER exam
+    # type at the same level (e.g. 25% End-course tasks inside a Mid-course
+    # attempt) — their Task IDs live here, on top of test_variant_id's own
+    # sections/tasks/questions. Null/empty for a pure single-variant attempt.
+    extra_task_ids: Mapped[list[str] | None] = mapped_column(JSONB)
+    # "Level test" narrows test_variant_id's own sections down to only these
+    # Task IDs (instead of using all of them) — used together with
+    # extra_task_ids so a level-wide test can draw ~50% of its exercises from
+    # the primary variant and ~50% from the other exam type, rather than the
+    # primary variant contributing 100% of its own tasks. Null means "use all
+    # of the primary variant's tasks" (every other attempt kind).
+    primary_task_ids: Mapped[list[str] | None] = mapped_column(JSONB)
     answers: Mapped[list["AttemptAnswer"]] = relationship(cascade="all, delete-orphan")
 
 

@@ -11,10 +11,11 @@ from app.core.deps import require_admin
 from app.models import Attempt, AttemptAnswer, Role, TestVariant, User
 from app.schemas.content import (
     GradeInput, QuestionCreate, QuestionInput, ReorderTasks, ResetContent,
-    SectionInput, TaskCreate, VariantCreate, VariantUpdate,
+    SectionInput, TaskCreate, TeacherCreate, VariantCreate, VariantUpdate,
 )
 from app.services import (
-    admin_content, admin_grading, admin_import, admin_media, admin_reports, admin_students, admin_tests,
+    admin_content, admin_grading, admin_import, admin_media, admin_reports, admin_students,
+    admin_teachers, admin_tests,
 )
 from app.services.exercise_registry import registry_payload
 from app.services.quality import quality_report
@@ -281,6 +282,13 @@ async def students(search: str = "", _: User = Depends(require_admin), db: Async
     return await admin_students.list_students(db, search)
 
 
+@router.get("/students/{student_id}/attempts")
+async def student_attempts(
+    student_id: uuid.UUID, _: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
+):
+    return await admin_students.student_attempts(db, student_id)
+
+
 @router.patch("/students/{student_id}/active")
 async def set_student_active(
     student_id: uuid.UUID, active: bool, request: Request,
@@ -295,6 +303,27 @@ async def admin_unlink_telegram(
     admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
 ):
     await admin_students.unlink_student_telegram(db, admin.id, _ip(request), student_id)
+
+
+@router.get("/teachers")
+async def teachers(_: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    return await admin_teachers.list_teachers(db)
+
+
+@router.post("/teachers", status_code=201)
+async def create_teacher(
+    payload: TeacherCreate, request: Request,
+    admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
+):
+    return await admin_teachers.create_teacher(db, admin.id, _ip(request), payload)
+
+
+@router.patch("/teachers/{teacher_id}/active")
+async def set_teacher_active(
+    teacher_id: uuid.UUID, active: bool, request: Request,
+    admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
+):
+    return await admin_teachers.set_teacher_active(db, admin.id, _ip(request), teacher_id, active)
 
 
 @router.get("/audit-log")

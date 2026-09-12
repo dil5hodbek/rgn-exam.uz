@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { AudioPlayer } from "@/components/exam/audio-player";
 import { GapMatch } from "@/components/exam/gap-match";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/use-confirm";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { Input } from "@/components/ui/input";
 import { api, mediaUrl } from "@/lib/api";
@@ -23,6 +24,7 @@ import {
 export function ExamRunner({ testId, resultBasePath }: { testId: string; resultBasePath: string }) {
   const [test, setTest] = useState<TestDetail | null>(null);
   const [attemptId, setAttemptId] = useState("");
+  const [taskOrder, setTaskOrder] = useState<string[] | null>(null);
   const [currentExercise, setCurrentExercise] = useState(0);
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
   const [flagged, setFlagged] = useState<string[]>([]);
@@ -40,6 +42,7 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
   const [mediaPlays, setMediaPlays] = useState<Record<string, number>>({});
   const [error, setError] = useState("");
   const router = useRouter();
+  const { confirm, dialog } = useConfirm();
 
   const sidebarScrollRef = useRef<HTMLDivElement>(null);
   const sidebarTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -150,10 +153,18 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
     });
   }
 
-  const exercises = useMemo<Exercise[]>(
-    () => test?.sections.flatMap((section) => section.tasks.map((task) => ({ ...task, section }))) ?? [],
-    [test],
-  );
+  const exercises = useMemo<Exercise[]>(() => {
+    if (!test) return [];
+    // Exercises render in Task.order_index order by default. When the attempt
+    // carries a shuffled task_order (set once at attempt creation, see
+    // shuffled_task_order on the backend), reorder each section's tasks to
+    // match it instead — the section grouping itself never changes.
+    const rank = taskOrder ? new Map(taskOrder.map((id, index) => [id, index])) : null;
+    return test.sections.flatMap((section) => {
+      const tasks = rank ? [...section.tasks].sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0)) : section.tasks;
+      return tasks.map((task) => ({ ...task, section }));
+    });
+  }, [test, taskOrder]);
   const questions = useMemo(
     () => exercises.flatMap((exercise) => exercise.questions),
     [exercises],
@@ -180,12 +191,16 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
   }, [exercises]);
 
   useEffect(() => {
-    Promise.all([
-      api<TestDetail>(`/tests/${testId}`),
-      api<AttemptState>(`/tests/${testId}/attempts`, { method: "POST" }),
-    ]).then(([detail, attempt]) => {
+    api<AttemptState>(`/tests/${testId}/attempts`, { method: "POST" }).then((attempt) =>
+      // Fetched per-attempt (not GET /tests/{testId}) because a "random test"
+      // attempt may carry extra_task_ids borrowed from the other exam type —
+      // those live outside this variant's own sections, so only the
+      // attempt-scoped endpoint knows to include them.
+      api<TestDetail>(`/attempts/${attempt.id}/test`).then((detail) => [detail, attempt] as const),
+    ).then(([detail, attempt]) => {
       setTest(detail);
       setAttemptId(attempt.id);
+      setTaskOrder(attempt.task_order ?? null);
       const serverAnswers = Object.fromEntries((attempt.answers ?? []).map((row) => [row.question_id, row.answer]));
       let serverFlagged = (attempt.answers ?? []).filter((row) => row.flagged).map((row) => row.question_id);
       // The local backup holds whatever was on the screen at the moment of a
@@ -331,8 +346,19 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
 
   // Wipe everything and start the test from scratch: answers, exercise locks,
   // results and the timer all reset.
-  async function restartAttempt() {
-    if (!attemptId || !window.confirm("Start the test over? All your answers and results will be erased.")) return;
+  function restartAttempt() {
+    if (!attemptId) return;
+    confirm({
+      title: "Start the test over?",
+      description: "All your answers and results will be erased.",
+      confirmLabel: "Start over",
+      variant: "danger",
+      onConfirm: doRestartAttempt,
+    });
+  }
+
+  async function doRestartAttempt() {
+    if (!attemptId) return;
     try {
       await api(`/attempts/${attemptId}/restart`, { method: "POST" });
     } catch (reason) {
@@ -430,12 +456,23 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
       : [...current, questionId]);
   }
 
-  async function checkExercise(exercise: Exercise) {
+  function checkExercise(exercise: Exercise) {
     if (!attemptId) return;
     const unanswered = scorableQuestions(exercise.questions).filter((question) => !hasAnswer(answers[question.id]));
-    if (unanswered.length && !window.confirm(
-      `You have ${unanswered.length} unanswered question${unanswered.length === 1 ? "" : "s"}. Are you sure you want to finish this exercise?`,
-    )) return;
+    if (unanswered.length) {
+      confirm({
+        title: `${unanswered.length} unanswered question${unanswered.length === 1 ? "" : "s"}`,
+        description: "Are you sure you want to finish this exercise?",
+        confirmLabel: "Finish exercise",
+        onConfirm: () => doCheckExercise(exercise),
+      });
+      return;
+    }
+    doCheckExercise(exercise);
+  }
+
+  async function doCheckExercise(exercise: Exercise) {
+    if (!attemptId) return;
     setCheckingExercise(true);
     setError("");
     try {
@@ -875,7 +912,9 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
     ...bankOptions.filter((option) => exampleText.includes(option.label.toLocaleLowerCase())).map((option) => option.value),
   ]);
 
-  if (showReview) return <div className="min-h-screen bg-surface p-4 sm:p-8"><div className="mx-auto max-w-5xl rounded-3xl border border-line bg-canvas p-6 shadow-soft sm:p-9">
+  if (showReview) return <>
+    {dialog}
+    <div className="min-h-screen bg-surface p-4 sm:p-8"><div className="mx-auto max-w-5xl rounded-3xl border border-line bg-canvas p-6 shadow-soft sm:p-9">
     <span className="grid h-12 w-12 place-items-center rounded-2xl bg-indigo-500/10 text-indigo-500"><Check /></span>
     <h1 className="mt-6 text-3xl font-extrabold text-ink">Ready to submit?</h1>
     <p className="mt-3 text-muted">{answered} of {scoredQuestions.length} questions answered. Open an exercise to review it.</p>
@@ -894,9 +933,12 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
       <Button variant="secondary" onClick={() => setShowReview(false)}>Return to Test</Button>
       <Button onClick={submit}><Send className="h-4 w-4" /> Submit Test</Button>
     </div>
-  </div></div>;
+  </div></div>
+  </>;
 
-  return <div className="min-h-screen bg-surface lg:h-screen lg:overflow-hidden">
+  return <>
+    {dialog}
+    <div className="min-h-screen bg-surface lg:h-screen lg:overflow-hidden">
     <header className="sticky top-0 z-30 border-b border-line bg-canvas/95 backdrop-blur">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5 lg:px-6">
         <div className="flex min-w-0 items-center gap-3">
@@ -1166,5 +1208,6 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
         </div>
       </main>
     </div>
-  </div>;
+  </div>
+  </>;
 }
