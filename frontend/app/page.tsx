@@ -55,7 +55,7 @@ export default function Home() {
             </div>
             <div className="nav-actions">
               <Link className="btn btn-ghost btn-small" href="/sign-in">Kirish</Link>
-              <Link className="btn btn-primary btn-small" href="/sign-in">Ro'yxatdan o'tish</Link>
+              <Link className="btn btn-primary btn-small" href="/sign-in">Ro&apos;yxatdan o&apos;tish</Link>
             </div>
             <button className="menu-toggle" aria-label="Menyu" aria-expanded="false">
               <span /><span />
@@ -63,17 +63,17 @@ export default function Home() {
           </nav>
           <div className="hero-content container">
             <div className="hero-copy reveal">
-              <p className="eyebrow"><span /> REGISTON O'QUV MARKAZI</p>
+              <p className="eyebrow"><span /> REGISTON O&apos;QUV MARKAZI</p>
               <h1>
                 Ingliz tili
                 <br />
                 bilimingizni
                 <br />
-                <em>sinab ko'ring</em>
+                <em>sinab ko&apos;ring</em>
               </h1>
               <p className="hero-description">
-                Registon O'quv Markazi onlayn imtihon platformasi — ingliz tilini baholash, rivojlantirish va
-                keyingi bosqichga tayyorgarlik ko'rish uchun.
+                Registon O&apos;quv Markazi onlayn imtihon platformasi — ingliz tilini baholash, rivojlantirish va
+                keyingi bosqichga tayyorgarlik ko&apos;rish uchun.
               </p>
               <div className="hero-buttons">
                 <Link className="btn btn-primary" href="/sign-in">Boshlash <span>→</span></Link>
@@ -120,10 +120,10 @@ export default function Home() {
               <span className="stroke" />
             </div>
             <div>
-              <h2>Bugun o'zingizni<br /><em>sinab ko'ring!</em></h2>
+              <h2>Bugun o&apos;zingizni<br /><em>sinab ko&apos;ring!</em></h2>
               <p>Registon bilan ingliz tilida yangi imkoniyatlarga ochiling.</p>
               <div className="cta-buttons">
-                <Link className="btn btn-primary" href="/sign-in">Ro'yxatdan o'tish <span>→</span></Link>
+                <Link className="btn btn-primary" href="/sign-in">Ro&apos;yxatdan o&apos;tish <span>→</span></Link>
                 <Link className="btn btn-outline" href="/sign-in">Kirish</Link>
               </div>
             </div>
@@ -132,7 +132,7 @@ export default function Home() {
       </main>
       <footer className="footer">
         <div className="container">
-          <span>© {new Date().getFullYear()} Registon O'quv Markazi</span>
+          <span>© {new Date().getFullYear()} Registon O&apos;quv Markazi</span>
           <span>RGN Exam</span>
         </div>
       </footer>
