@@ -53,7 +53,7 @@ export default function TeacherReviewPage() {
     <p className="mt-2 text-sm text-muted">Your writing and speaking answers, graded automatically by AI with a score and a short comment.</p>
     {error && <p className="mt-4 rounded-xl bg-red-500/10 p-3 text-sm font-semibold text-red-600">{error}</p>}
 
-    {rows === null ? <div className="grid place-items-center py-24"><span className="h-9 w-9 animate-spin rounded-full border-4 border-indigo-100 border-t-brand" /></div> : <>
+    {rows === null ? <div className="grid place-items-center py-24"><span className="h-9 w-9 animate-spin rounded-full border-4 border-orange-100 border-t-brand" /></div> : <>
 
     <div className="mt-6 flex flex-wrap gap-2">
       <button onClick={() => setTab("new")} className={`relative flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold transition ${tab === "new" ? "bg-brand text-white" : "bg-canvas text-muted hover:text-ink"}`}>
@@ -106,7 +106,7 @@ export default function TeacherReviewPage() {
               <span className="min-w-0 text-ink"><b className="text-red-600">“{text.slice(mark.start, mark.end)}”</b>{mark.comment ? <> — {mark.comment}</> : null}</span>
             </li>)}
           </ol>}
-          {row.feedback && <div className="mt-4 rounded-xl border border-indigo-200 bg-indigo-500/5 p-3.5">
+          {row.feedback && <div className="mt-4 rounded-xl border border-orange-200 bg-orange-500/5 p-3.5">
             <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-brand"><MessageSquareText className="h-3.5 w-3.5" /> AI feedback</p>
             <p className="text-sm leading-6 text-ink">{row.feedback}</p>
           </div>}

@@ -330,7 +330,7 @@ export function TestBuilder({ variantId }: { variantId: string }) {
   }
 
   if (error && !test) return <div className="p-8 text-red-600">{error}</div>;
-  if (!test) return <div className="grid min-h-[70vh] place-items-center"><span className="h-10 w-10 animate-spin rounded-full border-4 border-indigo-100 border-t-brand" /></div>;
+  if (!test) return <div className="grid min-h-[70vh] place-items-center"><span className="h-10 w-10 animate-spin rounded-full border-4 border-orange-100 border-t-brand" /></div>;
 
   return <div className="min-h-[calc(100vh-64px)]">
     {dialog}
@@ -396,7 +396,7 @@ export function TestBuilder({ variantId }: { variantId: string }) {
             onDragEnd={() => setDragId(null)}
             onDragOver={(event) => event.preventDefault()}
             onDrop={() => onDropExercise(item.id)}
-            className={`flex items-center gap-1 rounded-lg pr-2 transition ${taskId === item.id ? "bg-indigo-500/5 ring-1 ring-indigo-200" : "hover:bg-surface"} ${dragId === item.id ? "opacity-40" : ""}`}
+            className={`flex items-center gap-1 rounded-lg pr-2 transition ${taskId === item.id ? "bg-orange-500/5 ring-1 ring-orange-200" : "hover:bg-surface"} ${dragId === item.id ? "opacity-40" : ""}`}
           >
             <span className="grid h-full cursor-grab place-items-center py-2.5 pl-1.5 text-muted active:cursor-grabbing" title="Drag to reorder"><GripVertical className="h-4 w-4" /></span>
             <button onClick={() => setTaskId(item.id)} className="min-w-0 flex-1 py-2.5 text-left text-xs font-semibold">

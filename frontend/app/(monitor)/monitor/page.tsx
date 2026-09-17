@@ -29,7 +29,7 @@ export default function MonitorOverview() {
       </Link>
       <Link href="/monitor/students" className="group rounded-3xl border border-line bg-canvas p-7 shadow-sm transition hover:-translate-y-1 hover:shadow-lift">
         <div className="flex items-start justify-between">
-          <span className="grid h-14 w-14 place-items-center rounded-2xl bg-indigo-500/10 text-indigo-500"><Users className="h-6 w-6" /></span>
+          <span className="grid h-14 w-14 place-items-center rounded-2xl bg-orange-500/10 text-orange-500"><Users className="h-6 w-6" /></span>
           <span className="grid h-10 w-10 place-items-center rounded-full bg-surface text-muted transition group-hover:bg-brand group-hover:text-white"><ArrowRight className="h-4 w-4" /></span>
         </div>
         <h2 className="mt-8 text-2xl font-extrabold text-ink">Students</h2>

@@ -43,7 +43,7 @@ export function QuestionTypeSelect({
         {questionTypes.map((item) => <option key={item} value={item}>{item.replaceAll("_", " ")}</option>)}
       </select>
     </label>
-    <div className="rounded-2xl border border-indigo-200 bg-indigo-500/[.035] p-4">
+    <div className="rounded-2xl border border-orange-200 bg-orange-500/[.035] p-4">
       <label className="space-y-2 text-sm font-bold text-ink">Student interaction
         <select
           className="h-11 w-full rounded-xl border border-line bg-canvas px-3 text-sm"
@@ -72,7 +72,7 @@ export function QuestionTypeSelect({
             type="checkbox"
             checked={interaction?.reuse_options ?? false}
             onChange={(event) => onInteractionChange({ ...(interaction ?? {}), reuse_options: event.target.checked })}
-            className="h-4 w-4 accent-indigo-600"
+            className="h-4 w-4 accent-orange-600"
           />
         </label>
       </>}
