@@ -62,7 +62,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="relative mt-auto overflow-hidden rounded-2xl bg-gradient-to-br from-[#F26522] to-[#D9480F] p-4 text-white">
           <Image src="/brand/registon-mark.png" alt="" width={96} height={96} className="pointer-events-none absolute bottom-2 right-2 h-16 w-16 opacity-15 brightness-0 invert" aria-hidden />
           <Sparkles className="relative h-5 w-5" />
-          <p className="relative mt-3 text-sm font-bold">Keep your streak alive</p>
+          <p className="relative mt-3 text-sm font-bold">Keep your streak alive with Registon</p>
           <p className="relative mt-1 text-xs leading-5 text-orange-50">One focused session today moves you forward.</p>
         </div>
         <button onClick={signOut} className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold text-muted hover:bg-surface hover:text-ink">
