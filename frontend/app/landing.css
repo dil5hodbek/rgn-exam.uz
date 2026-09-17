@@ -92,7 +92,7 @@
 .landing-root .step h3{font-size:12px;margin:0 0 8px}
 .landing-root .step p{font-size:10px;color:#8f877b;line-height:1.55;margin:0}
 .landing-root .step-arrow{color:#6e675d;font-size:18px;padding-top:6px;text-align:center}
-.landing-root .cta{position:relative;min-height:300px;overflow:hidden;display:grid;place-items:center}
+.landing-root .cta{position:relative;min-height:520px;overflow:hidden;display:grid;place-items:center}
 .landing-root .cta-bg{position:absolute;inset:0;background:linear-gradient(rgba(11,10,8,.3),rgba(11,10,8,.48)),url('/brand/student-01.jpg') center 54%/cover;filter:sepia(.45) saturate(.65)}
 .landing-root .cta-bg:after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,rgba(11,10,8,.9),rgba(11,10,8,.22),rgba(11,10,8,.8))}
 .landing-root .cta-inner{position:relative;text-align:center;display:flex;justify-content:center;align-items:center}
