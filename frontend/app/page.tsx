@@ -112,102 +112,6 @@ export default function Home() {
           <div className="hero-bottom-line container" />
         </section>
 
-        <section id="levels" className="section content-section">
-          <div className="container split-section reveal">
-            <div className="section-intro">
-              <p className="chapter-label">I bob</p>
-              <h2>Barcha darajalar<br />uchun</h2>
-              <p>A1 dan B1 gacha bo'lgan darajalar uchun moslashtirilgan imtihonlar. O'z darajangizni aniqlang va keyingi bosqichga chiqing.</p>
-              <Link className="text-link" href="/sign-in">Darajalar haqida <span>→</span></Link>
-            </div>
-            <div className="level-grid">
-              <article className="level-card">
-                <span className="level-dot dot-a1" />
-                <strong>A1</strong>
-                <h3>Beginner</h3>
-                <p>Oddiy kundalik mavzular haqida gapira olish.</p>
-              </article>
-              <article className="level-card">
-                <span className="level-dot dot-a2" />
-                <strong>A2</strong>
-                <h3>Elementary</h3>
-                <p>Oddiy suhbatda o'z fikringizni tobora erkin ifoda etish.</p>
-              </article>
-              <article className="level-card">
-                <span className="level-dot dot-b1" />
-                <strong>B1</strong>
-                <h3>Intermediate</h3>
-                <p>Murakkab mavzular bo'yicha aniq va ravon muloqot.</p>
-              </article>
-            </div>
-          </div>
-        </section>
-
-        <section id="why" className="section why-section">
-          <div className="why-image">
-            <img src="/brand/student-01.jpg" alt="Onlayn ta'lim olayotgan talaba" />
-            <div />
-          </div>
-          <div className="container reveal why-inner">
-            <div className="section-intro wide">
-              <p className="chapter-label">II bob</p>
-              <h2>Nega Registon?</h2>
-              <p>Bizning platformamiz sizga nafaqat imtihon, balki haqiqiy natijani beradi.</p>
-            </div>
-            <div className="feature-grid">
-              <article className="feature">
-                <span>♢</span>
-                <h3>Tajriba va sifat</h3>
-                <p>Yillar davomida minglab talabalar ishonchini qozongan markaz.</p>
-              </article>
-              <article className="feature">
-                <span>▱</span>
-                <h3>Zamonaviy texnologiya</h3>
-                <p>Onlayn platforma, istalgan vaqtda, istalgan joyda.</p>
-              </article>
-              <article className="feature">
-                <span>◎</span>
-                <h3>Aniq baholash</h3>
-                <p>Standartlarga mos testlar va batafsil natijalar.</p>
-              </article>
-              <article className="feature">
-                <span>♧</span>
-                <h3>Professional o'qituvchilar</h3>
-                <p>Sizning rivojlanishingiz uchun doim yoningizda.</p>
-              </article>
-            </div>
-          </div>
-        </section>
-
-        <section id="how" className="section how-section">
-          <div className="container reveal">
-            <p className="chapter-label">III bob</p>
-            <h2>Qanday ishlaydi?</h2>
-            <p className="section-lead">Oddiy 4 qadam — va siz imtihonga tayyorsiz.</p>
-            <div className="steps">
-              <article className="step">
-                <span>1</span>
-                <div><h3>Ro'yxatdan o'ting</h3><p>Qisqa forma orqali hisob qaydnomangizni yarating.</p></div>
-              </article>
-              <div className="step-arrow">→</div>
-              <article className="step">
-                <span>2</span>
-                <div><h3>Darajangizni tanlang</h3><p>A1–B1 oralig'ida mos darajani belgilang.</p></div>
-              </article>
-              <div className="step-arrow">→</div>
-              <article className="step">
-                <span>3</span>
-                <div><h3>Imtihonni topshiring</h3><p>Onlayn platformada testni yeching.</p></div>
-              </article>
-              <div className="step-arrow">→</div>
-              <article className="step">
-                <span>4</span>
-                <div><h3>Natijani oling</h3><p>Darhol natijani ko'ring va keyingi qadamingizni rejalashtiring.</p></div>
-              </article>
-            </div>
-          </div>
-        </section>
-
         <section id="signup" className="cta section">
           <div className="cta-bg" />
           <div className="container cta-inner reveal">
@@ -216,7 +120,6 @@ export default function Home() {
               <span className="stroke" />
             </div>
             <div>
-              <p className="chapter-label">IV bob</p>
               <h2>Bugun o'zingizni<br /><em>sinab ko'ring!</em></h2>
               <p>Registon bilan ingliz tilida yangi imkoniyatlarga ochiling.</p>
               <div className="cta-buttons">
