@@ -98,7 +98,8 @@
 .landing-root .cta-inner{position:relative;text-align:center;display:flex;justify-content:center;align-items:center}
 .landing-root .cta-inner h2{font-size:47px;line-height:.98}
 .landing-root .cta-inner>div:nth-child(2)>p:not(.chapter-label){font-size:11px;color:#d0c7b9}
-.landing-root .cta-note{position:absolute;left:50px;bottom:0;color:#efe5d7;font-family:cursive;font-size:18px;line-height:1.05;transform:rotate(-8deg);text-align:left}
+.landing-root .cta-note{position:absolute;left:50px;bottom:20px;color:#f7f2e9;font-family:'Caveat',cursive;font-weight:700;font-size:30px;line-height:1.05;transform:rotate(-5deg);text-align:left;text-shadow:0 2px 14px rgba(0,0,0,.5)}
+.landing-root .cta-note .stroke{display:block;width:210px;height:20px;margin:6px 0 0 4px;border:none;border-bottom:3px solid var(--orange);border-radius:50%;transform:rotate(-4deg) scaleX(1.15)}
 .landing-root .cta-buttons{display:flex;justify-content:center;gap:10px;margin-top:19px}
 .landing-root .footer{border-top:1px solid var(--line);padding:22px 0;color:#71695f;font-size:9px}
 .landing-root .footer .container{display:flex;justify-content:space-between}

@@ -250,7 +250,10 @@ export default function Home() {
         <section id="signup" className="cta section">
           <div className="cta-bg" />
           <div className="container cta-inner reveal">
-            <div className="cta-note">Your English<br />Journey Starts Here</div>
+            <div className="cta-note">
+              Your English<br />Journey Starts Here
+              <span className="stroke" />
+            </div>
             <div>
               <p className="chapter-label">IV bob</p>
               <h2>Bugun o'zingizni<br /><em>sinab ko'ring!</em></h2>
