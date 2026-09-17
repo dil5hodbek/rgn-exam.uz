@@ -72,8 +72,8 @@ export default function Home() {
                 <em>sinab ko'ring</em>
               </h1>
               <p className="hero-description">
-                RGN Exam — ingliz tilini baholash, o'z darajangizni aniqlash va keyingi bosqichga tayyorgarlik
-                ko'rish uchun onlayn imtihon platformasi.
+                Registon O'quv Markazi onlayn imtihon platformasi — ingliz tilini baholash, rivojlantirish va
+                keyingi bosqichga tayyorgarlik ko'rish uchun.
               </p>
               <div className="hero-buttons">
                 <Link className="btn btn-primary" href="/sign-in">Boshlash <span>→</span></Link>
