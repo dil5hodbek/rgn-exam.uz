@@ -34,22 +34,7 @@ export default function Home() {
     );
     document.querySelectorAll(".landing-root .reveal").forEach((el) => observer.observe(el));
 
-    const sections = [...document.querySelectorAll(".landing-root main section[id]")];
-    const sectionObserver = new IntersectionObserver(
-      (entries) => {
-        const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-        if (!visible) return;
-        document.querySelectorAll(".landing-root .chapter").forEach((item) => item.classList.remove("active"));
-        document.querySelector(`.landing-root .chapter[href="#${visible.target.id}"]`)?.classList.add("active");
-      },
-      { rootMargin: "-25% 0px -60% 0px", threshold: [0, 0.2, 0.5] },
-    );
-    sections.forEach((s) => sectionObserver.observe(s));
-
-    return () => {
-      observer.disconnect();
-      sectionObserver.disconnect();
-    };
+    return () => observer.disconnect();
   }, [checked]);
 
   if (!checked) return null;
@@ -57,29 +42,6 @@ export default function Home() {
   return (
     <div className="landing-root">
       <div className="grain" aria-hidden="true" />
-      <aside className="chapter-rail" aria-label="Sahifa bo'limlari">
-        <div className="rail-line" />
-        <a className="chapter active" href="#hero">
-          <span className="chapter-icon">▱</span>
-          <strong>01. Hero</strong>
-          <small>Asosiy g'oya</small>
-        </a>
-        <a className="chapter" href="#levels">
-          <span className="chapter-icon">⌁</span>
-          <strong>02. Darajalar</strong>
-          <small>Qanday daraja sizga mos?</small>
-        </a>
-        <a className="chapter" href="#why">
-          <span className="chapter-icon">◇</span>
-          <strong>03. Nega Registon?</strong>
-          <small>Platforma afzalliklari</small>
-        </a>
-        <a className="chapter" href="#how">
-          <span className="chapter-icon">✓</span>
-          <strong>04. Qanday ishlaydi?</strong>
-          <small>4 oddiy qadam</small>
-        </a>
-      </aside>
       <main>
         <section id="hero" className="hero section">
           <nav className="nav container">
@@ -88,9 +50,8 @@ export default function Home() {
             </Link>
             <div className="nav-links">
               <a className="active" href="#hero">Imtihon</a>
-              <a href="#levels">Darajalar</a>
-              <a href="#why">Nega biz?</a>
-              <a href="#how">Qanday?</a>
+              <a href="https://rgn.uz/biz-haqimizda/">Nega biz?</a>
+              <a href="https://rgn.uz/">Qanday?</a>
             </div>
             <div className="nav-actions">
               <Link className="btn btn-ghost btn-small" href="/sign-in">Kirish</Link>
