@@ -29,6 +29,7 @@
 .landing-root .btn-outline{border:1px solid rgba(242,101,34,.6);color:var(--paper);background:rgba(11,10,8,.2)}
 .landing-root .btn-ghost{border:1px solid rgba(245,241,232,.22);color:var(--paper);background:transparent}
 .landing-root .btn-small{min-height:34px;padding:0 18px;font-size:10px}
+.landing-root .lang-toggle{min-width:44px;padding:0 12px;font-weight:700;letter-spacing:.5px}
 .landing-root .hero{min-height:700px;position:relative;background:radial-gradient(circle at 80% 38%,rgba(102,59,30,.23),transparent 32%),linear-gradient(90deg,#0b0a08 35%,#100d09 100%)}
 .landing-root .hero-content{min-height:580px;display:grid;grid-template-columns:45% 55%;position:relative}
 .landing-root .hero-copy{padding:56px 0 50px 8px;position:relative;z-index:3}
