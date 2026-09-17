@@ -52,7 +52,8 @@
 .landing-root .image-shade{position:absolute;inset:0;background:linear-gradient(90deg,#0b0a08 0%,rgba(11,10,8,.62) 13%,rgba(11,10,8,.05) 55%,rgba(11,10,8,.18) 100%),linear-gradient(0deg,rgba(11,10,8,.75),transparent 35%)}
 .landing-root .symbol-mark{display:none}
 .landing-root .orange-stroke{display:none}
-.landing-root .hand-note{position:absolute;left:18px;bottom:104px;color:#efe4d5;font-family:cursive;font-size:19px;line-height:.98;transform:rotate(-9deg);opacity:.82}
+.landing-root .hand-note{position:absolute;z-index:2;left:24px;bottom:36px;color:#f7f2e9;font-family:'Caveat',cursive;font-weight:700;font-size:34px;line-height:.92;transform:rotate(-6deg);text-shadow:0 2px 14px rgba(0,0,0,.45)}
+.landing-root .hand-note .stroke{display:block;width:112px;height:10px;margin-top:6px;border:none;border-bottom:3px solid var(--orange);border-radius:2px;transform:rotate(-2deg)}
 .landing-root .hero-bottom-line{height:1px;background:var(--line)}
 .landing-root .content-section{padding:66px 0 70px}
 .landing-root .split-section{display:grid;grid-template-columns:38% 62%;gap:30px}
@@ -135,7 +136,8 @@
 .landing-root .hero-visual{height:300px;min-height:300px;margin-top:20px}
 .landing-root .image-frame{inset:0 -20px 0 10px}
 .landing-root .student-photo{object-position:center 38%}
-.landing-root .hand-note{left:8px;bottom:50px;font-size:15px}
+.landing-root .hand-note{left:16px;bottom:24px;font-size:26px}
+.landing-root .hand-note .stroke{width:84px;height:8px}
 .landing-root .split-section{grid-template-columns:1fr;gap:32px}
 .landing-root .section-intro h2,.landing-root .why-section h2,.landing-root .how-section h2{font-size:43px}
 .landing-root .level-grid{grid-template-columns:1fr}

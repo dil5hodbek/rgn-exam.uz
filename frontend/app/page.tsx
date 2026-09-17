@@ -141,7 +141,10 @@ export default function Home() {
                 <div className="image-shade" />
               </div>
               <img className="symbol-mark" src="/brand/logo-symbol.png" alt="" />
-              <div className="hand-note">Better<br />English<br />Brighter<br />Future</div>
+              <div className="hand-note">
+                Better<br />English<br />Brighter<br />Future
+                <span className="stroke" />
+              </div>
               <div className="orange-stroke" />
             </div>
           </div>
