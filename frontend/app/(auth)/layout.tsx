@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -6,7 +7,15 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
     <main className="noise relative min-h-screen overflow-hidden bg-surface">
       <header className="relative z-10 flex items-center justify-between px-5 py-5 sm:px-10"><Logo /><ThemeToggle /></header>
       <div className="relative z-10 mx-auto grid min-h-[calc(100vh-80px)] max-w-6xl items-center gap-16 px-5 pb-12 lg:grid-cols-[1fr_460px]">
-        <section className="hidden lg:block">
+        <section className="relative hidden lg:block">
+          <Image
+            src="/brand/registon-mark.png"
+            alt=""
+            width={640}
+            height={640}
+            aria-hidden
+            className="pointer-events-none absolute -right-24 top-1/2 -z-10 h-[640px] w-[640px] -translate-y-1/2 opacity-[.06] brightness-0 invert dark:opacity-[.08]"
+          />
           <div className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-bold text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
             <span className="h-2 w-2 rounded-full bg-orange-500" /> Purpose-built for progress
           </div>
