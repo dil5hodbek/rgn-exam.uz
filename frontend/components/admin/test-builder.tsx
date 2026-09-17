@@ -346,6 +346,14 @@ export function TestBuilder({ variantId }: { variantId: string }) {
       </div>
     </div>
     {showSettings && <div className="mx-4 mt-4 space-y-4 rounded-2xl border border-line bg-canvas p-4 sm:mx-8">
+      <label className="block text-xs font-bold text-muted">Test title
+        <Input
+          value={test.title}
+          onChange={(event) => setTest({ ...test, title: event.target.value })}
+          className="mt-1"
+          placeholder="e.g. Mid Course 1"
+        />
+      </label>
       <label className="block text-xs font-bold text-muted">Test instructions (shown to the student before they start)
         <textarea
           value={test.instructions}
