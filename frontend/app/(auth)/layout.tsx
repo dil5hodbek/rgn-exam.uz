@@ -1,52 +1,33 @@
 import Image from "next/image";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
-import "../landing.css";
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <main className="landing-root relative min-h-screen overflow-hidden bg-[#0b0a08]">
-      <div className="grain" aria-hidden="true" />
+    <main className="noise relative min-h-screen overflow-hidden bg-surface">
       <header className="relative z-10 flex items-center justify-between px-5 py-5 sm:px-10"><Logo /><ThemeToggle /></header>
       <div className="relative z-10 mx-auto grid min-h-[calc(100vh-80px)] max-w-6xl items-center gap-16 px-5 pb-12 lg:grid-cols-[1fr_460px]">
         <section className="relative hidden lg:block">
           <Image
-            src="/brand/logo-symbol.png"
+            src="/brand/registon-mark.png"
             alt=""
-            width={520}
-            height={520}
+            width={640}
+            height={640}
             aria-hidden
-            className="pointer-events-none absolute -right-20 top-1/2 -z-10 h-[420px] w-[420px] -translate-y-1/2 opacity-[.07]"
+            className="pointer-events-none absolute -right-24 top-1/2 -z-10 h-[640px] w-[640px] -translate-y-1/2 opacity-[.06] brightness-0 invert dark:opacity-[.08]"
           />
-          <p className="eyebrow"><span /> REGISTON O&apos;QUV MARKAZI</p>
-          <h1 className="mt-5 max-w-xl font-serif text-6xl font-semibold leading-[1.02] tracking-tight text-[#f5f1e8]">
-            O&apos;rganing aniq.
-            <br />
-            <em className="not-italic text-[#f26522]">O&apos;sing ishonch bilan.</em>
-          </h1>
-          <p className="mt-6 max-w-lg text-[17px] leading-8 text-[#a79b86]">
-            Bilim darajangizni ko&apos;rsatadigan, o&apos;sishingizni nishonlaydigan va keyingi qadamni aniq
-            ko&apos;rsatadigan tuzilgan ingliz tili imtihonlari.
-          </p>
-          <div className="trust-row mt-10">
-            <div className="trust-item">
-              <span className="trust-icon">◈</span>
-              <div><b>Aniq</b><small>imtihonlar</small></div>
-            </div>
-            <i />
-            <div className="trust-item">
-              <span className="trust-icon">◷</span>
-              <div><b>Tezkor</b><small>natijalar</small></div>
-            </div>
-            <i />
-            <div className="trust-item">
-              <span className="trust-icon">▥</span>
-              <div><b>Real</b><small>o&apos;sish</small></div>
-            </div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-bold text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
+            <span className="h-2 w-2 rounded-full bg-orange-500" /> Purpose-built for progress
+          </div>
+          <h2 className="mt-7 max-w-xl text-6xl font-extrabold leading-[1.04] tracking-[-.045em] text-ink">Learn clearly.<br /><span className="text-brand">Grow confidently.</span></h2>
+          <p className="mt-6 max-w-lg text-lg leading-8 text-muted">Structured English assessments that show where you are, celebrate how far you’ve come, and make the next step obvious.</p>
+          <div className="mt-10 grid max-w-lg grid-cols-3 gap-3">
+            {["Focused exams", "Instant insight", "Real progress"].map((item) => <div key={item} className="rounded-2xl border border-line bg-canvas/70 p-4 text-sm font-bold text-ink backdrop-blur"><span className="mb-3 block h-1.5 w-8 rounded-full bg-brand" />{item}</div>)}
           </div>
         </section>
         {children}
       </div>
+      <div className="card-grid absolute -bottom-20 -left-20 h-80 w-80 rotate-12 opacity-30" />
     </main>
   );
 }
