@@ -36,7 +36,7 @@ export default function SavedQuestions() {
 
   return <div className="mx-auto max-w-4xl p-4 sm:p-8">
     <div className="flex items-center gap-3">
-      <span className="grid h-11 w-11 place-items-center rounded-2xl bg-indigo-500/10 text-brand"><Bookmark className="h-5 w-5" /></span>
+      <span className="grid h-11 w-11 place-items-center rounded-2xl bg-orange-500/10 text-brand"><Bookmark className="h-5 w-5" /></span>
       <div>
         <p className="text-xs font-bold uppercase tracking-[.18em] text-brand">Review</p>
         <h1 className="text-2xl font-extrabold text-ink">Saved questions</h1>
@@ -46,7 +46,7 @@ export default function SavedQuestions() {
 
     {error && <p className="mt-6 rounded-xl bg-red-500/10 p-3 text-sm font-semibold text-red-600">{error}</p>}
 
-    {rows === null && !error && <div className="mt-8 grid place-items-center py-16"><span className="h-9 w-9 animate-spin rounded-full border-4 border-indigo-100 border-t-brand" /></div>}
+    {rows === null && !error && <div className="mt-8 grid place-items-center py-16"><span className="h-9 w-9 animate-spin rounded-full border-4 border-orange-100 border-t-brand" /></div>}
 
     {rows !== null && rows.length === 0 && <div className="mt-8 rounded-3xl border border-dashed border-line bg-canvas p-10 text-center">
       <Bookmark className="mx-auto h-8 w-8 text-muted" />
@@ -57,7 +57,7 @@ export default function SavedQuestions() {
     {rows !== null && rows.length > 0 && <div className="mt-6 space-y-3">
       {rows.map((row) => <article key={row.id} className="rounded-2xl border border-line bg-canvas p-5">
         <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold">
-          <span className="rounded-full bg-indigo-500/10 px-2.5 py-1 text-brand">{row.level} · {row.exam_type}</span>
+          <span className="rounded-full bg-orange-500/10 px-2.5 py-1 text-brand">{row.level} · {row.exam_type}</span>
           <span className="rounded-full bg-surface px-2.5 py-1 text-muted">{row.test_title}</span>
           <span className="rounded-full bg-surface px-2.5 py-1 text-muted">{row.exercise_type}</span>
           {row.is_correct === true && <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-emerald-600"><Check className="h-3 w-3" /> Correct</span>}

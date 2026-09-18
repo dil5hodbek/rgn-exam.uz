@@ -27,7 +27,7 @@ function AttemptRow({ attempt }: { attempt: StudentAttempt }) {
     <div className="min-w-0 flex-1">
       <p className="flex items-center gap-1.5 text-sm font-bold text-ink">
         {attempt.title}
-        {attempt.is_mixed && <span title="Shuffled random test with mixed exercises" className="inline-flex items-center gap-1 rounded-full bg-indigo-500/10 px-2 py-0.5 text-[11px] font-bold text-indigo-500"><Shuffle className="h-3 w-3" /> Mixed</span>}
+        {attempt.is_mixed && <span title="Shuffled random test with mixed exercises" className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-2 py-0.5 text-[11px] font-bold text-orange-500"><Shuffle className="h-3 w-3" /> Mixed</span>}
       </p>
       <p className="mt-0.5 text-xs text-muted">{attempt.level} · {attempt.exam_type} · {formatDateTime(attempt.submitted_at ?? attempt.started_at)}</p>
     </div>
@@ -107,7 +107,7 @@ export default function Students() {
             onClick={() => setExpanded(open ? null : row.id)}
             className="flex w-full items-center gap-4 p-5 text-left transition hover:bg-surface"
           >
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-indigo-500/10 text-indigo-500"><UserRound className="h-4 w-4" /></span>
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-orange-500/10 text-orange-500"><UserRound className="h-4 w-4" /></span>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-extrabold text-ink">{row.first_name} {row.last_name}</p>
               <p className="text-xs text-muted">{row.phone_number} · Telegram {row.telegram_linked ? "linked" : "not linked"}</p>

@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=Caveat:wght@600;700&display=swap");
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -9,7 +9,7 @@
   --text-primary: #171923;
   --text-secondary: #697184;
   --border: #e6e8ef;
-  --accent: #5b55e7;
+  --accent: #F26522;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
 }
 .dark {
@@ -18,12 +18,12 @@
   --text-primary: #eff1f6;
   --text-secondary: #9ca5b8;
   --border: #252a38;
-  --accent: #7772f1;
+  --accent: #FF7A3D;
 }
 * { border-color: var(--border); }
 html { scroll-behavior: smooth; }
 body { color: var(--text-primary); background: var(--bg-primary); font-family: "Manrope", sans-serif; }
-::selection { background: rgba(91, 85, 231, .22); }
+::selection { background: rgba(242, 101, 34, .22); }
 .noise {
   background-image: radial-gradient(circle at 20% 15%, rgba(128, 113, 255, .16), transparent 30%),
     radial-gradient(circle at 85% 80%, rgba(255, 148, 112, .12), transparent 32%);

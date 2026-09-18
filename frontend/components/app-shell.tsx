@@ -1,6 +1,7 @@
 "use client";
 
 import { BarChart3, Bookmark, FilePenLine, LayoutDashboard, LogOut, Settings, ShieldCheck, Sparkles } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRouter } from "next/navigation";
@@ -51,17 +52,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             return (
               <Link key={item.href} href={item.href} className={cn(
                 "flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold transition",
-                active ? "bg-indigo-500/10 text-brand" : "text-muted hover:bg-surface hover:text-ink",
+                active ? "bg-orange-500/10 text-brand" : "text-muted hover:bg-surface hover:text-ink",
               )}>
                 <item.icon className="h-5 w-5" />{item.label}
               </Link>
             );
           })}
         </nav>
-        <div className="mt-auto rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 p-4 text-white">
-          <Sparkles className="h-5 w-5" />
-          <p className="mt-3 text-sm font-bold">Keep your streak alive</p>
-          <p className="mt-1 text-xs leading-5 text-indigo-100">One focused session today moves you forward.</p>
+        <div className="relative mt-auto overflow-hidden rounded-2xl bg-gradient-to-br from-[#F26522] to-[#D9480F] p-4 text-white">
+          <Image src="/brand/registon-mark.png" alt="" width={96} height={96} className="pointer-events-none absolute -bottom-2 -right-1 h-20 w-20 opacity-15 brightness-0 invert" aria-hidden />
+          <Sparkles className="relative h-5 w-5" />
+          <p className="relative mt-3 text-sm font-bold">Keep your streak alive</p>
+          <p className="relative mt-1 text-xs leading-5 text-orange-50">One focused session today moves you forward.</p>
         </div>
         <button onClick={signOut} className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold text-muted hover:bg-surface hover:text-ink">
           <LogOut className="h-5 w-5" /> Sign Out
@@ -71,7 +73,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="lg:hidden"><Logo /></div>
         <p className="hidden text-sm font-medium text-muted lg:block">{today}</p>
         <div className="flex items-center gap-2">
-          <Link href="/saved-questions" title="Saved questions" className={cn("grid h-10 w-10 place-items-center rounded-xl transition", pathname.startsWith("/saved-questions") ? "bg-indigo-500/10 text-brand" : "text-muted hover:bg-surface")}><Bookmark className="h-4 w-4" /></Link>
+          <Link href="/saved-questions" title="Saved questions" className={cn("grid h-10 w-10 place-items-center rounded-xl transition", pathname.startsWith("/saved-questions") ? "bg-orange-500/10 text-brand" : "text-muted hover:bg-surface")}><Bookmark className="h-4 w-4" /></Link>
           <ThemeToggle />
           <div className="ml-1 h-9 w-9 rounded-full bg-gradient-to-br from-amber-300 to-orange-500 p-0.5">
             <div className="grid h-full w-full place-items-center rounded-full bg-canvas text-xs font-bold text-ink">{initials}</div>
@@ -82,7 +84,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <nav className="fixed inset-x-3 bottom-3 z-40 flex justify-around rounded-2xl border border-line bg-canvas/95 p-2 shadow-soft backdrop-blur-xl lg:hidden">
         {nav.map((item) => {
           const active = pathname.startsWith(item.href);
-          return <Link key={item.href} href={item.href} className={cn("flex min-w-20 flex-col items-center gap-1 rounded-xl px-3 py-2 text-[11px] font-semibold", active ? "bg-indigo-500/10 text-brand" : "text-muted")}><item.icon className="h-5 w-5" />{item.label}</Link>;
+          return <Link key={item.href} href={item.href} className={cn("flex min-w-20 flex-col items-center gap-1 rounded-xl px-3 py-2 text-[11px] font-semibold", active ? "bg-orange-500/10 text-brand" : "text-muted")}><item.icon className="h-5 w-5" />{item.label}</Link>;
         })}
       </nav>
     </div>

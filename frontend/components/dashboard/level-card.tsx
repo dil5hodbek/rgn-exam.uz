@@ -4,7 +4,7 @@ import type { LevelCardData } from "@/lib/levels";
 
 const styles: Record<string, string> = {
   coral: "from-orange-400 to-rose-500",
-  violet: "from-violet-500 to-indigo-600",
+  violet: "from-violet-500 to-purple-600",
   blue: "from-sky-400 to-blue-600",
   mint: "from-emerald-400 to-teal-600",
 };

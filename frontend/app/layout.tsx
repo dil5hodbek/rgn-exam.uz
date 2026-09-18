@@ -3,7 +3,7 @@ import "./globals.css";
 import { Providers } from "@/components/providers";
 
 export const metadata: Metadata = {
-  title: "ExamFlow — Learn. Practice. Progress.",
+  title: "Registon O'quv Markazi",
   description: "A focused English examination platform.",
 };
 

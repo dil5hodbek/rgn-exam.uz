@@ -11,13 +11,25 @@ import logging
 import uuid
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import selectinload
 
 from app.core.celery_app import celery_app
-from app.core.database import SessionLocal
+from app.core.config import settings
 from app.models import ImportJob, ImportStatus, Section, Task, TestVariant
 
 logger = logging.getLogger(__name__)
+
+
+def _new_session_factory():
+    """Celery's prefork worker keeps the process alive across tasks, but each
+    task runs its own asyncio.run() loop. asyncpg's pool binds to the loop it
+    was first used on, so the module-level engine from app.core.database
+    (created at import time, before any task's loop exists) breaks on the
+    second task with "attached to a different loop". Creating a fresh engine
+    per task avoids that; it's disposed when the task's loop closes."""
+    engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+    return engine, async_sessionmaker(engine, expire_on_commit=False)
 
 
 @celery_app.task(name="import.run_docx_import")
@@ -31,6 +43,14 @@ def run_answers_import_task(job_id: str, variant_id: str, file_b64: str, admin_i
 
 
 async def _run_docx_import(job_id: str, variant_id: str, data: bytes, admin_id: str, ip_address: str | None) -> None:
+    engine, SessionLocal = _new_session_factory()
+    try:
+        await _run_docx_import_body(job_id, variant_id, data, admin_id, ip_address, SessionLocal)
+    finally:
+        await engine.dispose()
+
+
+async def _run_docx_import_body(job_id, variant_id, data, admin_id, ip_address, SessionLocal) -> None:
     from app.schemas.content import TaskCreate
     from app.services.admin_content import persist_new_task
     from app.services.docx_import import ai_available, ai_import_document, build_task_payloads
@@ -94,6 +114,14 @@ async def _run_docx_import(job_id: str, variant_id: str, data: bytes, admin_id: 
 
 
 async def _run_answers_import(job_id: str, variant_id: str, data: bytes, admin_id: str) -> None:
+    engine, SessionLocal = _new_session_factory()
+    try:
+        await _run_answers_import_body(job_id, variant_id, data, admin_id, SessionLocal)
+    finally:
+        await engine.dispose()
+
+
+async def _run_answers_import_body(job_id, variant_id, data, admin_id, SessionLocal) -> None:
     from app.services.audit import write_audit
     from app.services.docx_import import _extract_lines, ai_available, ai_match_answers, normalise_answer
 

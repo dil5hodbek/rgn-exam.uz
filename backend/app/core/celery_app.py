@@ -17,4 +17,4 @@ celery_app.conf.update(
     task_time_limit=15 * 60,
     task_soft_time_limit=12 * 60,
 )
-celery_app.autodiscover_tasks(["app.tasks"])
+celery_app.autodiscover_tasks(["app.tasks"], related_name="import_tasks")

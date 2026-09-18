@@ -108,8 +108,8 @@ export function AudioPlayer({
         className={cn(
           "grid h-9 w-9 shrink-0 place-items-center rounded-full text-white transition-all active:scale-90",
           playing
-            ? "bg-brand shadow-lg shadow-indigo-500/40 ring-4 ring-indigo-500/15"
-            : "bg-brand shadow-md shadow-indigo-500/30 hover:scale-105 hover:shadow-lg hover:shadow-indigo-500/40",
+            ? "bg-brand shadow-lg shadow-orange-500/40 ring-4 ring-orange-500/15"
+            : "bg-brand shadow-md shadow-orange-500/30 hover:scale-105 hover:shadow-lg hover:shadow-orange-500/40",
         )}
       >
         {playing ? <Pause className="h-4 w-4 fill-current" /> : <Play className="h-4 w-4 fill-current pl-0.5" />}

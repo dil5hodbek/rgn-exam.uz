@@ -145,7 +145,8 @@ async def update_variant(
 
 async def delete_variant(db: AsyncSession, admin_id: uuid.UUID, ip_address: str | None, variant_id: uuid.UUID) -> None:
     """Delete ONE test variant with all of its sections/exercises/questions.
-    Refused once students have attempted it — their results must survive."""
+    Also deletes any student attempts against it (and their answers, via
+    AttemptAnswer's ON DELETE CASCADE) — those results do not survive."""
     variant = await db.get(
         TestVariant, variant_id,
         options=[selectinload(TestVariant.sections).selectinload(Section.tasks).selectinload(Task.questions)],
@@ -155,12 +156,12 @@ async def delete_variant(db: AsyncSession, admin_id: uuid.UUID, ip_address: str 
     attempts = await db.scalar(
         select(func.count()).select_from(Attempt).where(Attempt.test_variant_id == variant_id)
     )
-    if attempts:
-        raise HTTPException(409, "This test has student attempts and cannot be deleted. Move it to draft instead.")
     await write_audit(
         db, admin_id, "test.delete", "TestVariant", str(variant_id),
-        {"title": variant.title, "variant_number": variant.variant_number}, ip_address,
+        {"title": variant.title, "variant_number": variant.variant_number, "attempts_deleted": attempts or 0}, ip_address,
     )
+    if attempts:
+        await db.execute(delete(Attempt).where(Attempt.test_variant_id == variant_id))
     await db.delete(variant)
     await db.commit()
 

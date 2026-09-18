@@ -51,13 +51,87 @@ INSTRUCTION_PHRASES = (
 )
 
 
+_IMAGE_CONTENT_TYPES = {
+    "image/png": "png", "image/jpeg": "jpeg", "image/jpg": "jpeg",
+    "image/gif": "gif", "image/webp": "webp", "image/bmp": "bmp",
+}
+
+# Coursebook pages get embedded at low pixel density (they were sized to fit
+# a Word page, not to be read by a model). Upscale anything smaller than this
+# so small/blurry text is legible to the vision model — 2x, capped so we don't
+# blow up an already-large scan.
+_MIN_UPSCALE_DIMENSION = 1200
+_MAX_UPSCALE_FACTOR = 3.0
+
+
+def _upscale_if_small(media_type: str, raw: bytes) -> tuple[str, bytes]:
+    """Re-encode a small embedded image as a larger PNG so a vision model can
+    read fine print more reliably. Returns the input unchanged on any failure
+    or when it's already large enough — this is a best-effort quality boost,
+    never a hard requirement."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return media_type, raw
+    try:
+        with Image.open(BytesIO(raw)) as img:
+            width, height = img.size
+            longest = max(width, height)
+            if longest <= 0 or longest >= _MIN_UPSCALE_DIMENSION:
+                return media_type, raw
+            factor = min(_MIN_UPSCALE_DIMENSION / longest, _MAX_UPSCALE_FACTOR)
+            new_size = (max(1, round(width * factor)), max(1, round(height * factor)))
+            resized = img.convert("RGB").resize(new_size, Image.LANCZOS)
+            out = BytesIO()
+            resized.save(out, format="PNG")
+            return "image/png", out.getvalue()
+    except Exception:
+        logger.warning("Image upscale failed; using original", exc_info=True)
+        return media_type, raw
+
+
 def _extract_lines(data: bytes) -> list[str]:
+    lines, _ = _extract_lines_and_images(data)
+    return lines
+
+
+def _extract_lines_and_images(data: bytes) -> tuple[list[str], dict[int, list[tuple[str, bytes]]]]:
+    """Like _extract_lines, but also returns any inline images embedded in
+    body paragraphs, keyed by the index of the line they immediately follow
+    (or -1 if they precede the first line). Each image is (media_type, bytes).
+    Table cell text/images are not paired (tables are rare in these docs and
+    the images list stays aligned with the paragraph-based line numbering that
+    ai_import_document's segmentation relies on)."""
     from docx import Document  # lazy import so the module loads without the dep
     document = Document(BytesIO(data))
     lines: list[str] = []
+    images: dict[int, list[tuple[str, bytes]]] = {}
     seen: set[str] = set()
+
+    def _rel_images(paragraph) -> list[tuple[str, bytes]]:
+        found: list[tuple[str, bytes]] = []
+        blips = paragraph._p.findall(
+            ".//{http://schemas.openxmlformats.org/drawingml/2006/main}blip"
+        )
+        for blip in blips:
+            rid = blip.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed")
+            if not rid:
+                continue
+            try:
+                part = document.part.rels[rid].target_part
+            except KeyError:
+                continue
+            content_type = getattr(part, "content_type", "")
+            if content_type not in _IMAGE_CONTENT_TYPES:
+                continue
+            found.append(_upscale_if_small(content_type, part.blob))
+        return found
+
     for paragraph in document.paragraphs:
         text = paragraph.text.strip()
+        pics = _rel_images(paragraph)
+        if pics:
+            images.setdefault(len(lines) - 1, []).extend(pics)
         if text:
             lines.append(text)
     for table in document.tables:
@@ -67,7 +141,7 @@ def _extract_lines(data: bytes) -> list[str]:
                 if text and text not in seen:
                     seen.add(text)
                     lines.append(text)
-    return lines
+    return lines, images
 
 
 def _looks_instruction(text: str) -> bool:
@@ -358,7 +432,7 @@ def _ai_parse(lines: list[str]) -> dict[str, Any] | None:
     if openrouter_key:
         raw = _openrouter_complete(
             openrouter_key,
-            getattr(settings, "openrouter_model", "anthropic/claude-haiku-4.5"),
+            getattr(settings, "openrouter_model", "anthropic/claude-sonnet-4.5"),
             text,
             max_tokens=getattr(settings, "openrouter_max_tokens", 4096),
         )
@@ -367,7 +441,7 @@ def _ai_parse(lines: list[str]) -> dict[str, Any] | None:
         if anthropic_key:
             raw = _anthropic_complete(
                 anthropic_key,
-                getattr(settings, "docx_ai_model", "claude-haiku-4-5"),
+                getattr(settings, "docx_ai_model", "claude-sonnet-4-5"),
                 text,
             )
     if raw is None:
@@ -504,7 +578,10 @@ def _parse_repeat(data_lines: list[str]) -> dict[str, Any]:
 
 _SEGMENT_PROMPT = """You segment an English test/coursebook document into its individual exercises and return STRICT JSON.
 
-The input is the document as numbered lines: "N | text".
+The input is the document as numbered lines: "N | text". A line may end with
+"[IMAGE]" — that marks a picture embedded right after that line (e.g. a
+scanned page or a screenshot of printed questions, common for Listening
+exercises whose text was pasted in as an image instead of typed).
 
 How these documents are laid out:
 - An exercise starts with its number and a rubric line, e.g.
@@ -518,6 +595,14 @@ How these documents are laid out:
   "Function", "Reading", "Writing") are NOT exercises; use them as the
   "section" of the exercises that follow.
 - A final total such as "/100" belongs to no exercise.
+- IMPORTANT: if a section header (e.g. "Listening") is followed by one or more
+  "[IMAGE]"-marked lines before the next section or the next typed rubric,
+  that means the exercise(s) for that section were pasted in as pictures with
+  no typed rubric of their own. Still create exercise entries covering that
+  range (start/end spanning the image lines) — do not skip the section just
+  because it has no typed question text. Use the section name itself (or
+  "Listening 1", "Listening 2", ... if there appear to be several) as the
+  title when you cannot read a rubric from typed text.
 
 Output shape (line numbers refer to the given numbering, end is inclusive):
 {"exercises": [{"start": 1, "end": 11, "section": "Listening",
@@ -532,7 +617,19 @@ The input has two parts: the FULL DOCUMENT (context only) and, after
 document only to find the reading passage the exercise refers to and to
 determine answers — output questions ONLY for the exercise to extract.
 
-Given the raw text of a single exercise:
+If one or more images are attached, they are part of THIS exercise (the
+coursebook page was scanned or the questions were pasted in as a picture
+instead of typed text — this is common for Listening exercises). Read all
+text visible in the images — questions, options, instructions, everything —
+exactly as if it had been typed into the document, and extract it the same
+way you would extract typed text. If any word or line in an image is blurry,
+cut off, or genuinely illegible, still give your best reading of it but mark
+that question's "uncertain": true so a human can double-check it — do not
+silently guess and mark it certain, and do not drop the question entirely.
+Do not skip or ignore an exercise just
+because its text arrived as a picture rather than as characters.
+
+Given the raw text (and any attached images) of a single exercise:
 1. Choose the best template_key from this exact list:
    multiple_choice, multi_select, true_false, true_false_not_given, gap_fill,
    dropdown_gap_fill, short_answer, error_correction, inline_alternatives,
@@ -613,16 +710,49 @@ def ai_available() -> bool:
                 or (settings.anthropic_api_key or "").strip())
 
 
-async def _complete_async(system: str, text: str, max_tokens: int | None = None, retries: int = 4) -> str | None:
+def _b64(raw: bytes) -> str:
+    import base64
+    return base64.b64encode(raw).decode("ascii")
+
+
+def _build_user_content(text: str, images: list[tuple[str, bytes]], *, for_openrouter: bool) -> Any:
+    """Build the user message content: plain text when there are no images,
+    otherwise a list of content blocks (text + each image) in the shape each
+    provider expects."""
+    if not images:
+        return text
+    blocks: list[dict[str, Any]] = [{"type": "text", "text": text}]
+    for media_type, raw in images:
+        if for_openrouter:
+            blocks.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{media_type};base64,{_b64(raw)}"},
+            })
+        else:
+            blocks.append({
+                "type": "image",
+                "source": {"type": "base64", "media_type": media_type, "data": _b64(raw)},
+            })
+    return blocks
+
+
+async def _complete_async(
+    system: str, text: str, max_tokens: int | None = None, retries: int = 4,
+    images: list[tuple[str, bytes]] | None = None,
+) -> str | None:
     """Async LLM call: OpenRouter when configured, else Anthropic. Retries
     transient failures (rate limits). Returns None when all attempts fail.
-    Pass a small max_tokens for cheap short outputs (e.g. grading)."""
+    Pass a small max_tokens for cheap short outputs (e.g. grading). Pass
+    `images` (list of (media_type, raw_bytes)) to ask a vision-capable model
+    to read embedded pictures (e.g. listening questions scanned as images)
+    alongside the text."""
     from app.core.config import settings
 
     openrouter_key = (settings.openrouter_api_key or "").strip()
     anthropic_key = (settings.anthropic_api_key or "").strip()
     if max_tokens is None:
         max_tokens = getattr(settings, "openrouter_max_tokens", 4096)
+    images = images or []
 
     for attempt in range(retries):
         if attempt:
@@ -630,16 +760,17 @@ async def _complete_async(system: str, text: str, max_tokens: int | None = None,
         try:
             if openrouter_key:
                 import httpx
+                content = _build_user_content(text, images, for_openrouter=True)
                 async with httpx.AsyncClient(timeout=180.0) as client:
                     response = await client.post(
                         "https://openrouter.ai/api/v1/chat/completions",
                         headers={"Authorization": f"Bearer {openrouter_key}"},
                         json={
-                            "model": getattr(settings, "openrouter_model", "anthropic/claude-haiku-4.5"),
+                            "model": getattr(settings, "openrouter_model", "anthropic/claude-sonnet-4.5"),
                             "max_tokens": max_tokens,
                             "messages": [
                                 {"role": "system", "content": system},
-                                {"role": "user", "content": text},
+                                {"role": "user", "content": content},
                             ],
                         },
                     )
@@ -662,12 +793,13 @@ async def _complete_async(system: str, text: str, max_tokens: int | None = None,
                         return reply
             elif anthropic_key:
                 import anthropic
+                content = _build_user_content(text, images, for_openrouter=False)
                 client = anthropic.AsyncAnthropic(api_key=anthropic_key)
                 message = await client.messages.create(
-                    model=getattr(settings, "docx_ai_model", "claude-haiku-4-5"),
+                    model=getattr(settings, "docx_ai_model", "claude-sonnet-4-5"),
                     max_tokens=max_tokens,
                     system=system,
-                    messages=[{"role": "user", "content": text}],
+                    messages=[{"role": "user", "content": content}],
                 )
                 reply = "".join(
                     getattr(block, "text", "") for block in message.content
@@ -756,11 +888,19 @@ def _normalise_exercise(data: dict[str, Any] | None) -> dict[str, Any] | None:
 async def ai_import_document(data: bytes) -> list[dict[str, Any]]:
     """Segment a full test .docx into exercises and parse each with the AI.
     Raises ValueError with a human-readable message when it cannot proceed."""
-    lines = _extract_lines(data)
+    lines, images_by_line = _extract_lines_and_images(data)
     if not lines:
         raise ValueError("The document is empty.")
 
-    numbered = "\n".join(f"{i} | {line}" for i, line in enumerate(lines))
+    # images_by_line keys are "the line index the image immediately follows"
+    # (-1 for an image before the very first line) — mark that line's own
+    # numbered entry so the segmenter can see where pictures fall.
+    numbered = "\n".join(
+        f"{i} | {line}" + (" [IMAGE]" if images_by_line.get(i) else "")
+        for i, line in enumerate(lines)
+    )
+    if images_by_line.get(-1) and lines:
+        numbered = "-1 | [IMAGE before first line]\n" + numbered
     raw = await _complete_async(_SEGMENT_PROMPT, numbered)
     seg = _extract_json(raw) if raw else None
     segments: list[dict[str, Any]] = []
@@ -781,11 +921,30 @@ async def ai_import_document(data: bytes) -> list[dict[str, Any]]:
     semaphore = asyncio.Semaphore(2)
     full_text = "\n".join(lines)
 
+    def _images_in_range(start: int, end: int) -> list[tuple[str, bytes]]:
+        # images_by_line keys are "line index the image follows" (start-1 for
+        # images before the first line); a segment claims every image that
+        # falls inside or right before its [start, end] line range.
+        found: list[tuple[str, bytes]] = []
+        for idx, pics in images_by_line.items():
+            if start - 1 <= idx <= end:
+                found.extend(pics)
+        return found
+
     async def parse_segment(segment: dict[str, Any]) -> dict[str, Any] | None:
+        chunk_images = _images_in_range(segment["start"], segment["end"])
         async with semaphore:
             chunk = "\n".join(lines[segment["start"]: segment["end"] + 1])
             prompt = f"FULL DOCUMENT (context only):\n{full_text}\n\nEXERCISE TO EXTRACT:\n{chunk}"
-            reply = await _complete_async(_EXERCISE_PROMPT, prompt)
+            if chunk_images:
+                prompt += (
+                    "\n\n(This exercise also has one or more scanned/embedded images "
+                    "attached below — they may contain the actual question text, e.g. "
+                    "a listening exercise pasted in as a picture instead of typed text. "
+                    "Read any text in the images and use it as the source for this "
+                    "exercise's questions, same as if it were typed.)"
+                )
+            reply = await _complete_async(_EXERCISE_PROMPT, prompt, images=chunk_images)
         exercise = _normalise_exercise(_extract_json(reply) if reply else None)
         if exercise is None:
             return None

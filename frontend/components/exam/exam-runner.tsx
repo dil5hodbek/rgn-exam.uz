@@ -525,7 +525,7 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
         "mx-1 inline-flex h-9 min-w-28 max-w-full translate-y-1 items-center justify-center gap-1 rounded-lg border-2 border-dashed px-2 text-sm font-bold align-baseline transition",
         result === true ? "border-emerald-400 bg-emerald-500/10 text-emerald-700"
           : result === false ? "border-red-400 bg-red-500/10 text-red-700"
-            : value ? "border-brand bg-indigo-500/5 text-ink" : "border-line bg-surface text-muted hover:border-indigo-300",
+            : value ? "border-brand bg-orange-500/5 text-ink" : "border-line bg-surface text-muted hover:border-orange-300",
       )}
     >
       <span className="max-w-48 truncate">{label || (selectedToken ? "Place here" : "Drop answer")}</span>
@@ -615,7 +615,7 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
             placeholder={hintLetter}
             onChange={(event) => setBlank(index, event.target.value)}
             size={Math.max(3, fullValue.length || hintLetter.length || 5)}
-            className="mx-1 inline-block min-w-8 max-w-full rounded-lg border-2 border-line bg-canvas px-2 py-1 text-center align-baseline font-bold text-ink outline-none transition placeholder:font-bold placeholder:text-muted focus:border-brand focus:ring-4 focus:ring-indigo-500/10"
+            className="mx-1 inline-block min-w-8 max-w-full rounded-lg border-2 border-line bg-canvas px-2 py-1 text-center align-baseline font-bold text-ink outline-none transition placeholder:font-bold placeholder:text-muted focus:border-brand focus:ring-4 focus:ring-orange-500/10"
           />,
         );
       });
@@ -628,7 +628,7 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
     const result = exerciseResults[question.id];
     const optionClass = (option: string) => cn(
       "mx-1 rounded-lg border px-2.5 py-1 font-extrabold transition",
-      selected !== option && "border-line bg-surface text-muted hover:border-indigo-300 hover:text-ink",
+      selected !== option && "border-line bg-surface text-muted hover:border-orange-300 hover:text-ink",
       selected === option && result === true && "border-emerald-500 bg-emerald-500 text-white",
       selected === option && result === false && "border-red-500 bg-red-500 text-white",
       selected === option && result === undefined && "border-brand bg-brand text-white",
@@ -702,7 +702,7 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
         if (index >= 0) remaining.splice(index, 1);
       });
       return <div className="mt-5 space-y-3">
-        <div className="flex min-h-14 flex-wrap items-center gap-2 rounded-xl border-2 border-dashed border-indigo-200 bg-indigo-500/[.025] p-3">
+        <div className="flex min-h-14 flex-wrap items-center gap-2 rounded-xl border-2 border-dashed border-orange-200 bg-orange-500/[.025] p-3">
           {selected.length ? selected.map((token, index) => <button type="button" key={`${token}-${index}`} onClick={() => setAnswer(question.id, selected.filter((_, itemIndex) => itemIndex !== index))} className="rounded-lg bg-brand px-3 py-2 text-sm font-bold text-white">{index + 1}. {token}</button>) : <span className="text-xs font-semibold text-muted">Click words below to build the answer.</span>}
         </div>
         <div className="flex flex-wrap gap-2">{remaining.map((token, index) => <button type="button" key={`${token}-${index}`} onClick={() => setAnswer(question.id, [...selected, token])} className="rounded-lg border border-line bg-canvas px-3 py-2 text-sm font-bold text-ink hover:border-brand hover:text-brand">{token}</button>)}</div>
@@ -723,12 +723,12 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
           className={cn(
             "group flex items-center gap-3 rounded-xl border-2 px-3.5 py-3 text-left text-sm font-semibold transition-all duration-150",
             active
-              ? "border-brand bg-indigo-500/[.07] text-ink shadow-sm shadow-indigo-500/10"
-              : "border-line bg-canvas text-ink hover:-translate-y-px hover:border-indigo-300 hover:shadow-sm",
+              ? "border-brand bg-orange-500/[.07] text-ink shadow-sm shadow-orange-500/10"
+              : "border-line bg-canvas text-ink hover:-translate-y-px hover:border-orange-300 hover:shadow-sm",
           )}
         ><span className={cn(
           "grid h-7 w-7 shrink-0 place-items-center rounded-lg border-2 text-[11px] font-extrabold transition-all duration-150",
-          active ? "border-brand bg-brand text-white" : "border-line bg-surface text-muted group-hover:border-indigo-300 group-hover:text-brand",
+          active ? "border-brand bg-brand text-white" : "border-line bg-surface text-muted group-hover:border-orange-300 group-hover:text-brand",
         )}>{active ? <Check className="h-4 w-4" /> : String.fromCharCode(97 + index)}</span><span className="min-w-0">{option}</span></button>;
       })}</div>;
     }
@@ -744,8 +744,8 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
             className={cn(
               "flex items-center gap-2 rounded-xl border-2 px-4 py-2.5 text-sm font-bold transition-all duration-150",
               active
-                ? "border-brand bg-brand text-white shadow-md shadow-indigo-500/25"
-                : "border-line bg-canvas text-ink hover:-translate-y-px hover:border-indigo-300 hover:shadow-sm",
+                ? "border-brand bg-brand text-white shadow-md shadow-orange-500/25"
+                : "border-line bg-canvas text-ink hover:-translate-y-px hover:border-orange-300 hover:shadow-sm",
             )}
           >{active && <Check className="h-4 w-4" />}{option}</button>;
         })}</div>;
@@ -758,12 +758,12 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
           className={cn(
             "group flex items-center gap-3 rounded-xl border-2 px-3.5 py-3 text-left text-sm font-semibold transition-all duration-150",
             active
-              ? "border-brand bg-indigo-500/[.07] text-ink shadow-sm shadow-indigo-500/10"
-              : "border-line bg-canvas text-ink hover:-translate-y-px hover:border-indigo-300 hover:shadow-sm",
+              ? "border-brand bg-orange-500/[.07] text-ink shadow-sm shadow-orange-500/10"
+              : "border-line bg-canvas text-ink hover:-translate-y-px hover:border-orange-300 hover:shadow-sm",
           )}
         ><span className={cn(
           "grid h-7 w-7 shrink-0 place-items-center rounded-full border-2 text-[11px] font-extrabold transition-all duration-150",
-          active ? "border-brand bg-brand text-white" : "border-line bg-surface text-muted group-hover:border-indigo-300 group-hover:text-brand",
+          active ? "border-brand bg-brand text-white" : "border-line bg-surface text-muted group-hover:border-orange-300 group-hover:text-brand",
         )}>{active ? <Check className="h-4 w-4" /> : String.fromCharCode(97 + index)}</span><span className="min-w-0">{option}</span></button>;
       })}</div>;
     }
@@ -776,7 +776,7 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
       const inRange = (!minimum || count >= minimum) && (!maximum || count <= maximum);
       return <div className="mt-4">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs font-bold">
-          <span className="rounded-full bg-indigo-500/10 px-3 py-1 text-brand">🤖 AI graded</span>
+          <span className="rounded-full bg-orange-500/10 px-3 py-1 text-brand">🤖 AI graded</span>
           <span className={cn(
             "rounded-full px-3 py-1 transition-colors",
             count === 0 ? "bg-surface text-muted"
@@ -792,7 +792,7 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
         <textarea
           aria-label={`Answer ${questionNumbers.get(question.id)}`}
           className={cn(
-            "w-full resize-y rounded-2xl border border-line bg-canvas p-5 text-[15px] leading-8 outline-none transition focus:border-brand focus:ring-4 focus:ring-indigo-500/10",
+            "w-full resize-y rounded-2xl border border-line bg-canvas p-5 text-[15px] leading-8 outline-none transition focus:border-brand focus:ring-4 focus:ring-orange-500/10",
             maximum && maximum <= 40 ? "min-h-[120px]" : "min-h-[52vh]",
           )}
           value={content}
@@ -852,7 +852,7 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
                       selected && result === true ? "border-emerald-500 bg-emerald-500 text-white"
                         : selected && result === false ? "border-red-500 bg-red-500 text-white"
                         : selected ? "border-brand bg-brand text-white"
-                        : "border-line bg-surface text-muted hover:border-indigo-300 hover:text-ink",
+                        : "border-line bg-surface text-muted hover:border-orange-300 hover:text-ink",
                     )}
                   >{typeof option === "string" ? option : option.label}</button>;
                 })}</span>
@@ -876,7 +876,7 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
   }
 
   if (error && !test) return <div className="grid min-h-screen place-items-center bg-surface p-6"><div className="max-w-md rounded-3xl border border-line bg-canvas p-7 text-center"><h1 className="text-xl font-extrabold text-ink">Test unavailable</h1><p className="mt-3 text-sm text-red-600">{error}</p><Button className="mt-5" onClick={() => router.back()}>Go Back</Button></div></div>;
-  if (!test || !exercises.length) return <div className="grid min-h-screen place-items-center bg-surface"><div className="text-center"><span className="mx-auto block h-10 w-10 animate-spin rounded-full border-4 border-indigo-100 border-t-brand" /><p className="mt-4 text-sm font-bold text-muted">Preparing your test…</p></div></div>;
+  if (!test || !exercises.length) return <div className="grid min-h-screen place-items-center bg-surface"><div className="text-center"><span className="mx-auto block h-10 w-10 animate-spin rounded-full border-4 border-orange-100 border-t-brand" /><p className="mt-4 text-sm font-bold text-muted">Preparing your test…</p></div></div>;
 
   const exercise = exercises[Math.min(currentExercise, exercises.length - 1)];
   // A reading text may be typed into the dedicated (rich-text) passage field OR
@@ -915,7 +915,7 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
   if (showReview) return <>
     {dialog}
     <div className="min-h-screen bg-surface p-4 sm:p-8"><div className="mx-auto max-w-5xl rounded-3xl border border-line bg-canvas p-6 shadow-soft sm:p-9">
-    <span className="grid h-12 w-12 place-items-center rounded-2xl bg-indigo-500/10 text-indigo-500"><Check /></span>
+    <span className="grid h-12 w-12 place-items-center rounded-2xl bg-orange-500/10 text-orange-500"><Check /></span>
     <h1 className="mt-6 text-3xl font-extrabold text-ink">Ready to submit?</h1>
     <p className="mt-3 text-muted">{answered} of {scoredQuestions.length} questions answered. Open an exercise to review it.</p>
     <div className="mt-7 space-y-5">{test.sections.map((section) => {
@@ -992,7 +992,7 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
               aria-label={sidebarPinnedOn ? "Unpin exercises panel" : "Pin exercises panel open"}
               className={cn(
                 "grid h-6 w-6 shrink-0 place-items-center rounded-md transition",
-                sidebarPinnedOn ? "bg-brand/15 text-brand" : "text-muted hover:bg-indigo-500/10 hover:text-brand",
+                sidebarPinnedOn ? "bg-brand/15 text-brand" : "text-muted hover:bg-orange-500/10 hover:text-brand",
               )}
             >
               {sidebarPinnedOn ? <Pin className="h-3.5 w-3.5" /> : <PinOff className="h-3.5 w-3.5" />}
@@ -1006,7 +1006,7 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
               const done = itemQuestions.filter((question) => hasAnswer(answers[question.id])).length;
               const unlocked = exerciseUnlocked(index);
               return <div key={item.id}>
-                <button disabled={!unlocked} onClick={() => goToExercise(index)} className={cn("flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-40", index === currentExercise ? "bg-brand text-white shadow-md shadow-indigo-500/20" : "bg-surface text-ink hover:bg-indigo-500/5")}><span className="flex min-w-0 items-center gap-2 truncate pr-2">{!unlocked && <Lock className="h-3 w-3 shrink-0" />}{item.title}</span><span className={cn("shrink-0 rounded-md px-1.5 py-0.5 text-[10px]", index === currentExercise ? "bg-white/15 text-white" : done === itemQuestions.length ? "bg-emerald-500/10 text-emerald-600" : "text-muted")}>{done}/{itemQuestions.length}</span></button>
+                <button disabled={!unlocked} onClick={() => goToExercise(index)} className={cn("flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-40", index === currentExercise ? "bg-brand text-white shadow-md shadow-orange-500/20" : "bg-surface text-ink hover:bg-orange-500/5")}><span className="flex min-w-0 items-center gap-2 truncate pr-2">{!unlocked && <Lock className="h-3 w-3 shrink-0" />}{item.title}</span><span className={cn("shrink-0 rounded-md px-1.5 py-0.5 text-[10px]", index === currentExercise ? "bg-white/15 text-white" : done === itemQuestions.length ? "bg-emerald-500/10 text-emerald-600" : "text-muted")}>{done}/{itemQuestions.length}</span></button>
                 {/* Question palette: jump to any question, colour = its status. */}
                 {index === currentExercise && itemQuestions.length > 0 && <div className="mb-1 mt-1.5 grid grid-cols-6 gap-1 px-0.5">
                   {itemQuestions.map((q) => {
@@ -1023,7 +1023,7 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
                           : checkedQ && r === false ? "bg-red-500 text-white"
                             : checkedQ ? "bg-amber-500 text-white"
                               : answeredQ ? "bg-brand text-white"
-                                : "bg-surface text-muted hover:bg-indigo-500/10")}
+                                : "bg-surface text-muted hover:bg-orange-500/10")}
                     >
                       {questionNumbers.get(q.id)}
                       {isFlagged && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-orange-500 ring-2 ring-canvas" />}
@@ -1047,7 +1047,7 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
         onClick={toggleSidebar}
         aria-label={sidebarOpen ? "Collapse exercises panel" : "Open exercises panel"}
         className={cn(
-          "absolute top-1/2 z-20 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-brand text-white shadow-lg shadow-indigo-500/30 transition-transform duration-300 ease-out hover:scale-105",
+          "absolute top-1/2 z-20 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-brand text-white shadow-lg shadow-orange-500/30 transition-transform duration-300 ease-out hover:scale-105",
           sidebarOpen ? "-right-3" : "left-1",
         )}
       >
@@ -1135,8 +1135,8 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
                 result === true ? "border-emerald-300 bg-emerald-500/[.04]"
                   : result === false ? "border-red-300 bg-red-500/[.04]"
                     : checked ? "border-amber-300 bg-amber-500/[.04]"
-                    : hasAnswer(answers[question.id]) ? "border-indigo-200 bg-indigo-500/[.025]"
-                    : "border-line bg-canvas hover:border-indigo-200/70 hover:shadow-sm",
+                    : hasAnswer(answers[question.id]) ? "border-orange-200 bg-orange-500/[.025]"
+                    : "border-line bg-canvas hover:border-orange-200/70 hover:shadow-sm",
               )}>
               <div className="flex items-start gap-3.5">
                 <span className={cn(
@@ -1167,8 +1167,8 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
               </div>
             </div>
 
-            {bankOptions.length > 0 && <aside className="order-first mb-5 rounded-2xl border border-indigo-200 bg-indigo-500/[.035] p-4 lg:order-none lg:sticky lg:top-24 lg:mb-0 lg:self-start">
-              <div className="flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-wider text-brand">{exercise.interaction?.kind === "matching" ? "Speakers" : "Word bank"}</p><p className="mt-1 text-[11px] leading-4 text-muted">{reusableOptions ? "Answers can be reused." : "Each word can be used once."}</p></div><GripVertical className="h-5 w-5 text-indigo-300" /></div>
+            {bankOptions.length > 0 && <aside className="order-first mb-5 rounded-2xl border border-orange-200 bg-orange-500/[.035] p-4 lg:order-none lg:sticky lg:top-24 lg:mb-0 lg:self-start">
+              <div className="flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-wider text-brand">{exercise.interaction?.kind === "matching" ? "Speakers" : "Word bank"}</p><p className="mt-1 text-[11px] leading-4 text-muted">{reusableOptions ? "Answers can be reused." : "Each word can be used once."}</p></div><GripVertical className="h-5 w-5 text-orange-300" /></div>
               <div className="mt-4 flex flex-wrap gap-2 lg:flex-col">{bankOptions.map((option) => {
                 const used = !reusableOptions && usedOptions.has(option.value);
                 const selected = selectedToken === option.value;
@@ -1184,7 +1184,7 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
                   onClick={() => setSelectedToken(selected ? null : option.value)}
                   className={cn(
                     "flex items-center gap-2 rounded-xl border bg-canvas px-3 py-2 text-left text-sm font-bold transition",
-                    selected ? "border-brand text-brand ring-2 ring-indigo-500/10" : "border-line text-ink hover:border-indigo-300",
+                    selected ? "border-brand text-brand ring-2 ring-orange-500/10" : "border-line text-ink hover:border-orange-300",
                     used && "cursor-not-allowed text-muted line-through opacity-45",
                   )}
                 ><GripVertical className="h-3.5 w-3.5 shrink-0 text-muted" /><span>{option.label}</span></button>;

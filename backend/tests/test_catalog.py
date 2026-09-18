@@ -50,11 +50,11 @@ async def test_levels_and_test_detail(client, db_session):
 
     await _register_and_login(client)
 
-    levels_resp = await client.get("/api/v1/catalog/levels")
+    levels_resp = await client.get("/api/v1/levels")
     assert levels_resp.status_code == 200
     assert any(row["slug"] == "beginner" for row in levels_resp.json())
 
-    detail_resp = await client.get(f"/api/v1/catalog/tests/{variant.id}")
+    detail_resp = await client.get(f"/api/v1/tests/{variant.id}")
     assert detail_resp.status_code == 200
     detail = detail_resp.json()
     assert detail["title"] == "Beginner Mid Course #1"
