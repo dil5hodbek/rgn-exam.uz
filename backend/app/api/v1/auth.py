@@ -26,7 +26,7 @@ from app.schemas.auth import (
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 NEUTRAL_OTP_MESSAGE = (
-    "Open the ExamFlow bot, tap Start, and share your phone number. "
+    "Open the Registon bot, tap Start, and share your phone number. "
     "If it matches an active account, the bot sends your code right away."
 )
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ async def issue_otp(chat_id: str, phone: str, purpose: str, user_id: str) -> Non
     action = "sign in" if purpose == "login" else "reset your password"
     await send_telegram_message(
         chat_id,
-        "🔐 <b>ExamFlow verification code</b>\n\n"
+        "🔐 <b>Registon verification code</b>\n\n"
         f"Your code to {action}:\n<code>{code}</code>\n\n"
         "⏱ This code expires in 5 minutes.\n"
         "Never share this code with anyone.",
@@ -191,7 +191,7 @@ async def telegram_link_complete(token: str, user: User = Depends(current_user),
         ),
     ))
     if conflict:
-        raise HTTPException(409, "This Telegram account is already linked to another ExamFlow account.")
+        raise HTTPException(409, "This Telegram account is already linked to another Registon account.")
     existing = await db.scalar(select(TelegramLink).where(TelegramLink.user_id == user.id))
     if existing:
         existing.chat_id, existing.telegram_user_id, existing.verified_phone = chat_id, telegram_user_id, verified_phone
@@ -204,7 +204,7 @@ async def telegram_link_complete(token: str, user: User = Depends(current_user),
         await send_telegram_message(
             chat_id,
             "✅ <b>Telegram connected successfully!</b>\n\n"
-            "You can now receive ExamFlow sign-in and password recovery codes in this chat.",
+            "You can now receive Registon sign-in and password recovery codes in this chat.",
             parse_mode="HTML",
         )
     except TelegramDeliveryError:
@@ -320,7 +320,7 @@ async def verify_otp(payload: OTPVerify, response: Response, db: AsyncSession = 
     async with redis_client() as redis:
         raw = await redis.get(key)
     if not raw:
-        raise HTTPException(401, "Code not found or expired. Request a new code and share your phone in the ExamFlow bot.")
+        raise HTTPException(401, "Code not found or expired. Request a new code and share your phone in the Registon bot.")
     data = json.loads(raw)
     data["attempts"] += 1
     if data["attempts"] > 5:
@@ -332,7 +332,7 @@ async def verify_otp(payload: OTPVerify, response: Response, db: AsyncSession = 
             ttl = await redis.ttl(key)
             if ttl > 0:
                 await redis.setex(key, ttl, json.dumps(data))
-        raise HTTPException(401, "Incorrect code. Check the latest message from the ExamFlow bot.")
+        raise HTTPException(401, "Incorrect code. Check the latest message from the Registon bot.")
     user = await db.get(User, uuid.UUID(data["user_id"]))
     if not user or not user.is_active:
         raise HTTPException(401, "Invalid or expired verification code.")

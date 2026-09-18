@@ -12,7 +12,7 @@ _INSECURE_DEFAULTS = {
 
 
 class Settings(BaseSettings):
-    app_name: str = "ExamFlow API"
+    app_name: str = "Registon API"
     environment: str = "development"
     database_url: str = "postgresql+asyncpg://examflow:examflow@localhost:5432/examflow"
     redis_url: str = "redis://localhost:6379/0"
