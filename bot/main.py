@@ -31,15 +31,15 @@ async def linked_start(message: Message, command: CommandObject):
     if not payload.startswith("link_") or not await redis.exists(f"telegram-link:{payload[5:]}"):
         await message.answer(
             "⏳ This connection link has expired or is invalid.\n\n"
-            "Please return to ExamFlow → Settings → Telegram and tap “Link Telegram” again."
+            "Please return to Registon → Settings → Telegram and tap “Link Telegram” again."
         )
         return
-    await redis.setex(f"telegram-pending:{message.from_user.id}", 300, payload[5:])
+    await redis.setex(f"telegram-pending:{message.from_user.id}", 600, payload[5:])
     await message.answer(
-        "👋 <b>Let’s connect your ExamFlow account</b>\n\n"
+        "👋 <b>Let’s connect your Registon account</b>\n\n"
         "Tap the button below to share the phone number verified by Telegram. "
         "For your security, manually typed numbers are not accepted.\n\n"
-        "The number must match your ExamFlow account.",
+        "The number must match your Registon account.",
         reply_markup=_share_phone_keyboard(),
         parse_mode="HTML",
     )
@@ -48,9 +48,9 @@ async def linked_start(message: Message, command: CommandObject):
 @dp.message(CommandStart())
 async def start(message: Message):
     await message.answer(
-        "👋 <b>Welcome to ExamFlow Bot!</b>\n\n"
+        "👋 <b>Welcome to the Registon Bot!</b>\n\n"
         "Tap the button below and share your phone number. "
-        "If it matches your ExamFlow account, your verification code is sent here instantly.",
+        "If it matches your Registon account, your verification code is sent here instantly.",
         reply_markup=_share_phone_keyboard(),
         parse_mode="HTML",
     )
@@ -75,7 +75,8 @@ async def _handle_shared_contact(message: Message) -> None:
     except (httpx.HTTPError, ValueError):
         logger.exception("bot-contact request failed")
         await message.answer(
-            "⚠️ Something went wrong. Please try again in a moment.",
+            "⚠️ Something went wrong on our side. Please tap /start and share your "
+            "phone number again in a moment — if it keeps failing, contact support.",
             reply_markup=ReplyKeyboardRemove(),
         )
         return
@@ -83,24 +84,24 @@ async def _handle_shared_contact(message: Message) -> None:
     if data.get("matched") and data.get("code_sent"):
         await message.answer(
             "✅ <b>Number confirmed!</b>\n\nYour verification code is above — "
-            "enter it in ExamFlow to continue.",
+            "enter it in Registon to continue.",
             reply_markup=ReplyKeyboardRemove(), parse_mode="HTML",
         )
     elif data.get("matched"):
         await message.answer(
-            "✅ <b>Telegram connected!</b>\n\nGo back to ExamFlow and request a code — "
+            "✅ <b>Telegram connected!</b>\n\nGo back to Registon and request a code — "
             "it will arrive here.",
             reply_markup=ReplyKeyboardRemove(), parse_mode="HTML",
         )
     elif data.get("reason") == "conflict":
         await message.answer(
-            "⚠️ This Telegram account is already linked to a different ExamFlow account.",
+            "⚠️ This Telegram account is already linked to a different Registon account.",
             reply_markup=ReplyKeyboardRemove(),
         )
     else:
         await message.answer(
-            "⚠️ No active ExamFlow account uses this phone number. "
-            "Sign up on ExamFlow first, then try again.",
+            "⚠️ No active Registon account uses this phone number. "
+            "Sign up on Registon first, then try again.",
             reply_markup=ReplyKeyboardRemove(),
         )
 
@@ -120,13 +121,13 @@ async def contact(message: Message):
         return
     await redis.setex(
         f"telegram-contact:{token}",
-        300,
+        600,
         f"{message.chat.id}|{message.from_user.id}|{message.contact.phone_number}",
     )
     await redis.delete(f"telegram-pending:{message.from_user.id}")
     await message.answer(
         "✅ <b>Phone number confirmed!</b>\n\n"
-        "Return to ExamFlow. The connection will finish automatically in a few seconds.",
+        "Return to Registon. The connection will finish automatically in a few seconds.",
         reply_markup=ReplyKeyboardRemove(),
         parse_mode="HTML",
     )
@@ -140,7 +141,7 @@ async def main():
     bot = Bot(TOKEN)
     try:
         identity = await bot.get_me()
-        logger.info("ExamFlow bot started as @%s", identity.username)
+        logger.info("Registon bot started as @%s", identity.username)
         await dp.start_polling(bot)
     finally:
         await redis.aclose()

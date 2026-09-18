@@ -22,7 +22,7 @@ async def seed():
         admin = await db.scalar(select(User).where(User.phone_number == settings.admin_phone))
         if not admin:
             admin = User(
-                first_name="ExamFlow", last_name="Administrator",
+                first_name="Registon", last_name="Administrator",
                 phone_number=settings.admin_phone, password_hash=hash_password(settings.admin_password),
                 role=Role.SUPER_ADMIN,
             )
