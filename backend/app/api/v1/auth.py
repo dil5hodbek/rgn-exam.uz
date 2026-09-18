@@ -275,8 +275,12 @@ async def telegram_bot_start(
     user = await db.get(User, link.user_id)
     if not user or not user.is_active:
         return {"linked": False}
+    cooldown_key = f"otp-cooldown:{hash_value(user.phone_number)}:login"
+    async with redis_client() as redis:
+        if not await redis.set(cooldown_key, "1", ex=60, nx=True):
+            return {"linked": True, "code_sent": False}
     try:
-        await issue_otp(payload.chat_id, user.phone_number, "login", str(user.id))
+        await issue_otp(link.chat_id, user.phone_number, "login", str(user.id))
     except TelegramDeliveryError:
         logger.exception("bot-start OTP delivery failed.")
         return {"linked": True, "code_sent": False}
