@@ -47,6 +47,32 @@ async def linked_start(message: Message, command: CommandObject):
 
 @dp.message(CommandStart())
 async def start(message: Message):
+    # Already linked? Skip the phone-sharing step and send a sign-in code right away.
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(
+                f"{BACKEND_URL}/api/v1/auth/telegram/bot-start",
+                json={"chat_id": str(message.chat.id), "telegram_user_id": str(message.from_user.id)},
+                headers={"X-Bot-Secret": TOKEN},
+            )
+            response.raise_for_status()
+            data = response.json()
+    except (httpx.HTTPError, ValueError):
+        logger.exception("bot-start request failed")
+        data = {"linked": False}
+
+    if data.get("linked") and data.get("code_sent"):
+        await message.answer(
+            "✅ <b>Welcome back!</b>\n\nYour sign-in code is above — enter it in Registon to continue.",
+            parse_mode="HTML",
+        )
+        return
+    if data.get("linked"):
+        await message.answer(
+            "⚠️ Something went wrong sending your code. Please try again in a moment.",
+        )
+        return
+
     await message.answer(
         "👋 <b>Welcome to the Registon Bot!</b>\n\n"
         "Tap the button below and share your phone number. "

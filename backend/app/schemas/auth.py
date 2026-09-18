@@ -44,6 +44,14 @@ class BotContact(BaseModel):
     phone: str
 
 
+class BotStart(BaseModel):
+    """Sent by the Telegram bot on a plain /start — lets the backend check whether
+    this chat is already linked, and if so send a sign-in code right away without
+    asking the user to re-share their phone."""
+    chat_id: str
+    telegram_user_id: str
+
+
 class PasswordReset(BaseModel):
     reset_token: str
     password: str = Field(min_length=1, max_length=128)

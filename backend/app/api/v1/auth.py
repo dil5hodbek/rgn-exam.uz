@@ -20,8 +20,8 @@ from app.core.security import (
 from app.models import TelegramLink, User
 from app.services.telegram import TelegramDeliveryError, send_telegram_message
 from app.schemas.auth import (
-    AuthResponse, BotContact, LoginRequest, OTPRequest, OTPVerify, PasswordChange, PasswordReset,
-    ProfileUpdate, RegisterRequest, UserOut,
+    AuthResponse, BotContact, BotStart, LoginRequest, OTPRequest, OTPVerify, PasswordChange,
+    PasswordReset, ProfileUpdate, RegisterRequest, UserOut,
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -253,6 +253,34 @@ async def request_otp(payload: OTPRequest, request: Request):
             else None
         ),
     }
+
+
+@router.post("/telegram/bot-start")
+async def telegram_bot_start(
+    payload: BotStart,
+    x_bot_secret: str = Header(default=""),
+    db: AsyncSession = Depends(get_db),
+):
+    """Called by the bot on a plain /start (no deep-link). If this chat is
+    already linked to an account, send a sign-in code immediately instead of
+    asking the user to re-share their phone. Guarded by the same shared
+    secret as bot-contact."""
+    if not settings.telegram_bot_token or not secrets.compare_digest(x_bot_secret, settings.telegram_bot_token):
+        raise HTTPException(403, "Forbidden.")
+    link = await db.scalar(
+        select(TelegramLink).where(TelegramLink.telegram_user_id == payload.telegram_user_id)
+    )
+    if not link:
+        return {"linked": False}
+    user = await db.get(User, link.user_id)
+    if not user or not user.is_active:
+        return {"linked": False}
+    try:
+        await issue_otp(payload.chat_id, user.phone_number, "login", str(user.id))
+    except TelegramDeliveryError:
+        logger.exception("bot-start OTP delivery failed.")
+        return {"linked": True, "code_sent": False}
+    return {"linked": True, "code_sent": True}
 
 
 @router.post("/telegram/bot-contact")
