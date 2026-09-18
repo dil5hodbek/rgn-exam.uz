@@ -603,6 +603,17 @@ How these documents are laid out:
   because it has no typed question text. Use the section name itself (or
   "Listening 1", "Listening 2", ... if there appear to be several) as the
   title when you cannot read a rubric from typed text.
+- CRITICAL: each "[IMAGE]"-marked line is normally its OWN separate exercise,
+  even when several appear back to back with only a score line like "/5"
+  between them and no typed rubric in between (e.g. "Listening [IMAGE]" then
+  "/5 [IMAGE]" then "/5 [IMAGE]" is Listening exercises 1, 2 and 3 — three
+  separate entries, each covering just its own image line plus its own score
+  line, NOT one entry spanning all three). Only merge consecutive images into
+  one exercise if there is clear evidence they belong together (e.g. a single
+  score line covers all of them with nothing separating them). When in doubt,
+  give each image its own exercise entry — splitting too finely is far safer
+  than merging unrelated pictures, which causes questions to be silently
+  dropped.
 
 Output shape (line numbers refer to the given numbering, end is inclusive):
 {"exercises": [{"start": 1, "end": 11, "section": "Listening",
@@ -628,6 +639,13 @@ that question's "uncertain": true so a human can double-check it — do not
 silently guess and mark it certain, and do not drop the question entirely.
 Do not skip or ignore an exercise just
 because its text arrived as a picture rather than as characters.
+
+If MULTIPLE images are attached, first check whether they are actually
+separate, unrelated exercises that were merged into this one range by
+mistake (e.g. three different Listening recordings, each a separate
+picture). If so, still extract questions from ALL of them — read every
+image and include its questions in the output, in the order the images
+appear; never process only the first image and silently skip the rest.
 
 Given the raw text (and any attached images) of a single exercise:
 1. Choose the best template_key from this exact list:
