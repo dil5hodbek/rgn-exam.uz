@@ -31,7 +31,9 @@ class SaveAnswersOut(BaseModel):
 
 class CheckResultItemOut(BaseModel):
     question_id: uuid.UUID
-    is_correct: bool
+    # None for AI/manually-graded question types (e.g. writing) — "Finish
+    # Exercise" only auto-grades objective types, so there is no verdict yet.
+    is_correct: bool | None
     is_example: bool
 
 
