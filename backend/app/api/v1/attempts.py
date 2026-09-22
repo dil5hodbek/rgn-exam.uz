@@ -121,14 +121,20 @@ async def attempt_variant(db: AsyncSession, attempt: Attempt) -> TestVariant:
 async def shuffled_task_order(
     db: AsyncSession, test_id: uuid.UUID,
     extra_task_ids: list[str] | None = None, primary_task_ids: list[str] | None = None,
+    shuffle: bool = True,
 ) -> list[str]:
-    """Shuffle exercises (Tasks) within each Section independently, so the
-    section grouping students see stays intact but the order of exercises
-    inside it is randomized once per attempt. Question order within a Task
-    is never touched. Extra (cross-exam-type) tasks form their own shuffled
-    group, appended after the primary variant's own sections. When
-    primary_task_ids is given, only those of the primary variant's tasks are
-    included (a "level test" 50/50 mix) instead of every task."""
+    """Order exercises (Tasks) within each Section independently. By default
+    (shuffle=True, used by the random and level-test attempt flows) this
+    randomizes the order once per attempt so the section grouping students
+    see stays intact but the exercise order inside it varies. When a student
+    picks a specific variant directly (shuffle=False, see start_attempt),
+    exercises keep the variant's authored order_index instead — the shuffle
+    is only meant to discourage copying on the anonymous random/level tests.
+    Question order within a Task is never touched either way. Extra
+    (cross-exam-type) tasks form their own group, appended after the primary
+    variant's own sections. When primary_task_ids is given, only those of
+    the primary variant's tasks are included (a "level test" 50/50 mix)
+    instead of every task."""
     sections = (await db.execute(
         select(Section).where(Section.test_variant_id == test_id).order_by(Section.order_index)
         .options(selectinload(Section.tasks))
@@ -136,12 +142,18 @@ async def shuffled_task_order(
     keep = set(primary_task_ids) if primary_task_ids is not None else None
     order: list[str] = []
     for section in sections:
-        task_ids = [str(task.id) for task in section.tasks if keep is None or str(task.id) in keep]
-        random.shuffle(task_ids)
+        tasks = [task for task in section.tasks if keep is None or str(task.id) in keep]
+        if shuffle:
+            task_ids = [str(task.id) for task in tasks]
+            random.shuffle(task_ids)
+        else:
+            tasks.sort(key=lambda task: task.order_index if task.order_index is not None else 0)
+            task_ids = [str(task.id) for task in tasks]
         order.extend(task_ids)
     if extra_task_ids:
         bonus_ids = list(extra_task_ids)
-        random.shuffle(bonus_ids)
+        if shuffle:
+            random.shuffle(bonus_ids)
         order.extend(bonus_ids)
     return order
 
@@ -149,6 +161,7 @@ async def shuffled_task_order(
 async def create_attempt(
     db: AsyncSession, user_id: uuid.UUID, variant: TestVariant,
     extra_task_ids: list[str] | None = None, primary_task_ids: list[str] | None = None,
+    shuffle: bool = True,
 ) -> Attempt:
     is_level_test = primary_task_ids is not None
     existing = await db.scalar(select(Attempt).where(
@@ -176,7 +189,7 @@ async def create_attempt(
     ).limit(1))
     if completed and not variant.retake_allowed:
         raise HTTPException(409, "Retaking this test is not allowed.")
-    task_order = await shuffled_task_order(db, variant.id, extra_task_ids, primary_task_ids)
+    task_order = await shuffled_task_order(db, variant.id, extra_task_ids, primary_task_ids, shuffle)
     attempt = Attempt(
         user_id=user_id, test_variant_id=variant.id, task_order=task_order,
         extra_task_ids=extra_task_ids, primary_task_ids=primary_task_ids,
@@ -197,7 +210,7 @@ async def start_attempt(test_id: uuid.UUID, user: User = Depends(current_user), 
     )
     if not variant:
         raise HTTPException(404, "Published test not found.")
-    attempt = await create_attempt(db, user.id, variant)
+    attempt = await create_attempt(db, user.id, variant, shuffle=False)
     return await attempt_state(db, attempt)
 
 
