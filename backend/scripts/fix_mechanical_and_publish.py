@@ -7,7 +7,15 @@ import httpx
 from app.core.config import settings
 
 c = httpx.Client(base_url="http://127.0.0.1:8000/api/v1", timeout=600.0)
-c.post("/auth/login", json={"phone_number": settings.admin_phone, "password": settings.admin_password}).raise_for_status()
+login = c.post("/auth/login", json={"phone_number": settings.admin_phone, "password": settings.admin_password})
+login.raise_for_status()
+# In production COOKIE_SECURE=true marks the auth cookies Secure, so httpx's
+# cookie jar (correctly) won't replay them over this script's plain-HTTP
+# loopback call — this is an internal container-to-container request that
+# never leaves the host, so re-attach them by hand instead of disabling
+# COOKIE_SECURE server-wide just to run a one-off script.
+for name, value in login.cookies.items():
+    c.cookies.set(name, value)
 
 ALT_RE = re.compile(r"([\w'’-]+)\s*/\s*([\w'’-]+(?:\s+[\w'’-]+){0,2})")
 
