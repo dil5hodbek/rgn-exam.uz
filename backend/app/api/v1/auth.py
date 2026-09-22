@@ -4,7 +4,9 @@ import secrets
 import uuid
 from datetime import timedelta
 
-from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response
+from pathlib import Path
+
+from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response, UploadFile
 from redis.asyncio import Redis
 from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
@@ -18,6 +20,7 @@ from app.core.security import (
     verify_password,
 )
 from app.models import TelegramLink, User
+from app.services.admin_media import save_avatar_upload
 from app.services.telegram import TelegramDeliveryError, send_telegram_message
 from app.schemas.auth import (
     AuthResponse, BotContact, BotStart, LoginRequest, OTPRequest, OTPVerify, PasswordChange,
@@ -65,6 +68,7 @@ def user_output(user: User) -> UserOut:
         phone_number=user.phone_number,
         role=user.role,
         theme=user.theme,
+        avatar_url=user.avatar_url,
         telegram_linked=bool(user.telegram_link),
     )
 
@@ -425,6 +429,29 @@ async def change_password(
     user.password_hash = hash_password(payload.new_password)
     await db.commit()
     return {"message": "Password changed successfully."}
+
+
+@router.post("/me/avatar", response_model=UserOut)
+async def upload_avatar(
+    file: UploadFile, user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
+):
+    previous_url = user.avatar_url
+    user.avatar_url = await save_avatar_upload(file)
+    await db.commit()
+    await db.refresh(user)
+    if previous_url:
+        (settings.storage_path / Path(previous_url).relative_to("/media")).unlink(missing_ok=True)
+    return user_output(user)
+
+
+@router.delete("/me/avatar", response_model=UserOut)
+async def delete_avatar(user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    if user.avatar_url:
+        (settings.storage_path / Path(user.avatar_url).relative_to("/media")).unlink(missing_ok=True)
+        user.avatar_url = None
+        await db.commit()
+        await db.refresh(user)
+    return user_output(user)
 
 
 @router.delete("/telegram/link", status_code=204)

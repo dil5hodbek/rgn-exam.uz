@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import { Logo } from "./logo";
 import { ThemeToggle } from "./theme-toggle";
 import { cn } from "@/lib/utils";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, mediaUrl } from "@/lib/api";
 
 const studentNav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -22,13 +22,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [initials, setInitials] = useState("ME");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [today, setToday] = useState("");
   useEffect(() => {
     setToday(new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }));
-    api<{ first_name: string; last_name: string; role: string }>("/auth/me")
+    api<{ first_name: string; last_name: string; role: string; avatar_url: string | null }>("/auth/me")
       .then((user) => {
         setInitials(`${user.first_name[0] ?? ""}${user.last_name[0] ?? ""}`.toUpperCase());
+        setAvatarUrl(user.avatar_url);
         setIsAdmin(["ADMIN", "SUPER_ADMIN"].includes(user.role));
       })
       .catch((error) => {
@@ -76,7 +78,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Link href="/saved-questions" title="Saved questions" className={cn("grid h-10 w-10 place-items-center rounded-xl transition", pathname.startsWith("/saved-questions") ? "bg-orange-500/10 text-brand" : "text-muted hover:bg-surface")}><Bookmark className="h-4 w-4" /></Link>
           <ThemeToggle />
           <div className="ml-1 h-9 w-9 rounded-full bg-gradient-to-br from-amber-300 to-orange-500 p-0.5">
-            <div className="grid h-full w-full place-items-center rounded-full bg-canvas text-xs font-bold text-ink">{initials}</div>
+            {avatarUrl ? (
+              <Image src={mediaUrl(avatarUrl)} alt="" width={36} height={36} className="h-full w-full rounded-full object-cover" unoptimized />
+            ) : (
+              <div className="grid h-full w-full place-items-center rounded-full bg-canvas text-xs font-bold text-ink">{initials}</div>
+            )}
           </div>
         </div>
       </header>

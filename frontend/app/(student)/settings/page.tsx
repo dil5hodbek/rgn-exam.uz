@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Bot, Check, Copy, KeyRound, Monitor, Moon, Save, Sun, UserRound } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Bot, Check, Copy, KeyRound, Monitor, Moon, Save, Sun, Trash2, UserRound } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { ApiError, api } from "@/lib/api";
+import { ApiError, api, mediaUrl } from "@/lib/api";
 
-type Me = { first_name: string; last_name: string; phone_number: string; theme: string; telegram_linked: boolean };
+type Me = {
+  first_name: string; last_name: string; phone_number: string; theme: string;
+  avatar_url: string | null; telegram_linked: boolean;
+};
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
@@ -19,6 +22,30 @@ export default function SettingsPage() {
   const [blockedLink, setBlockedLink] = useState("");
   const [copied, setCopied] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  async function uploadAvatar(file: File) {
+    setError(""); setAvatarUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const updated = await api<Me>("/auth/me/avatar", { method: "POST", body: form });
+      setMe(updated); setMessage("Profile picture updated.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to upload the picture.");
+    } finally {
+      setAvatarUploading(false);
+      if (avatarInputRef.current) avatarInputRef.current.value = "";
+    }
+  }
+  async function removeAvatar() {
+    setError("");
+    try {
+      const updated = await api<Me>("/auth/me/avatar", { method: "DELETE" });
+      setMe(updated); setMessage("Profile picture removed.");
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Unable to remove the picture."); }
+  }
 
   async function copyLink() {
     try {
@@ -85,7 +112,23 @@ export default function SettingsPage() {
         <Button size="sm" variant="secondary" onClick={copyLink} className="shrink-0">{copied ? <><Check className="h-4 w-4" /> Copied</> : <><Copy className="h-4 w-4" /> Copy</>}</Button>
       </div>
     </div>}
-    <div className="mt-8 space-y-5"><section className="rounded-3xl border border-line bg-canvas p-6"><div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-orange-500/10 text-orange-500"><UserRound className="h-5 w-5" /></span><div><h2 className="font-extrabold text-ink">Personal information</h2><p className="text-xs text-muted">Phone changes require a separate verification flow.</p></div></div><div className="mt-6 grid gap-4 sm:grid-cols-2"><label className="space-y-2 text-sm font-bold text-ink">First Name<Input value={me.first_name} onChange={(event) => setMe({ ...me, first_name: event.target.value })} /></label><label className="space-y-2 text-sm font-bold text-ink">Last Name<Input value={me.last_name} onChange={(event) => setMe({ ...me, last_name: event.target.value })} /></label><label className="space-y-2 text-sm font-bold text-ink sm:col-span-2">Phone Number<Input value={me.phone_number} disabled /></label></div><div className="mt-5 flex justify-end"><Button onClick={saveProfile}><Save className="h-4 w-4" /> Save Changes</Button></div></section>
+    <div className="mt-8 space-y-5"><section className="rounded-3xl border border-line bg-canvas p-6"><div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-orange-500/10 text-orange-500"><UserRound className="h-5 w-5" /></span><div><h2 className="font-extrabold text-ink">Personal information</h2><p className="text-xs text-muted">Phone changes require a separate verification flow.</p></div></div>
+        <div className="mt-6 flex items-center gap-4">
+          <div className="h-16 w-16 shrink-0 rounded-full bg-gradient-to-br from-amber-300 to-orange-500 p-0.5">
+            {me.avatar_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={mediaUrl(me.avatar_url)} alt="" className="h-full w-full rounded-full object-cover" />
+            ) : (
+              <div className="grid h-full w-full place-items-center rounded-full bg-canvas text-lg font-bold text-ink">{`${me.first_name[0] ?? ""}${me.last_name[0] ?? ""}`.toUpperCase()}</div>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input ref={avatarInputRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) uploadAvatar(file); }} />
+            <Button type="button" variant="secondary" size="sm" disabled={avatarUploading} onClick={() => avatarInputRef.current?.click()}>{avatarUploading ? "Uploading…" : "Change picture"}</Button>
+            {me.avatar_url && <Button type="button" variant="ghost" size="sm" onClick={removeAvatar}><Trash2 className="h-4 w-4" /> Remove</Button>}
+          </div>
+        </div>
+        <div className="mt-6 grid gap-4 sm:grid-cols-2"><label className="space-y-2 text-sm font-bold text-ink">First Name<Input value={me.first_name} onChange={(event) => setMe({ ...me, first_name: event.target.value })} /></label><label className="space-y-2 text-sm font-bold text-ink">Last Name<Input value={me.last_name} onChange={(event) => setMe({ ...me, last_name: event.target.value })} /></label><label className="space-y-2 text-sm font-bold text-ink sm:col-span-2">Phone Number<Input value={me.phone_number} disabled /></label></div><div className="mt-5 flex justify-end"><Button onClick={saveProfile}><Save className="h-4 w-4" /> Save Changes</Button></div></section>
       <section className="rounded-3xl border border-line bg-canvas p-6"><div className="flex items-center justify-between gap-4"><div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-sky-500/10 text-sky-500"><Bot className="h-5 w-5" /></span><div><h2 className="font-extrabold text-ink">Telegram</h2><p className="text-xs text-muted">{me.telegram_linked ? "Connected. The bot can send secure sign-in and recovery codes." : "Connect once before using Telegram sign-in or password recovery."}</p></div></div>{me.telegram_linked && <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-600"><Check className="h-3 w-3" /> Linked</span>}</div><Button variant="secondary" className="mt-5" disabled={linking} onClick={me.telegram_linked ? unlinkTelegram : linkTelegram}>{linking ? "Waiting for Telegram…" : me.telegram_linked ? "Unlink Telegram" : "Link Telegram"}</Button></section>
       <section className="rounded-3xl border border-line bg-canvas p-6"><div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-orange-500/10 text-orange-500"><Sun className="h-5 w-5" /></span><div><h2 className="font-extrabold text-ink">Appearance</h2><p className="text-xs text-muted">Choose how ExamFlow looks.</p></div></div><div className="mt-5 grid grid-cols-3 gap-3">{[{ name: "light", icon: Sun }, { name: "dark", icon: Moon }, { name: "system", icon: Monitor }].map((option) => <button key={option.name} onClick={() => setTheme(option.name)} className={cn("flex flex-col items-center gap-2 rounded-2xl border p-4 text-sm font-bold capitalize transition", theme === option.name ? "border-brand bg-orange-500/5 text-brand ring-2 ring-orange-500/10" : "border-line text-muted hover:bg-surface")}><option.icon className="h-5 w-5" />{option.name}</button>)}</div></section>
       <section className="rounded-3xl border border-line bg-canvas p-6"><div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-500/10 text-emerald-500"><KeyRound className="h-5 w-5" /></span><div><h2 className="font-extrabold text-ink">Change password</h2><p className="text-xs text-muted">At least eight characters with a letter and number.</p></div></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><Input type="password" placeholder="Current password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /><Input type="password" placeholder="New password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} /></div><Button variant="secondary" className="mt-4" onClick={changePassword}>Change Password</Button></section>

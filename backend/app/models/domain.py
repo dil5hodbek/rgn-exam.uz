@@ -57,6 +57,7 @@ class User(Base):
     role: Mapped[Role] = mapped_column(Enum(Role), default=Role.STUDENT)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     theme: Mapped[str] = mapped_column(String(16), default="system")
+    avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     telegram_link: Mapped["TelegramLink | None"] = relationship(
         back_populates="user", cascade="all, delete-orphan", lazy="selectin"
