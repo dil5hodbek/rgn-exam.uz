@@ -38,7 +38,7 @@ for t in c.get("/admin/tests").json():
     for task in tasks:
         interaction = task.get("interaction") or {}
         # Matching with repeated/short option set -> reusable by design.
-        if interaction.get("kind") in ("matching", "matching_headings") and not interaction.get("reuse_options"):
+        if interaction.get("kind") in ("matching", "matching_headings", "word_bank") and not interaction.get("reuse_options"):
             answers = [str(q.get("correct_answer") or "") for q in task["questions"]]
             if len(answers) != len(set(answers)) or len(interaction.get("options") or []) < len(answers):
                 c.patch(f"/admin/tasks/{task['id']}", json={
