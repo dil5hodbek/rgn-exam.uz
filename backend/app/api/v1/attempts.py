@@ -122,13 +122,12 @@ async def shuffled_task_order(
     db: AsyncSession, test_id: uuid.UUID,
     extra_task_ids: list[str] | None = None, primary_task_ids: list[str] | None = None,
 ) -> list[str]:
-    """Shuffle exercises (Tasks) within each Section independently, so the
-    section grouping students see stays intact but the order of exercises
-    inside it is randomized once per attempt. Question order within a Task
-    is never touched. Extra (cross-exam-type) tasks form their own shuffled
-    group, appended after the primary variant's own sections. When
-    primary_task_ids is given, only those of the primary variant's tasks are
-    included (a "level test" 50/50 mix) instead of every task."""
+    """Order exercises (Tasks) within each Section by their authored
+    order_index, so students see them in the same order the variant was
+    built in. Extra (cross-exam-type) tasks form their own group, appended
+    after the primary variant's own sections. When primary_task_ids is
+    given, only those of the primary variant's tasks are included (a "level
+    test" 50/50 mix) instead of every task."""
     sections = (await db.execute(
         select(Section).where(Section.test_variant_id == test_id).order_by(Section.order_index)
         .options(selectinload(Section.tasks))
@@ -136,13 +135,13 @@ async def shuffled_task_order(
     keep = set(primary_task_ids) if primary_task_ids is not None else None
     order: list[str] = []
     for section in sections:
-        task_ids = [str(task.id) for task in section.tasks if keep is None or str(task.id) in keep]
-        random.shuffle(task_ids)
-        order.extend(task_ids)
+        tasks = sorted(
+            (task for task in section.tasks if keep is None or str(task.id) in keep),
+            key=lambda task: task.order_index if task.order_index is not None else 0,
+        )
+        order.extend(str(task.id) for task in tasks)
     if extra_task_ids:
-        bonus_ids = list(extra_task_ids)
-        random.shuffle(bonus_ids)
-        order.extend(bonus_ids)
+        order.extend(extra_task_ids)
     return order
 
 
