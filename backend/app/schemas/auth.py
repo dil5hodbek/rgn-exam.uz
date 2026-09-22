@@ -71,6 +71,7 @@ class UserOut(BaseModel):
     phone_number: str
     role: Role
     theme: str
+    avatar_url: str | None = None
     telegram_linked: bool = False
     model_config = ConfigDict(from_attributes=True)
 
