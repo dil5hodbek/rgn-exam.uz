@@ -16,7 +16,7 @@ import { api, mediaUrl } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
   answerChoices, choiceGridClass, exampleAnswerText, hasAnswer, inlineAlternative,
-  interactionOptions, orderingTokens, renderInstructionBlocks, scorableQuestions, textAnswer,
+  interactionOptions, orderingTokens, renderInstructionBlocks, renumberExerciseTitle, scorableQuestions, textAnswer,
   type AnswerValue, type ApiQuestion, type ApiSection, type ApiTask, type AttemptState,
   type Exercise, type ExerciseResult, type TestDetail,
 } from "@/lib/exam-helpers";
@@ -160,9 +160,10 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
     // shuffled_task_order on the backend), reorder each section's tasks to
     // match it instead — the section grouping itself never changes.
     const rank = taskOrder ? new Map(taskOrder.map((id, index) => [id, index])) : null;
+    let position = 0;
     return test.sections.flatMap((section) => {
       const tasks = rank ? [...section.tasks].sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0)) : section.tasks;
-      return tasks.map((task) => ({ ...task, section }));
+      return tasks.map((task) => ({ ...task, section, title: renumberExerciseTitle(task.title, ++position) }));
     });
   }, [test, taskOrder]);
   const questions = useMemo(

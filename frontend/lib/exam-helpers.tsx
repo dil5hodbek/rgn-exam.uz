@@ -41,6 +41,19 @@ export type AttemptState = {
 };
 export type ExerciseResult = Record<string, boolean | null>;
 
+// Exercise titles carry their source-document numbering baked into the text
+// (e.g. "Ex.15 open writing", "11 Tick (✓) the correct box", or with a
+// "Section · " prefix like "Listening · 1 Listen to a story"), but the
+// on-screen order can differ once exercises are shuffled per attempt. This
+// rewrites just that number to match the exercise's actual position in the
+// running list, leaving everything else in the title untouched.
+const EXERCISE_NUMBER = /^((?:[^·\d]*·\s*)?(?:Ex\.)?)(\d+)(\b)/i;
+export function renumberExerciseTitle(title: string, position: number) {
+  return EXERCISE_NUMBER.test(title)
+    ? title.replace(EXERCISE_NUMBER, (_match, prefix, _digits, boundary) => `${prefix}${position}${boundary}`)
+    : title;
+}
+
 export function hasAnswer(value: AnswerValue | undefined) {
   if (Array.isArray(value)) return value.length > 0;
   if (value && typeof value === "object") return Object.keys(value).length > 0;
