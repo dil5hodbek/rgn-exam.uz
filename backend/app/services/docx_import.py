@@ -1196,7 +1196,9 @@ def build_task_payloads(exercises: list[dict[str, Any]]) -> tuple[list[dict[str,
             valid_letters = {letter(i) for i in range(len(right))}
             interaction["words"] = words
             interaction["options"] = [{"value": letter(i), "label": label} for i, label in enumerate(right)]
-            interaction["reuse_options"] = False
+            # Same reasoning as composite:matching below: fewer reply letters
+            # than questions means a letter is necessarily reused.
+            interaction["reuse_options"] = len(right) < len(exercise["questions"])
             order = 0
             for qi, row in enumerate(exercise["questions"], start=1):
                 word = row["word"]
@@ -1222,7 +1224,11 @@ def build_task_payloads(exercises: list[dict[str, Any]]) -> tuple[list[dict[str,
             left, right, pairs = exercise["left"], exercise["right"], exercise["pairs"]
             valid_letters = {letter(i) for i in range(len(right))}
             interaction["options"] = [{"value": letter(i), "label": label} for i, label in enumerate(right)]
-            interaction["reuse_options"] = False
+            # Fewer options than prompts (e.g. "match 5 items to A/B/C") means
+            # an option is necessarily the answer for more than one prompt —
+            # the quality gate's non-reusable check would otherwise flag that
+            # as a data error on every such exercise.
+            interaction["reuse_options"] = len(right) < len(left)
             for qi, prompt in enumerate(left):
                 chosen = pairs[qi] if qi < len(pairs) else ""
                 if chosen not in valid_letters:
