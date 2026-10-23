@@ -18,6 +18,11 @@ TRUE_FALSE_ALIASES = {
 }
 
 
+# Text task types whose multi-blank prompts ("g___ o___") render one input
+# per blank in the exam runner, which submits the boxes joined as "go, out".
+BLANK_JOINED_TYPES = frozenset({"gap_fill", "short_answer"})
+
+
 @dataclass
 class GradeResult:
     is_correct: bool | None
@@ -40,6 +45,12 @@ def normalize(value: Any, case_sensitive: bool = False, collapse_spaces: bool = 
         if "value" in value:
             return normalize(value["value"], case_sensitive, collapse_spaces)
         return {str(k): normalize(v, case_sensitive, collapse_spaces) for k, v in value.items()}
+    return value
+
+
+def unjoin_blanks(value: Any) -> Any:
+    if isinstance(value, str):
+        return re.sub(r"\s*,\s*", " ", value).strip()
     return value
 
 
@@ -79,4 +90,10 @@ def grade_answer(
         matched = set(given or []) == set(correct or [])
     else:
         matched = given == correct or given in alternatives
+        # One box per blank arrives comma-joined ("go, out") while answer keys
+        # are usually written as plain text ("go out") — compare without the
+        # separators before calling it wrong.
+        if not matched and question_type in BLANK_JOINED_TYPES and isinstance(given, str) and "," in given:
+            flat = unjoin_blanks(given)
+            matched = flat == unjoin_blanks(correct) or flat in [unjoin_blanks(v) for v in alternatives]
     return GradeResult(matched, points if matched else 0)

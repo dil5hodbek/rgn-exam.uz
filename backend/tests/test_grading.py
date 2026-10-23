@@ -9,6 +9,17 @@ class GradingTests(unittest.TestCase):
         self.assertTrue(result.is_correct)
         self.assertEqual(result.points, 2)
 
+    def test_multi_blank_gap_fill_accepts_comma_joined_boxes(self):
+        self.assertTrue(grade_answer("gap_fill", "go, out", "go out", [], 1).is_correct)
+        self.assertTrue(grade_answer("gap_fill", "Go,out", "go out", [], 1).is_correct)
+        self.assertTrue(grade_answer("short_answer", "go, out", "x", ["go out"], 1).is_correct)
+        self.assertTrue(grade_answer("gap_fill", "go, out", "go, out", [], 1).is_correct)
+
+    def test_multi_blank_gap_fill_still_rejects_wrong_or_missing_boxes(self):
+        self.assertFalse(grade_answer("gap_fill", "go, in", "go out", [], 1).is_correct)
+        self.assertFalse(grade_answer("gap_fill", "go, ", "go out", [], 1).is_correct)
+        self.assertFalse(grade_answer("gap_fill", "out, go", "go out", [], 1).is_correct)
+
     def test_multi_select_requires_exact_set(self):
         self.assertTrue(grade_answer("multi_select", ["a", "b"], ["b", "a"], [], 1).is_correct)
         self.assertFalse(grade_answer("multi_select", ["a"], ["a", "b"], [], 1).is_correct)
