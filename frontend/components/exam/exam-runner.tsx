@@ -598,14 +598,17 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
           children.push(<span key={`text-${index}`}>{segment}</span>);
           return;
         }
-        // A single letter stuck to the blank with no space before it (e.g.
-        // "a s___ ") is a starting-letter hint, not ordinary sentence text —
-        // show it as the box's placeholder (disappears the instant the
-        // student types, like any normal placeholder) instead of loose in
-        // the sentence.
-        const hintMatch = segment.match(/(?:^|\s)([A-Za-z])$/);
+        // One to three letters stuck to the blank with no space before it
+        // (e.g. "a s___ ", "a T-shirt, sh___") are a starting-letters hint,
+        // not ordinary sentence text — show them as the box's placeholder
+        // (disappears the instant the student types, like any normal
+        // placeholder) instead of loose in the sentence, so every hinted gap
+        // looks the same and the student types the whole word.
+        const hintMatch = segment.match(/(?:^|\s)([A-Za-z]{1,3})$/);
         const hintLetter = hintMatch?.[1] ?? "";
         const displaySegment = hintLetter ? segment.slice(0, segment.length - hintLetter.length) : segment;
+        // "l…" rather than a bare "l", which reads as a capital "I".
+        const hintPlaceholder = hintLetter ? `${hintLetter}…` : "";
         children.push(<span key={`text-${index}`}>{displaySegment}</span>);
         const fullValue = blankValues[index] ?? "";
         children.push(
@@ -613,9 +616,9 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
             key={`blank-${index}`}
             aria-label={`Answer ${questionNumbers.get(question.id)} — blank ${index + 1}`}
             value={fullValue}
-            placeholder={hintLetter}
+            placeholder={hintPlaceholder}
             onChange={(event) => setBlank(index, event.target.value)}
-            size={Math.max(3, fullValue.length || hintLetter.length || 5)}
+            size={Math.max(3, fullValue.length || hintPlaceholder.length || 5)}
             className="mx-1 inline-block min-w-8 max-w-full rounded-lg border-2 border-line bg-canvas px-2 py-1 text-center align-baseline font-bold text-ink outline-none transition placeholder:font-bold placeholder:text-muted focus:border-brand focus:ring-4 focus:ring-orange-500/10"
           />,
         );
