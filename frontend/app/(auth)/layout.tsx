@@ -5,7 +5,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <main className="noise relative min-h-screen overflow-hidden bg-surface">
-      <header className="relative z-10 flex items-center justify-between px-5 py-5 sm:px-10"><Logo /><ThemeToggle /></header>
+      <header className="relative z-10 flex items-center justify-between px-5 py-5 sm:px-10"><Logo href="/" /><ThemeToggle /></header>
       <div className="relative z-10 mx-auto grid min-h-[calc(100vh-80px)] max-w-6xl items-center gap-16 px-5 pb-12 lg:grid-cols-[1fr_460px]">
         <section className="relative hidden lg:block">
           <Image
