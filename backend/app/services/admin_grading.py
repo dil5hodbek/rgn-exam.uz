@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Attempt, AttemptAnswer, AttemptStatus, Question, Section, Task, TestVariant, User
 from app.schemas.content import GradeInput
 from app.services.audit import write_audit
+from app.services.grading import scaled_score
 
 
 async def pending_submissions(db: AsyncSession) -> list[dict]:
@@ -68,9 +69,9 @@ async def grade_submission(
         .join(Section, Section.id == Task.section_id)
         .where(Section.test_variant_id == attempt.test_variant_id, Question.is_example.is_(False))
     )
-    attempt.total_score = float(total_score or 0)
-    attempt.max_score = float(max_score or 0)
-    attempt.percentage = round(float(attempt.total_score) / float(attempt.max_score) * 100, 2) if attempt.max_score else 0
+    attempt.total_score, attempt.max_score, attempt.percentage = scaled_score(
+        float(total_score or 0), float(max_score or 0),
+    )
     await write_audit(
         db, admin_id, "submission.grade", "AttemptAnswer", str(answer.id), payload.model_dump(), ip_address,
     )

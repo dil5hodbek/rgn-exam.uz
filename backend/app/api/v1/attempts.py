@@ -24,7 +24,7 @@ from app.schemas.content import AnswerBatch
 from app.services.ai_grading import ai_grade_text
 from app.services.exercise_registry import MANUAL_TASK_TYPES
 from app.services.certificate import generate_certificate_pdf
-from app.services.grading import grade_answer
+from app.services.grading import grade_answer, scaled_score
 
 router = APIRouter(tags=["Attempts"])
 
@@ -643,8 +643,7 @@ async def submit(attempt_id: uuid.UUID, user: User = Depends(current_user), db: 
                 # never silently zeroed.
                 answer.is_correct, answer.points_awarded = None, None
                 pending = True
-    attempt.total_score, attempt.max_score = total, maximum
-    attempt.percentage = round(total / maximum * 100, 2) if maximum else 0
+    attempt.total_score, attempt.max_score, attempt.percentage = scaled_score(total, maximum)
     attempt.submitted_at = datetime.now(timezone.utc)
     started_at = attempt.started_at if attempt.started_at.tzinfo else attempt.started_at.replace(tzinfo=timezone.utc)
     elapsed = int((attempt.submitted_at - started_at).total_seconds())
@@ -653,7 +652,10 @@ async def submit(attempt_id: uuid.UUID, user: User = Depends(current_user), db: 
     attempt.time_spent_seconds = max(0, min(elapsed, variant.time_limit_minutes * 60))
     attempt.status = AttemptStatus.PENDING_REVIEW if pending else AttemptStatus.GRADED
     await db.commit()
-    return {"status": attempt.status, "score": total, "max_score": maximum, "percentage": attempt.percentage}
+    return {
+        "status": attempt.status, "score": float(attempt.total_score),
+        "max_score": float(attempt.max_score), "percentage": attempt.percentage,
+    }
 
 
 @router.get("/me/attempts", response_model=list[HistoryItemOut])

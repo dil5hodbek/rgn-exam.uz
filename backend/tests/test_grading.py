@@ -1,6 +1,6 @@
 import unittest
 
-from app.services.grading import grade_answer
+from app.services.grading import grade_answer, scaled_score
 
 
 class GradingTests(unittest.TestCase):
@@ -19,6 +19,13 @@ class GradingTests(unittest.TestCase):
         self.assertFalse(grade_answer("gap_fill", "go, in", "go out", [], 1).is_correct)
         self.assertFalse(grade_answer("gap_fill", "go, ", "go out", [], 1).is_correct)
         self.assertFalse(grade_answer("gap_fill", "out, go", "go out", [], 1).is_correct)
+
+    def test_scaled_score_reports_every_attempt_out_of_100(self):
+        self.assertEqual(scaled_score(100, 100), (100.0, 100.0, 100.0))
+        # A random test whose mixed exercises add up to 114.5 raw points
+        self.assertEqual(scaled_score(114.5, 114.5), (100.0, 100.0, 100.0))
+        self.assertEqual(scaled_score(57.25, 114.5), (50.0, 100.0, 50.0))
+        self.assertEqual(scaled_score(0, 0), (0.0, 100.0, 0.0))
 
     def test_multi_select_requires_exact_set(self):
         self.assertTrue(grade_answer("multi_select", ["a", "b"], ["b", "a"], [], 1).is_correct)

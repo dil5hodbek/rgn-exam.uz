@@ -18,6 +18,11 @@ TRUE_FALSE_ALIASES = {
 }
 
 
+# Every attempt is reported out of 100. A single variant's questions already
+# add up to 100, but random and level tests mix exercises from several
+# variants, so their raw maximum is whatever those exercises happen to sum to.
+SCORE_SCALE = 100.0
+
 # Text task types whose multi-blank prompts ("g___ o___") render one input
 # per blank in the exam runner, which submits the boxes joined as "go, out".
 BLANK_JOINED_TYPES = frozenset({"gap_fill", "short_answer"})
@@ -46,6 +51,14 @@ def normalize(value: Any, case_sensitive: bool = False, collapse_spaces: bool = 
             return normalize(value["value"], case_sensitive, collapse_spaces)
         return {str(k): normalize(v, case_sensitive, collapse_spaces) for k, v in value.items()}
     return value
+
+
+def scaled_score(earned: float, maximum: float) -> tuple[float, float, float]:
+    """(score, max_score, percentage) for an attempt on the 100-point scale."""
+    if not maximum:
+        return 0.0, SCORE_SCALE, 0.0
+    percentage = round(earned / maximum * 100, 2)
+    return round(percentage * SCORE_SCALE / 100, 2), SCORE_SCALE, percentage
 
 
 def unjoin_blanks(value: Any) -> Any:
