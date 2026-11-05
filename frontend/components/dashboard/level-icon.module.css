@@ -1,0 +1,20 @@
+.art { position: relative; display: grid; place-items: center; width: 112px; height: 112px; flex-shrink: 0; isolation: isolate; }
+.coral, .violet, .blue, .mint { --top: #f77926; --bottom: #e84c0a; --edge: #ed661f; --glyph: #ffffff; --under: #bb3d0c; --shine: #ffbd83; }
+.badge { position: relative; display: grid; place-items: center; width: 78px; height: 78px; border-radius: 25px; background: radial-gradient(ellipse at 20% 0%, #ffb36860, transparent 60%), linear-gradient(145deg, var(--top), var(--bottom)); border: 1px solid var(--edge); box-shadow: inset 0 2px 1px var(--shine), inset 0 -2px 2px #0000000a, 0 4px 0 var(--under), 0 12px 22px #ed5b1926; transform: rotate(0deg); transition: transform .3s, box-shadow .3s; }
+.inset { position: absolute; inset: 6px; border: 1px solid #ffffff30; border-radius: 19px; pointer-events: none; }
+.badge .symbol { position: relative; width: 41px; height: 41px; color: var(--glyph); filter: drop-shadow(0 2px 1px #00000012); }
+.badge .symbol { fill: #ffffff16; }
+.pedestal { position: absolute; bottom: 9px; width: 66px; height: 10px; border-radius: 50%; background: #ed5b1926; filter: blur(3px); }
+.art::before { content: ""; position: absolute; width: 98px; height: 98px; border: 1px solid #ef682321; border-radius: 33px; transform: rotate(-12deg); background: #ff792508; z-index: -1; }
+:global(.dark) .art { --top: #ff8736; --bottom: #ed5815; --edge: #ffab6c; --under: #ac3d0f; --shine: #ffca96; }
+:global(.dark) .badge { box-shadow: inset 0 2px 1px var(--shine), 0 4px 0 var(--under), 0 10px 30px #f76c2926; }
+:global(.dark) .art::before { border-color: #ff8a4640; background: #ff792512; }
+a:hover .badge { transform: translateY(-4px) rotate(0deg); }
+@media (max-width: 600px) { .art { width: 96px; height: 96px; } .art::before { width: 84px; height: 84px; border-radius: 28px; } .badge { width: 68px; height: 68px; border-radius: 22px; } .inset { border-radius: 16px; } .badge .symbol { width: 36px; height: 36px; } .pedestal { bottom: 6px; } }
+@media (prefers-reduced-motion: reduce) { .badge { transition: none; } .art::before { content: ""; position: absolute; width: 98px; height: 98px; border: 1px solid #ef682321; border-radius: 33px; transform: rotate(-12deg); background: #ff792508; z-index: -1; }
+:global(.dark) .art { --top: #ff8736; --bottom: #ed5815; --edge: #ffab6c; --under: #ac3d0f; --shine: #ffca96; }
+:global(.dark) .badge { box-shadow: inset 0 2px 1px var(--shine), 0 4px 0 var(--under), 0 10px 30px #f76c2926; }
+:global(.dark) .art::before { border-color: #ff8a4640; background: #ff792512; }
+a:hover .badge { transform: none; } }
+
+@media(max-width:639px) { .compact { width: 64px; height: 70px; }.compact .badge { width: 50px; height: 50px; border-radius: 16px; }.compact .inset { inset: 4px; border-radius: 12px; }.compact .symbol { width: 27px; height: 27px; }.compact::before { width: 60px; height: 60px; border-radius: 20px; }.compact .pedestal { width: 44px; bottom: 3px; } }

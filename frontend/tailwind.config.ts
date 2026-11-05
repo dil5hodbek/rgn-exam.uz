@@ -14,8 +14,9 @@ const config: Config = {
         brand: "var(--accent)",
       },
       fontFamily: {
-        sans: ["Manrope", "sans-serif"],
-        serif: ["Fraunces", "serif"],
+        sans: ["var(--font-body)"],
+        display: ["var(--font-display)"],
+        serif: ["Georgia", "serif"],
         mono: ["var(--font-mono)", "monospace"],
       },
       boxShadow: {

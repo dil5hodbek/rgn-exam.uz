@@ -30,21 +30,22 @@ export default function VariantsPage({ params }: { params: { level: string; exam
   }, [params.level, params.examType]);
 
   async function startRandomTest() {
+    setError("");
     setStartingRandom(true);
     try {
-      const attempt = await api<{ test_variant_id: string }>(
+      const attempt = await api<{ id: string; test_variant_id: string }>(
         `/levels/${params.level}/exam-types/${params.examType}/random-attempt`, { method: "POST" },
       );
-      router.push(`/dashboard/${params.level}/${params.examType}/${attempt.test_variant_id}/attempt`);
+      router.push(`/dashboard/${params.level}/${params.examType}/${attempt.test_variant_id}/attempt?attempt=${encodeURIComponent(attempt.id)}`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to start a test.");
       setStartingRandom(false);
     }
   }
 
-  return <div className="mx-auto max-w-6xl px-4 py-8 sm:px-8">
+  return <div className="dashboard-detail mx-auto max-w-6xl px-4 py-8 sm:px-8">
     <Link href={`/dashboard/${params.level}`} className="inline-flex items-center gap-2 text-sm font-bold text-muted hover:text-ink"><ArrowLeft className="h-4 w-4" /> Back to {pretty(params.level)}</Link>
-    <div className="mt-7"><p className="text-xs font-bold uppercase tracking-[.18em] text-brand">{pretty(params.level)}</p><h1 className="mt-2 text-4xl font-extrabold tracking-tight text-ink">{pretty(params.examType)}</h1><p className="mt-3 text-muted">Choose a real test from the imported Road Map package. Answers save automatically.</p></div>
+    <div className="mt-7"><p className="text-xs font-bold uppercase tracking-[.08em] text-brand">{pretty(params.level)}</p><h1 className="mt-2 text-4xl font-extrabold tracking-tight text-ink">{pretty(params.examType)}</h1><p className="mt-3 text-muted">Choose a real test from the imported Road Map package. Answers save automatically.</p></div>
     {variants.length > 0 && <div className="relative mt-7 overflow-hidden rounded-3xl bg-gradient-to-br from-[#3a2a7a] via-[#5b3aa8] to-[#a445c9] p-6 text-white shadow-lift sm:p-8">
       <div className="pointer-events-none absolute -right-10 -top-16 h-56 w-56 rounded-full bg-white/10 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-16 left-10 h-44 w-44 rounded-full bg-fuchsia-400/20 blur-3xl" />

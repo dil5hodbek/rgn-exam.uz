@@ -72,12 +72,12 @@ export function GapMatch({
     },
   });
 
-  return <div className="space-y-4 lg:grid lg:grid-cols-[200px_minmax(0,1fr)_250px] lg:gap-4 lg:space-y-0">
+  return <div className="gap-match-layout space-y-4">
     {/* Word box — left column */}
-    <aside className="rounded-2xl border border-orange-200 bg-orange-500/[.035] p-4 lg:sticky lg:top-2 lg:col-start-1 lg:row-start-1 lg:self-start">
+    <aside className="rounded-2xl border border-orange-200 bg-orange-500/[.035] p-4">
       <p className="text-xs font-bold uppercase tracking-wider text-brand">Word box</p>
       <p className="mt-1 text-[11px] leading-4 text-muted">Pick a word, then click a gap. Each word is used once.</p>
-      <div className="mt-3 flex flex-wrap gap-2 lg:flex-col">
+      <div className="mt-3 flex flex-wrap gap-2">
         {words.map((word) => {
           const used = usedWords.has(word);
           const picked = gapPick?.pool === "word" && gapPick.value === word;
@@ -95,7 +95,7 @@ export function GapMatch({
     </aside>
 
     {/* Questions — centre column */}
-    <div className="space-y-3 lg:col-start-2 lg:row-start-1">
+    <div className="space-y-3">
       {rows.map(({ word, reply }, index) => {
         const parts = word.prompt.split(/_{2,}/);
         const wordResult = exerciseResults[word.id];
@@ -136,7 +136,7 @@ export function GapMatch({
     </div>
 
     {/* Replies — right column */}
-    <aside className="rounded-2xl border border-orange-200 bg-orange-500/[.035] p-4 lg:sticky lg:top-2 lg:col-start-3 lg:row-start-1 lg:self-start">
+    <aside className="rounded-2xl border border-orange-200 bg-orange-500/[.035] p-4">
       <p className="text-xs font-bold uppercase tracking-wider text-brand">Replies</p>
       <p className="mt-1 text-[11px] leading-4 text-muted">Pick a reply, then click “match the reply” under a question.</p>
       <div className="mt-3 space-y-2">

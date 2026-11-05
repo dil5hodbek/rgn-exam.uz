@@ -180,7 +180,7 @@ export function WritingReview({ eyebrow }: { eyebrow: string }) {
   const gradedRows = rows.filter((row) => row.status !== "awaiting");
   const active = tab === "new" ? newRows : gradedRows;
   return <div className="mx-auto max-w-6xl p-4 sm:p-8">
-    <p className="text-xs font-bold uppercase tracking-[.18em] text-brand">{eyebrow}</p>
+    <p className="text-xs font-bold uppercase tracking-[.08em] text-brand">{eyebrow}</p>
     <h1 className="mt-2 text-3xl font-extrabold text-ink">Writing Review</h1>
     <p className="mt-2 text-sm text-muted">New answers wait here until they&apos;re graded. AI grades most of them automatically — check its score, or grade by hand if it hasn&apos;t gotten to one yet.</p>
     <div className="mt-6 flex flex-wrap gap-2">

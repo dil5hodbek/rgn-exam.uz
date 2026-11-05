@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from redis.asyncio import Redis
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -17,7 +17,7 @@ from app.models import (
     Task, TestVariant, User,
 )
 from app.schemas.attempts import (
-    AttemptStateOut, CheckExerciseOut, HistoryItemOut, SavedQuestionOut, SaveAnswersOut,
+    AttemptStateOut, ExamSessionOut, CheckExerciseOut, HistoryItemOut, SavedQuestionOut, SaveAnswersOut,
     SubmitResultOut, TeacherReviewOut,
 )
 from app.schemas.content import AnswerBatch
@@ -158,6 +158,18 @@ async def shuffled_task_order(
     return order
 
 
+async def resume_paused_clock(db: AsyncSession, attempt: Attempt) -> None:
+    redis = redis_client()
+    try:
+        paused = await redis.get(f"attempt-paused:{attempt.id}")
+        if paused is not None:
+            attempt.started_at = datetime.now(timezone.utc) - timedelta(seconds=float(paused))
+            await db.commit()
+            await redis.delete(f"attempt-paused:{attempt.id}")
+    finally:
+        await redis.aclose()
+
+
 async def create_attempt(
     db: AsyncSession, user_id: uuid.UUID, variant: TestVariant,
     extra_task_ids: list[str] | None = None, primary_task_ids: list[str] | None = None,
@@ -167,20 +179,12 @@ async def create_attempt(
     existing = await db.scalar(select(Attempt).where(
         Attempt.user_id == user_id, Attempt.test_variant_id == variant.id,
         Attempt.status == AttemptStatus.IN_PROGRESS,
-        Attempt.primary_task_ids.isnot(None) if is_level_test else Attempt.primary_task_ids.is_(None),
-    ))
+        (func.jsonb_typeof(Attempt.primary_task_ids) == "array") if is_level_test else or_(
+            Attempt.primary_task_ids.is_(None), func.jsonb_typeof(Attempt.primary_task_ids) == "null",
+        ),
+    ).order_by(Attempt.started_at.desc()).limit(1))
     if existing:
-        # Resume a paused attempt: the clock stopped at "Save & exit", so
-        # shift started_at to keep exactly the remaining time from that moment.
-        redis = redis_client()
-        try:
-            paused = await redis.get(f"attempt-paused:{existing.id}")
-            if paused is not None:
-                existing.started_at = datetime.now(timezone.utc) - timedelta(seconds=float(paused))
-                await db.commit()
-                await redis.delete(f"attempt-paused:{existing.id}")
-        finally:
-            await redis.aclose()
+        await resume_paused_clock(db, existing)
         return existing
     completed = await db.scalar(select(Attempt.id).where(
         Attempt.user_id == user_id,
@@ -212,6 +216,41 @@ async def start_attempt(test_id: uuid.UUID, user: User = Depends(current_user), 
         raise HTTPException(404, "Published test not found.")
     attempt = await create_attempt(db, user.id, variant, shuffle=False)
     return await attempt_state(db, attempt)
+
+
+@router.post("/tests/{test_id}/open", response_model=ExamSessionOut)
+async def open_exam(
+    test_id: uuid.UUID, attempt_id: uuid.UUID | None = None,
+    user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
+):
+    """Open state and questions together; keep the exact mixed attempt selected by the start button."""
+    from app.api.v1.catalog import serialize_sections
+
+    if attempt_id is not None:
+        attempt = await owned_attempt(db, attempt_id, user.id)
+        if attempt.test_variant_id != test_id:
+            raise HTTPException(404, "Attempt does not belong to this test.")
+        if attempt.status != AttemptStatus.IN_PROGRESS:
+            raise HTTPException(409, "This attempt has already been submitted.")
+        await resume_paused_clock(db, attempt)
+        variant = await attempt_variant(db, attempt)
+    else:
+        variant = await db.scalar(select(TestVariant).where(
+            TestVariant.id == test_id, TestVariant.status == ContentStatus.PUBLISHED,
+        ))
+        if not variant:
+            raise HTTPException(404, "Published test not found.")
+        attempt = await create_attempt(db, user.id, variant, shuffle=False)
+    sections = await attempt_sections(db, attempt)
+    return {
+        "attempt": await attempt_state(db, attempt),
+        "test": {
+            "id": variant.id, "title": variant.title, "instructions": variant.instructions,
+            "time_limit_minutes": variant.time_limit_minutes,
+            "passing_percentage": variant.passing_percentage, "review_allowed": variant.review_allowed,
+            "sections": await serialize_sections(db, sections),
+        },
+    }
 
 
 # The fraction of a random test's exercises pulled from the OTHER exam type

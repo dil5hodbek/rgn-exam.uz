@@ -30,7 +30,7 @@ def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
 
-def create_token(subject: str, token_type: str, expires_delta: timedelta) -> str:
+def create_token(subject: str, token_type: str, expires_delta: timedelta, *, session_until: int | None = None) -> str:
     now = datetime.now(timezone.utc)
     payload = {
         "sub": subject,
@@ -39,6 +39,8 @@ def create_token(subject: str, token_type: str, expires_delta: timedelta) -> str
         "exp": now + expires_delta,
         "jti": secrets.token_urlsafe(16),
     }
+    if session_until is not None:
+        payload["session_until"] = session_until
     return jwt.encode(payload, settings.jwt_secret, algorithm=ALGORITHM)
 
 

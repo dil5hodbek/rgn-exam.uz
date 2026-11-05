@@ -59,7 +59,7 @@ export default function MonitorStudents() {
   async function load(value = "") { setRows(await api<Student[]>(`/teacher/students?search=${encodeURIComponent(value)}`)); }
   useEffect(() => { load(); }, []);
   return <div className="mx-auto max-w-6xl p-4 sm:p-8">
-    <p className="text-xs font-bold uppercase tracking-[.18em] text-brand">Monitor</p>
+    <p className="text-xs font-bold uppercase tracking-[.08em] text-brand">Monitor</p>
     <h1 className="mt-2 text-3xl font-extrabold text-ink">Students</h1>
     <div className="relative mt-7 max-w-md"><Search className="absolute left-4 top-3.5 h-4 w-4 text-muted" /><Input className="pl-11" placeholder="Search by name or phone…" value={search} onChange={(event) => { setSearch(event.target.value); load(event.target.value); }} /></div>
     <div className="mt-5 overflow-hidden rounded-2xl border border-line bg-canvas">

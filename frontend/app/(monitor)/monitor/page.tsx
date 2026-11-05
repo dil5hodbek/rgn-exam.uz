@@ -15,7 +15,7 @@ export default function MonitorOverview() {
     api<Student[]>("/teacher/students").then((rows) => setStudentCount(rows.length)).catch(() => setStudentCount(0));
   }, []);
   return <div className="mx-auto max-w-6xl p-4 sm:p-8">
-    <p className="text-xs font-bold uppercase tracking-[.18em] text-brand">Monitor</p>
+    <p className="text-xs font-bold uppercase tracking-[.08em] text-brand">Monitor</p>
     <h1 className="mt-2 text-3xl font-extrabold text-ink">Welcome back</h1>
     <p className="mt-2 text-sm text-muted">Review student writing and keep an eye on results.</p>
     <div className="mt-8 grid gap-5 sm:grid-cols-2">

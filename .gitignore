@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 .venv/
+.local/
 venv/
 *.egg-info/
 .mypy_cache/
@@ -22,6 +23,9 @@ backups/
 # Node / Next.js
 node_modules/
 .next/
+.next-share/
+.next-share-a/
+.next-share-b/
 out/
 tsconfig.tsbuildinfo
 

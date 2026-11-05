@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { CursorGlow } from "@/components/landing/cursor-glow";
+import { NavigationProgress } from "@/components/navigation-progress";
 import { Providers } from "@/components/providers";
 
 export const metadata: Metadata = {
@@ -10,7 +12,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body><Providers>{children}</Providers></body>
+      <body><Providers><NavigationProgress />{children}<CursorGlow /></Providers></body>
     </html>
   );
 }

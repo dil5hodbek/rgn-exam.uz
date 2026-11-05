@@ -33,6 +33,28 @@ ExamFlow — bu o'quv markazlar uchun maxsus qurilgan imtihon tizimi. Word hujja
 **Telegram bot**
 - O'quvchi akkauntini Telegram orqali ulash
 - Kontakt orqali raqam tekshiruvi (typed number ishonilmaydi)
+- Sign In via Telegram: botdagi Start → 1 soat amal qiladigan shaxsiy havola → avtomatik kirish.
+  Avval ulanmagan hisob uchun bot o'quvchining o'z kontaktini so'raydi. Hisob topilmasa,
+  Telegram profilidagi nom bilan avtomatik STUDENT hisobi yaratadi. Parolni tiklash uchun mavjud OTP oqimi saqlangan.
+
+Botdagi `/resetaccount` buyrug'i faqat o'z STUDENT hisobini va uning test natijalarini
+2 daqiqalik tasdiqlash tugmasidan so'ng o'chiradi. Bekor qilish hisobni saqlaydi;
+o'chirishdan keyin kontaktni qayta ulash orqali yangi hisob yaratish mumkin.
+
+### Telegram orqali havola bilan kirishni sozlash
+
+`.env` ichida `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME` va `FRONTEND_URL` ni to'ldiring.
+Tokenni Git'ga qo'shmang. `FRONTEND_URL` havolani ochadigan qurilmadan kirish mumkin bo'lgan
+manzil bo'lishi kerak: telefonda sinash uchun kompyuterning LAN manzili, production uchun
+saytning HTTPS manzili. Backend, PostgreSQL, Redis va bot birga ishlashi kerak.
+
+Saytdagi Telegram tugmasi raqam kiritishni talab qilmaydi. Tasodifiy kirish tokenining
+hashi Redis'da 1 soat saqlanadi. Birinchi kirishda havola atomar ravishda o'sha
+brauzerning HttpOnly cookie'siga bog'lanadi; boshqa brauzer yoki boshqa hisob uni
+qayta ishlata olmaydi. Shu brauzer havolani qayta ochishi mumkin va sessiya birinchi
+kirishdan 1 soat saqlanadi. Qayta kirish yoki refresh muddatni uzaytirmaydi.
+Sign Out eslab qolish cookie'sini o'chiradi; undan keyin yangi havola kerak.
+O'quvchi dashboardga, o'qituvchi monitor paneliga, admin o'z paneliga kiradi.
 
 ## Tech Stack
 
@@ -133,6 +155,15 @@ docker compose up --build
 Frontend: http://localhost:13000  
 Backend API: http://localhost:18000/docs  
 Admin login:  dagi  va 
+
+### Windows lokal xizmatlar (tayyorlangan muhit)
+
+`powershell -ExecutionPolicy Bypass -File "launcher/Start Local.ps1"` tayyorlangan
+lokal muhitdagi bazani, Redis-mos Memurai Developer xizmatini, backendni, frontendni
+va Telegram polling botini fon rejimida ishga tushiradi. Bu launcher `.local/` dagi
+oldindan tayyorlangan runtimelarni ishlatadi; `.local/`, `.venv/` va `.env` Git'ga kirmaydi.
+Loglar `.local/*.log` ichida. Telefon va noutbuk bir tarmoqda bo'lishi, `.env` dagi
+`FRONTEND_URL` esa noutbukning tarmoq manziliga mos kelishi kerak.
 
 ### Windows launcher
 

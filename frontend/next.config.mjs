@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: "standalone",
+  distDir: process.env.NEXT_BUILD_DIR ?? ".next",
+  output: process.env.NEXT_BUILD_DIR?.startsWith(".next-share") ? undefined : "standalone",
   reactStrictMode: true,
   async rewrites() {
     const backend = process.env.BACKEND_INTERNAL_URL ?? "http://backend:8000";

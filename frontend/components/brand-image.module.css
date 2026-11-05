@@ -1,0 +1,9 @@
+.frame { position: relative; display: block; width: var(--brand-width, 188px); aspect-ratio: 4892 / 1247; overflow: hidden; flex-shrink: 0; }
+/* Crop only the transparent padding in layout; preserve the supplied originals. */
+.frame .light, .frame .dark { position: absolute; width: 122.649223%; height: 185.805934%; max-width: none; left: -11.324612%; top: -42.902967%; }
+.frame .light { display: block; }
+.frame .dark { display: none; }
+:global(.dark) .frame .light, .frame[data-dark-surface] .light { display: none; }
+:global(.dark) .frame .dark, .frame[data-dark-surface] .dark { display: block; }
+
+@media (max-width: 600px) { .frame { width: var(--brand-width, 142px); } }

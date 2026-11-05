@@ -38,7 +38,7 @@ export default function SavedQuestions() {
     <div className="flex items-center gap-3">
       <span className="grid h-11 w-11 place-items-center rounded-2xl bg-orange-500/10 text-brand"><Bookmark className="h-5 w-5" /></span>
       <div>
-        <p className="text-xs font-bold uppercase tracking-[.18em] text-brand">Review</p>
+        <p className="text-xs font-bold uppercase tracking-[.08em] text-brand">Review</p>
         <h1 className="text-2xl font-extrabold text-ink">Saved questions</h1>
       </div>
     </div>

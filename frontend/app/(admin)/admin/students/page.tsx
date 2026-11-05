@@ -93,7 +93,7 @@ export default function Students() {
   }
   return <div className="mx-auto max-w-6xl p-4 sm:p-8">
     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-      <div><p className="text-xs font-bold uppercase tracking-[.18em] text-brand">Registered users</p><h1 className="mt-2 text-3xl font-extrabold text-ink">Students</h1></div>
+      <div><p className="text-xs font-bold uppercase tracking-[.08em] text-brand">Registered users</p><h1 className="mt-2 text-3xl font-extrabold text-ink">Students</h1></div>
       <Button variant="secondary" onClick={exportAttempts} disabled={exporting}><Download className="h-4 w-4" /> {exporting ? "Exporting…" : "Export attempts (.xlsx)"}</Button>
     </div>
     {error && <p className="mt-4 rounded-xl bg-red-500/10 p-3 text-sm font-semibold text-red-600">{error}</p>}

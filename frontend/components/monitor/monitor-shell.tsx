@@ -1,8 +1,9 @@
 "use client";
-import { LayoutDashboard, LogOut, Menu, PenLine, Users } from "lucide-react";
+import { LayoutDashboard, LogOut, PenLine, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { MobileNavigation } from "@/components/mobile-navigation";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
@@ -33,8 +34,8 @@ export function MonitorShell({ children }: { children: React.ReactNode }) {
   async function signOut() { await api("/auth/logout", { method: "POST" }).catch(() => undefined); router.push("/sign-in"); }
   const initials = teacherName.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "TC";
   return <div className="min-h-screen bg-surface">
-    <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-line bg-[#1a1330] p-5 text-white lg:flex lg:flex-col">
-      <Logo />
+    <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 overflow-y-auto border-r border-line bg-[#1a1330] p-5 text-white lg:flex lg:flex-col">
+      <Logo darkSurface />
       <div className="mt-8 rounded-xl bg-white/5 px-3 py-2"><p className="text-[10px] font-bold uppercase tracking-wider text-fuchsia-300">Workspace</p><p className="mt-1 text-sm font-bold">Monitor Panel</p></div>
       <nav className="mt-6 space-y-1">{items.map((item) => {
         const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
@@ -45,7 +46,7 @@ export function MonitorShell({ children }: { children: React.ReactNode }) {
         <button onClick={signOut} className="mt-3 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-400 hover:bg-white/5 hover:text-white"><LogOut className="h-4 w-4" /> Sign Out</button>
       </div>
     </aside>
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-line bg-canvas/90 px-4 backdrop-blur lg:ml-64 lg:px-8"><div className="flex items-center gap-3"><button className="lg:hidden"><Menu className="h-5 w-5" /></button><div><p className="text-sm font-extrabold text-ink">Monitor Panel</p><p className="hidden text-[11px] text-muted sm:block">Review writing and track student progress</p></div></div><ThemeToggle /></header>
-    <main className="lg:ml-64">{children}</main>
+    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-line bg-canvas/90 px-4 backdrop-blur lg:ml-64 lg:px-8"><div className="flex items-center gap-3"><MobileNavigation items={items} pathname={pathname} onSignOut={signOut} /><div><p className="text-sm font-extrabold text-ink">Monitor Panel</p><p className="hidden text-[11px] text-muted sm:block">Review writing and track student progress</p></div></div><ThemeToggle /></header>
+    <main className="min-w-0 lg:ml-64">{children}</main>
   </div>;
 }

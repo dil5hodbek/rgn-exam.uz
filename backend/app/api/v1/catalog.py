@@ -58,17 +58,15 @@ async def serialize_sections(db: AsyncSession, sections: list[Section]) -> list[
 
 @router.get("/levels", response_model=list[LevelOut])
 async def levels(_: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
-    rows = (await db.execute(select(Level).order_by(Level.order_index))).scalars().all()
-    result = []
-    for level in rows:
-        total = await db.scalar(select(func.count()).select_from(TestVariant).where(
-            TestVariant.level_id == level.id, TestVariant.status == ContentStatus.PUBLISHED
-        ))
-        result.append({
-            "id": level.id, "name": level.name, "slug": level.slug,
-            "description": level.description, "published_tests": total or 0,
-        })
-    return result
+    rows = (await db.execute(
+        select(Level, func.count(TestVariant.id))
+        .outerjoin(TestVariant, (TestVariant.level_id == Level.id) & (TestVariant.status == ContentStatus.PUBLISHED))
+        .group_by(Level.id).order_by(Level.order_index)
+    )).all()
+    return [{
+        "id": level.id, "name": level.name, "slug": level.slug,
+        "description": level.description, "published_tests": count,
+    } for level, count in rows]
 
 
 @router.get("/levels/{level_slug}/exam-types", response_model=list[ExamTypeOut])

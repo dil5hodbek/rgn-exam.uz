@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowRight, Bot, Eye, EyeOff, ShieldCheck } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, ShieldCheck } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
@@ -11,6 +10,7 @@ import { api } from "@/lib/api";
 export function AuthCard({ initialTab = "sign-in" }: { initialTab?: "sign-in" | "create" }) {
   const [tab, setTab] = useState(initialTab);
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -18,29 +18,19 @@ export function AuthCard({ initialTab = "sign-in" }: { initialTab?: "sign-in" | 
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [otpMode, setOtpMode] = useState(false);
-  const [otp, setOtp] = useState("");
-  const [otpCooldown, setOtpCooldown] = useState(0);
-  const [otpNotice, setOtpNotice] = useState("");
-  const [botUrl, setBotUrl] = useState("");
-  const router = useRouter();
   type AuthResult = { user: { role: "STUDENT" | "TEACHER" | "ADMIN" | "SUPER_ADMIN" } };
   function landingFor(role: AuthResult["user"]["role"]) {
     if (role === "STUDENT") return "/dashboard";
     if (role === "TEACHER") return "/monitor";
     return "/admin";
   }
-  useEffect(() => {
-    if (!otpCooldown) return;
-    const timer = window.setInterval(() => setOtpCooldown((value) => Math.max(0, value - 1)), 1000);
-    return () => window.clearInterval(timer);
-  }, [otpCooldown]);
-
   // A visitor who still has a valid session (cookies intact, possibly just
   // refreshed) but lands on /sign-in directly — an old bookmark, a shared
   // link — shouldn't have to log in again. Send them straight to their panel.
   useEffect(() => {
-    api<AuthResult["user"]>("/auth/me").then((user) => router.replace(landingFor(user.role))).catch(() => undefined);
+    api<AuthResult["user"]>("/auth/me")
+      .then((user) => window.location.replace(landingFor(user.role)))
+      .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -49,13 +39,7 @@ export function AuthCard({ initialTab = "sign-in" }: { initialTab?: "sign-in" | 
     setError("");
     setLoading(true);
     try {
-      if (otpMode) {
-        const result = await api<AuthResult>("/auth/telegram/verify-otp", {
-          method: "POST",
-          body: JSON.stringify({ phone_number: phone, code: otp, purpose: "login" }),
-        });
-        router.push(landingFor(result.user.role));
-      } else if (tab === "create") {
+      if (tab === "create") {
         await api<AuthResult>("/auth/register", {
           method: "POST",
           body: JSON.stringify({
@@ -63,98 +47,83 @@ export function AuthCard({ initialTab = "sign-in" }: { initialTab?: "sign-in" | 
             password, confirm_password: confirmPassword,
           }),
         });
-        router.push("/dashboard");
+        window.location.replace("/dashboard");
       } else {
         const result = await api<AuthResult>("/auth/login", {
           method: "POST",
           body: JSON.stringify({ phone_number: phone, password }),
         });
-        router.push(landingFor(result.user.role));
+        window.location.replace(landingFor(result.user.role));
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to continue.");
-    } finally {
       setLoading(false);
     }
   }
 
-  async function requestTelegramOtp() {
-    if (!phone.trim()) {
-      setError("Enter your phone number first.");
-      return;
-    }
-    setError("");
-    setLoading(true);
-    try {
-      const result = await api<{ message: string; bot_url?: string }>("/auth/telegram/request-otp", {
-        method: "POST",
-        body: JSON.stringify({ phone_number: phone, purpose: "login" }),
-      });
-      const url = result.bot_url ?? "";
-      setOtpMode(true);
-      setOtpCooldown(60);
-      setOtpNotice(result.message);
-      setBotUrl(url);
-      if (url) window.open(url, "_blank", "noopener");
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to request a code.");
-    } finally {
-      setLoading(false);
-    }
+  function openTelegramSignIn() {
+    const username = (process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || "rgnmockimtihon_bot").replace(/^@/, "");
+    // The bot opens directly, even when the API is offline or the phone field is empty.
+    window.location.assign(`https://t.me/${encodeURIComponent(username)}?start=${tab === "create" ? "signup" : "signin"}`);
   }
 
   return (
-    <div className="w-full max-w-md rounded-[28px] border border-line bg-canvas p-2 shadow-soft">
+    <div className="auth-card w-full max-w-md rounded-[28px] border border-line bg-canvas p-2 shadow-soft">
       <div className="grid grid-cols-2 rounded-2xl bg-surface p-1">
-        <button onClick={() => { setTab("sign-in"); setOtpMode(false); setOtpNotice(""); setError(""); }} className={`rounded-xl px-4 py-2.5 text-sm font-bold transition ${tab === "sign-in" ? "bg-canvas text-ink shadow-sm" : "text-muted"}`}>Sign In</button>
-        <button onClick={() => { setTab("create"); setOtpMode(false); setOtpNotice(""); setError(""); }} className={`rounded-xl px-4 py-2.5 text-sm font-bold transition ${tab === "create" ? "bg-canvas text-ink shadow-sm" : "text-muted"}`}>Create Account</button>
+        <button onClick={() => { setTab("sign-in"); setError(""); }} className={`rounded-xl px-4 py-2.5 text-sm font-bold transition ${tab === "sign-in" ? "bg-canvas text-ink shadow-sm" : "text-muted"}`}>Sign In</button>
+        <button onClick={() => { setTab("create"); setError(""); }} className={`rounded-xl px-4 py-2.5 text-sm font-bold transition ${tab === "create" ? "bg-canvas text-ink shadow-sm" : "text-muted"}`}>Create Account</button>
       </div>
-      <div className="px-5 pb-6 pt-7 sm:px-8">
-        <div className="mb-7">
-          <p className="text-xs font-bold uppercase tracking-[.18em] text-brand">{tab === "sign-in" ? "Welcome back" : "Start learning"}</p>
+      <div className="auth-card-content px-5 pb-6 pt-7 sm:px-8">
+        <div className="auth-intro mb-7">
+          <p className="text-xs font-bold uppercase tracking-[.08em] text-brand">{tab === "sign-in" ? "Welcome back" : "Start learning"}</p>
           <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-ink">{tab === "sign-in" ? "Continue your progress" : "Create your account"}</h1>
           <p className="mt-2 text-sm leading-6 text-muted">{tab === "sign-in" ? "Your next milestone is waiting." : "A few details and you’re ready to begin."}</p>
         </div>
         <form className="space-y-4" onSubmit={submit}>
           {tab === "create" && (
-            <div className="grid grid-cols-2 gap-3">
-              <label className="space-y-2 text-sm font-semibold text-ink">First Name<Input placeholder="Alex" value={firstName} onChange={(event) => setFirstName(event.target.value)} required /></label>
-              <label className="space-y-2 text-sm font-semibold text-ink">Last Name<Input placeholder="Morgan" value={lastName} onChange={(event) => setLastName(event.target.value)} required /></label>
+            <div className="auth-name-fields grid grid-cols-2 gap-3">
+              <label className="min-w-0 text-sm font-semibold text-ink"><span className="sr-only">First Name</span><Input className="min-w-0" placeholder="First name" value={firstName} onChange={(event) => setFirstName(event.target.value)} required /></label>
+              <label className="min-w-0 text-sm font-semibold text-ink"><span className="sr-only">Last Name</span><Input className="min-w-0" placeholder="Last name" value={lastName} onChange={(event) => setLastName(event.target.value)} required /></label>
             </div>
           )}
-          <label className="block space-y-2 text-sm font-semibold text-ink">
-            Phone Number
+          <label className="block text-sm font-semibold text-ink">
+            <span className="sr-only">Phone Number</span>
             <div className="flex">
-              <span className="grid h-12 place-items-center rounded-l-xl border border-r-0 border-line bg-surface px-3 text-sm font-bold text-ink">+998</span>
-              <Input className="rounded-l-none" inputMode="numeric" placeholder="90 123 45 67" value={phone} onChange={(event) => setPhone(event.target.value)} required />
+              <span className="grid h-12 shrink-0 whitespace-nowrap place-items-center rounded-l-xl border border-r-0 border-line bg-surface px-3 text-sm font-bold text-ink">+998</span>
+              <Input className="min-w-0 flex-1 rounded-l-none" inputMode="numeric" placeholder="90 123 45 67" value={phone} onChange={(event) => setPhone(event.target.value)} required />
             </div>
           </label>
-          {!otpMode && <label className="block space-y-2 text-sm font-semibold text-ink">
-            Password
+          <div className={tab === "create" ? "auth-password-fields grid grid-cols-1 gap-3 sm:grid-cols-2" : ""}>
+          <label className="block min-w-0 text-sm font-semibold text-ink">
+            <span className="sr-only">Password</span>
             <div className="relative">
-              <Input type={showPassword ? "text" : "password"} placeholder="Your password" value={password} onChange={(event) => setPassword(event.target.value)} required />
-              <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label="Show password" className="absolute right-3 top-3 text-muted">{showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}</button>
+              <Input className="min-w-0 pr-10" type={showPassword ? "text" : "password"} placeholder="Your password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} className="absolute right-3 top-3 text-muted">{showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}</button>
             </div>
-          </label>}
+          </label>
           {tab === "create" && (
-            <label className="block space-y-2 text-sm font-semibold text-ink">Confirm Password<Input type="password" placeholder="Repeat your password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required /></label>
+            <label className="block min-w-0 text-sm font-semibold text-ink">
+              <span className="sr-only">Confirm Password</span>
+              <div className="relative">
+                <Input className="min-w-0 pr-10" type={showConfirmPassword ? "text" : "password"} placeholder="Repeat your password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required />
+                <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} aria-label={showConfirmPassword ? "Hide repeat password" : "Show repeat password"} aria-pressed={showConfirmPassword} className="absolute right-3 top-3 text-muted">{showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}</button>
+              </div>
+            </label>
           )}
-          {otpMode && <label className="block space-y-2 text-sm font-semibold text-ink">Verification Code<Input className="text-center font-mono text-lg tracking-[.45em]" inputMode="numeric" maxLength={5} placeholder="00000" value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, ""))} required /></label>}
-          {otpNotice && <div className="rounded-xl bg-sky-500/10 px-3 py-3 text-sm leading-5 text-sky-800"><p>{otpNotice}</p></div>}
-          {otpMode && botUrl && <a href={botUrl} target="_blank" rel="noreferrer" className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-4 py-3 text-sm font-bold text-white transition hover:opacity-90">📱 Open ExamFlow bot</a>}
+          </div>
           {error && <p role="alert" className="rounded-xl bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-600">{error}</p>}
-          {tab === "sign-in" && !otpMode && <div className="flex justify-end"><Link href="/forgot-password" className="text-sm font-semibold text-brand hover:underline">Forgot password?</Link></div>}
-          <Button className="w-full" size="lg" disabled={loading || (otpMode && otp.length !== 5)}>
-            {loading ? "Please wait…" : otpMode ? "Verify & Sign In" : tab === "sign-in" ? "Sign In" : "Create Account"} {!loading && <ArrowRight className="h-4 w-4" />}
+          {tab === "sign-in" && <div className="flex justify-end"><Link href="/forgot-password" className="text-sm font-semibold text-brand hover:underline">Forgot password?</Link></div>}
+          <Button className="w-full" size="lg" disabled={loading}>
+            {loading ? "Please wait…" : tab === "sign-in" ? "Sign In" : "Create Account"} {!loading && <ArrowRight className="h-4 w-4" />}
           </Button>
         </form>
-        {tab === "sign-in" && (
+        {(
           <>
-            <div className="my-5 flex items-center gap-3 text-[11px] font-bold uppercase tracking-wider text-muted"><span className="h-px flex-1 bg-line" />or continue securely<span className="h-px flex-1 bg-line" /></div>
-            <Button type="button" variant="secondary" className="w-full" size="lg" onClick={requestTelegramOtp} disabled={loading || otpCooldown > 0}><Bot className="h-5 w-5 text-sky-500" /> {otpCooldown > 0 ? `Resend in ${otpCooldown}s` : otpMode ? "Resend Telegram code" : "Sign in via Telegram bot"}</Button>
+            <div className="auth-divider my-5 flex items-center gap-3 text-[11px] font-bold uppercase tracking-wider text-muted"><span className="h-px flex-1 bg-line" />or continue securely<span className="h-px flex-1 bg-line" /></div>
+            <Button type="button" variant="secondary" className="w-full" size="lg" onClick={openTelegramSignIn} disabled={loading}><svg className="h-5 w-5 shrink-0 text-sky-500" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21.44 3.62 18.2 20.1c-.24 1.16-.89 1.44-1.8.9l-4.94-3.64-2.38 2.29c-.26.26-.48.48-.98.48l.35-5.03 9.16-8.28c.4-.35-.09-.55-.62-.2L5.67 13.75.8 12.23c-1.06-.33-1.08-1.06.22-1.57L20.05 3.3c.88-.33 1.65.2 1.39.32Z" /></svg> {tab === "create" ? "Create account via Telegram" : "Sign in via Telegram"}</Button>
           </>
         )}
-        <div className="mt-6 flex items-center justify-center gap-2 text-xs text-muted"><ShieldCheck className="h-4 w-4 text-emerald-500" /> Your data is encrypted and protected</div>
+        <div className="auth-security mt-6 flex items-center justify-center gap-2 text-xs text-muted"><ShieldCheck className="h-4 w-4 text-emerald-500" /> Your data is encrypted and protected</div>
       </div>
     </div>
   );

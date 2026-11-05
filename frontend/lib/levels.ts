@@ -1,4 +1,4 @@
-import { BookOpen, Ear, Feather, MessageCircle, type LucideIcon } from "lucide-react";
+import { Sprout, Leaf, Rocket, GraduationCap, type LucideIcon } from "lucide-react";
 
 export type LevelCardData = {
   name: string;
@@ -12,8 +12,8 @@ export type LevelCardData = {
 };
 
 export const levelVisuals: Record<string, Pick<LevelCardData, "color" | "icon">> = {
-  beginner: { color: "coral", icon: Feather },
-  elementary: { color: "violet", icon: MessageCircle },
-  "pre-intermediate": { color: "blue", icon: BookOpen },
-  intermediate: { color: "mint", icon: Ear },
+  beginner: { color: "coral", icon: Sprout },
+  elementary: { color: "violet", icon: Leaf },
+  "pre-intermediate": { color: "blue", icon: Rocket },
+  intermediate: { color: "mint", icon: GraduationCap },
 };

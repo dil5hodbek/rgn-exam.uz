@@ -84,10 +84,10 @@ export function CreateTestDialog({ existing, onClose }: { existing: ExistingTest
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-lg overflow-hidden rounded-3xl border border-line bg-canvas shadow-2xl">
+      <div className="relative z-10 w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-line bg-canvas shadow-2xl">
         <div className="flex items-center justify-between border-b border-line px-6 py-4">
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-[.16em] text-brand">New content</p>
+            <p className="text-[11px] font-bold uppercase tracking-[.08em] text-brand">New content</p>
             <h2 className="mt-0.5 text-lg font-extrabold text-ink">Create a test</h2>
           </div>
           <button onClick={onClose} aria-label="Close" className="grid h-9 w-9 place-items-center rounded-lg text-muted hover:bg-surface hover:text-ink"><X className="h-4 w-4" /></button>

@@ -631,7 +631,7 @@ export function ExerciseBuilder({
           </div>}
 
           {/* ── COMPOSITE: matching ── */}
-          {comp === "matching" && <div className="grid grid-cols-2 gap-3">
+          {comp === "matching" && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="rounded-xl border border-line bg-canvas p-3">
               <p className="mb-2 text-xs font-bold text-muted">Left column (prompts) → correct option</p>
               {mLeft.map((v, i) => <div key={i} className="mb-1.5 flex items-center gap-1.5">

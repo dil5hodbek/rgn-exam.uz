@@ -21,7 +21,7 @@ import {
   type Exercise, type ExerciseResult, type TestDetail,
 } from "@/lib/exam-helpers";
 
-export function ExamRunner({ testId, resultBasePath }: { testId: string; resultBasePath: string }) {
+export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testId: string; resultBasePath: string; initialAttemptId?: string }) {
   const [test, setTest] = useState<TestDetail | null>(null);
   const [attemptId, setAttemptId] = useState("");
   const [taskOrder, setTaskOrder] = useState<string[] | null>(null);
@@ -192,13 +192,11 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
   }, [exercises]);
 
   useEffect(() => {
-    api<AttemptState>(`/tests/${testId}/attempts`, { method: "POST" }).then((attempt) =>
-      // Fetched per-attempt (not GET /tests/{testId}) because a "random test"
-      // attempt may carry extra_task_ids borrowed from the other exam type —
-      // those live outside this variant's own sections, so only the
-      // attempt-scoped endpoint knows to include them.
-      api<TestDetail>(`/attempts/${attempt.id}/test`).then((detail) => [detail, attempt] as const),
-    ).then(([detail, attempt]) => {
+    let active = true;
+    const query = initialAttemptId ? `?attempt_id=${encodeURIComponent(initialAttemptId)}` : "";
+    api<{ attempt: AttemptState; test: TestDetail }>(`/tests/${testId}/open${query}`, { method: "POST" })
+      .then(({ test: detail, attempt }) => {
+      if (!active) return;
       setTest(detail);
       setAttemptId(attempt.id);
       setTaskOrder(attempt.task_order ?? null);
@@ -230,8 +228,9 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
       } catch { /* start from the first exercise */ }
       setSeconds(Math.max(0, detail.time_limit_minutes * 60 - (attempt.elapsed_seconds ?? 0)));
       setTimerStarted(true);
-    }).catch((reason) => setError(reason instanceof Error ? reason.message : "Unable to load this test."));
-  }, [testId]);
+    }).catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : "Unable to load this test."); });
+    return () => { active = false; };
+  }, [testId, initialAttemptId]);
 
   useEffect(() => {
     if (!timerStarted || seconds <= 0) return;
@@ -924,7 +923,7 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
     <p className="mt-3 text-muted">{answered} of {scoredQuestions.length} questions answered. Open an exercise to review it.</p>
     <div className="mt-7 space-y-5">{test.sections.map((section) => {
       const sectionExercises = exercises.map((item, index) => ({ item, index })).filter(({ item }) => item.section.id === section.id);
-      return <section key={section.id}><h2 className="text-sm font-extrabold text-ink">{section.title}</h2><div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{sectionExercises.map(({ item, index }) => {
+      return <section key={section.id}><h2 className="text-sm font-extrabold text-ink">{section.title}</h2><div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{sectionExercises.map(({ item, index }) => {
         const itemQuestions = scorableQuestions(item.questions);
         const done = itemQuestions.filter((question) => hasAnswer(answers[question.id])).length;
         const unlocked = exerciseUnlocked(index);
@@ -942,10 +941,10 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
 
   return <>
     {dialog}
-    <div className="min-h-screen bg-surface lg:h-screen lg:overflow-hidden">
+    <div className="min-h-[100dvh] bg-surface xl:flex xl:h-[100dvh] xl:flex-col xl:overflow-hidden">
     <header className="sticky top-0 z-30 border-b border-line bg-canvas/95 backdrop-blur">
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5 lg:px-6">
-        <div className="flex min-w-0 items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5 xl:px-6">
+        <div className="flex min-w-0 max-w-full items-center gap-3">
           <button
             onClick={() => (window.history.length > 1 ? router.back() : router.push("/dashboard"))}
             aria-label="Go back"
@@ -956,9 +955,9 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
             <p className="max-w-[240px] truncate text-base font-extrabold text-ink sm:max-w-none sm:text-lg">{test.title}</p>
           </div>
         </div>
-        <div className="flex w-full min-w-0 items-center justify-end gap-2.5 sm:w-auto">
+        <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2.5 xl:w-auto">
           {exercise.media?.mime_type.startsWith("audio/") && <>
-            <AudioPlayer className="w-full min-w-0 sm:w-80 sm:shrink-0" src={mediaUrl(exercise.media.url)} autoStartDelay={5000} onPlay={(media) => guardMediaPlay(exercise, media)} onEnded={() => recordMediaPlay(exercise)} />
+            <AudioPlayer className="w-full min-w-0 sm:w-64 sm:shrink-0" src={mediaUrl(exercise.media.url)} autoStartDelay={5000} onPlay={(media) => guardMediaPlay(exercise, media)} onEnded={() => recordMediaPlay(exercise)} />
             {exercise.audio_replay_limit && <span className="hidden shrink-0 rounded-lg bg-surface px-2 py-2 text-[10px] font-bold text-muted xl:block">{Math.max(0, exercise.audio_replay_limit - (mediaPlays[exercise.id] ?? 0))} left</span>}
           </>}
           <span className="hidden shrink-0 rounded-xl bg-surface px-2.5 py-2 text-xs font-bold text-muted sm:block">{exerciseAnswered}/{exerciseQuestions.length}</span>
@@ -975,9 +974,9 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
       <div className="h-1 bg-surface"><div className="h-full bg-brand transition-all" style={{ width: `${scoredQuestions.length ? (answered / scoredQuestions.length) * 100 : 0}%` }} /></div>
     </header>
 
-    <div className="p-3 lg:flex lg:h-[calc(100vh-65px)] lg:gap-4 lg:p-4">
+    <div className="p-3 xl:flex xl:min-h-0 xl:flex-1 xl:gap-4 xl:p-4">
       <div
-        className={cn("group/side relative hidden h-full shrink-0 lg:block", !sidebarOpen && "lg:-mr-4")}
+        className={cn("group/side relative hidden h-full shrink-0 xl:block", !sidebarOpen && "xl:-mr-4")}
         onMouseEnter={holdSidebar}
         onMouseLeave={releaseSidebar}
       >
@@ -1059,8 +1058,8 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
       </button>
       </div>
 
-      <main className="min-w-0 lg:flex lg:h-full lg:flex-1 lg:flex-col lg:overflow-hidden">
-        <div className="mb-3 flex gap-2 overflow-x-auto pb-2 lg:hidden">{exercises.map((item, index) => { const unlocked = exerciseUnlocked(index); return <button key={item.id} disabled={!unlocked} onClick={() => goToExercise(index)} className={cn("flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold disabled:opacity-40", index === currentExercise ? "bg-brand text-white" : "border border-line bg-canvas text-muted")}>{!unlocked && <Lock className="h-3 w-3" />}{item.title}</button>; })}</div>
+      <main className="min-w-0 xl:flex xl:h-full xl:flex-1 xl:flex-col xl:overflow-hidden">
+        <div className="mb-3 flex gap-2 overflow-x-auto pb-2 xl:hidden">{exercises.map((item, index) => { const unlocked = exerciseUnlocked(index); return <button key={item.id} disabled={!unlocked} onClick={() => goToExercise(index)} className={cn("flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold disabled:opacity-40", index === currentExercise ? "bg-brand text-white" : "border border-line bg-canvas text-muted")}>{!unlocked && <Lock className="h-3 w-3" />}{item.title}</button>; })}</div>
 
         {exercise.media && !exercise.media.mime_type.startsWith("audio/") && <div className="mb-2.5 shrink-0 rounded-2xl border border-line bg-canvas p-2.5">
           {exercise.media.mime_type.startsWith("image/") ? <img className="max-h-72 w-full rounded-xl object-contain" src={mediaUrl(exercise.media.url)} alt={exercise.media.file_name} /> : <>
@@ -1075,9 +1074,9 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
         {/* When a reading passage is present the screen splits: passage on the
             left (its own scroll), questions on the right. A draggable divider
             between them lets the student give either side more room. Stacks on mobile. */}
-        <div ref={splitRef} className="min-h-0 lg:flex lg:min-h-0 lg:flex-1 lg:overflow-hidden">
+        <div ref={splitRef} className="min-h-0 xl:flex xl:min-h-0 xl:flex-1 xl:overflow-hidden">
         {passageText && <>
-        <aside style={{ "--pw": `${passageWidth}%` } as CSSProperties} className="mb-4 max-h-[42vh] shrink-0 overflow-y-auto rounded-3xl border border-line bg-canvas p-5 shadow-sm lg:mb-0 lg:max-h-none lg:w-[var(--pw)]">
+        <aside style={{ "--pw": `${passageWidth}%` } as CSSProperties} className="mb-4 min-w-0 max-h-[42dvh] shrink-0 overflow-y-auto rounded-3xl border border-line bg-canvas p-5 shadow-sm xl:mb-0 xl:max-h-none xl:w-[var(--pw)]">
           <div className="mb-3 flex items-center gap-2 text-brand">
             <PanelIcon className="h-4 w-4" /><p className="text-xs font-bold uppercase tracking-wider">{panelLabel}</p>
             {/* Text zoom: − / current / + */}
@@ -1096,13 +1095,13 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
             ? <div className="passage-content text-ink" style={{ fontSize: `${passageZoom}px`, lineHeight: 1.85 }} dangerouslySetInnerHTML={{ __html: sanitizeHtml(passageHtml) }} />
             : <div className="text-ink" style={{ fontSize: `${passageZoom}px`, lineHeight: 1.85 }}>{renderInstructionBlocks(passagePlain, false)}</div>}
         </aside>
-        <div onPointerDown={startSplitDrag} title="Drag to resize" className="group hidden shrink-0 cursor-col-resize touch-none items-center justify-center px-2 lg:flex">
+        <div onPointerDown={startSplitDrag} title="Drag to resize" className="group hidden shrink-0 cursor-col-resize touch-none items-center justify-center px-2 xl:flex">
           <div className="h-16 w-1.5 rounded-full bg-line transition group-hover:bg-brand" />
         </div>
         </>}
 
-        <section className="min-h-0 min-w-0 rounded-3xl border border-line bg-canvas p-4 shadow-sm sm:p-5 lg:flex lg:flex-1 lg:flex-col lg:overflow-hidden">
-          <div className={cn("min-h-0 gap-4 lg:flex-1 lg:overflow-y-auto lg:pr-2", bankOptions.length && "grid lg:grid-cols-[minmax(0,1fr)_210px]")}>
+        <section className="exam-questions min-h-0 min-w-0 rounded-3xl border border-line bg-canvas p-4 shadow-sm sm:p-5 xl:flex xl:flex-1 xl:flex-col xl:overflow-hidden">
+          <div className={cn("min-h-0 gap-4 xl:flex-1 xl:overflow-y-auto xl:pr-2", bankOptions.length && "exam-with-bank grid")}>
             <div className={cn("mx-auto w-full space-y-3", isGapMatch ? "max-w-6xl" : "max-w-3xl")}>
             {/* Exercise heading lives with the questions: number + full rubric
                 in a readable size (the sticky header only keeps the test title). */}
@@ -1171,9 +1170,9 @@ export function ExamRunner({ testId, resultBasePath }: { testId: string; resultB
               </div>
             </div>
 
-            {bankOptions.length > 0 && <aside className="order-first mb-5 rounded-2xl border border-orange-200 bg-orange-500/[.035] p-4 lg:order-none lg:sticky lg:top-24 lg:mb-0 lg:self-start">
+            {bankOptions.length > 0 && <aside className="exam-word-bank order-first mb-5 rounded-2xl border border-orange-200 bg-orange-500/[.035] p-4">
               <div className="flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-wider text-brand">{exercise.interaction?.kind === "matching" ? "Speakers" : "Word bank"}</p><p className="mt-1 text-[11px] leading-4 text-muted">{reusableOptions ? "Answers can be reused." : "Each word can be used once."}</p></div><GripVertical className="h-5 w-5 text-orange-300" /></div>
-              <div className="mt-4 flex flex-wrap gap-2 lg:flex-col">{bankOptions.map((option) => {
+              <div className="exam-bank-options mt-4 flex flex-wrap gap-2">{bankOptions.map((option) => {
                 const used = !reusableOptions && usedOptions.has(option.value);
                 const selected = selectedToken === option.value;
                 return <button

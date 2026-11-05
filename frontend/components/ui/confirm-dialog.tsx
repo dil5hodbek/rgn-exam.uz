@@ -36,7 +36,7 @@ export function ConfirmDialog({ state, onClose }: { state: ConfirmDialogState | 
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
         aria-describedby="confirm-dialog-description"
-        className="w-full max-w-sm rounded-3xl border border-line bg-canvas p-6 shadow-lift"
+        className="w-full max-w-sm max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-3xl border border-line bg-canvas p-6 shadow-lift"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start gap-3">
@@ -48,7 +48,7 @@ export function ConfirmDialog({ state, onClose }: { state: ConfirmDialogState | 
             <p id="confirm-dialog-description" className="mt-1.5 text-sm text-muted">{state.description}</p>
           </div>
         </div>
-        <div className="mt-6 flex justify-end gap-3">
+        <div className="mt-6 flex flex-wrap justify-end gap-3">
           <Button variant="secondary" onClick={onClose}>{state.cancelLabel ?? "Cancel"}</Button>
           <Button
             ref={confirmRef}

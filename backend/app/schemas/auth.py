@@ -52,6 +52,19 @@ class BotStart(BaseModel):
     telegram_user_id: str
 
 
+class TelegramMagicLogin(BaseModel):
+    token: str = Field(min_length=40, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+class TelegramBotRegister(BotStart):
+    first_name: str = Field(min_length=1, max_length=80)
+    last_name: str = Field(default="", max_length=80)
+
+
+class TelegramBotReset(BotStart):
+    confirmation_token: str = Field(min_length=20, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")
+
+
 class PasswordReset(BaseModel):
     reset_token: str
     password: str = Field(min_length=1, max_length=128)

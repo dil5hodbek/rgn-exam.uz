@@ -1,0 +1,38 @@
+.settings-page { max-width: 800px; margin: 0 auto; padding: 28px 24px; }
+.settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+.settings-heading p { color: var(--accent); font-size: 11px; font-weight: 700; margin: 0 0 3px; }
+.settings-heading h1 { font-size: 28px; font-weight: 800; line-height: 1.2; }
+.settings-signout-top { display: flex; align-items: center; gap: 7px; color: #dc5a45; font-size: 12px; font-weight: 600; min-height: 44px; padding: 8px 0 8px 10px; }
+.settings-profile { position: relative; display: flex; align-items: center; flex-direction: column; overflow: hidden; padding: 28px 18px 21px; border: 1px solid var(--border); border-radius: 24px; background: var(--bg-primary); }
+.settings-profile-wash { position: absolute; inset: 0 0 auto; height: 105px; background: radial-gradient(ellipse at 50% 0, #f77a3030, transparent 70%); pointer-events: none; }
+.settings-avatar { position: relative; width: 84px; height: 84px; padding: 4px; border: 1px solid #ff9a5755; border-radius: 50%; background: var(--bg-primary); }
+.settings-avatar > img, .settings-avatar > span:first-child { display: grid; place-items: center; width: 100%; height: 100%; border-radius: 50%; object-fit: cover; background: linear-gradient(135deg,#ff9c58,#e8541c); color: white; font-size: 27px; font-weight: 700; }
+.settings-camera { position: absolute; right: -1px; bottom: 1px; display: grid; place-items: center; width: 27px; height: 27px; border: 3px solid var(--bg-primary); border-radius: 50%; color: white; background: var(--accent); }
+.settings-profile h2 { position: relative; max-width: 100%; overflow-wrap: anywhere; font-size: 20px; font-weight: 800; margin-top: 12px; }
+.settings-profile > p { font-size: 13px; color: var(--text-secondary); margin-top: 3px; }
+.settings-photo-action { min-height: 40px; font-size: 12px; font-weight: 600; color: var(--accent); margin-top: 4px; }
+.settings-remove-photo { display: flex; gap: 5px; align-items: center; color: var(--text-secondary); font-size: 11px; min-height: 32px; }
+.settings-group-label { font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--accent); margin: 22px 14px 8px; text-transform: uppercase; }
+.settings-group { border: 1px solid var(--border); background: var(--bg-primary); border-radius: 20px; overflow: hidden; }
+.settings-group > * + *, .settings-theme-row + .settings-theme-row { border-top: 1px solid var(--border); }
+.settings-row { display: flex; align-items: center; gap: 12px; min-height: 74px; padding: 14px 18px; width: 100%; text-align: left; }
+.settings-row-icon { display: grid; place-items: center; flex: 0 0 35px; height: 35px; border-radius: 11px; }
+.settings-orange { background: #f5782515; color: var(--accent); }.settings-telegram { background: #229ed915; color: #229ed9; }.settings-security { background: #39a57a15; color: #28a174; }
+.settings-row-copy { flex: 1; min-width: 0; }.settings-row-copy strong { display: block; font-size: 14px; font-weight: 650; color: var(--text-primary); }.settings-row-copy small { display: block; margin-top: 2px; font-size: 11px; line-height: 1.5; color: var(--text-secondary); }
+.settings-chevron { flex-shrink: 0; color: var(--text-secondary); transition: transform .2s; }.settings-details[open] > summary .settings-chevron { transform: rotate(90deg); }
+.settings-details summary { cursor: pointer; list-style: none; }.settings-details summary::-webkit-details-marker { display: none; }
+.settings-details summary:hover, .settings-theme-row:hover { background: var(--bg-secondary); }
+.settings-expanded { padding: 0 18px 18px; }.settings-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; }.settings-fields label { display: grid; gap: 6px; min-width: 0; font-size: 12px; font-weight: 600; color: var(--text-secondary); }.settings-fields input { min-width: 0; }.settings-wide { grid-column: 1/-1; }.settings-save { margin-top: 16px; font-size: 12px; }
+.settings-help { font-size: 12px; color: var(--text-secondary); margin-bottom: 14px; line-height: 1.6; }
+.settings-connection { display: flex; align-items: center; gap: 3px; flex-shrink: 0; color: var(--text-secondary); font-size: 10px; }.settings-connection.is-connected { color: #299b6b; padding: 4px 7px; border-radius: 20px; background: #2eb38312; }
+.settings-telegram-action { padding: 0 18px 12px 65px; }.settings-telegram-action button { display: flex; align-items: center; gap: 5px; min-height: 32px; color: var(--accent); font-size: 12px; font-weight: 600; }
+.settings-radio { display: grid; place-items: center; width: 21px; height: 21px; flex-shrink: 0; border: 1.5px solid var(--border); border-radius: 50%; }.is-selected .settings-radio { border-color: var(--accent); background: var(--accent); color: white; }
+.settings-notice { padding: 12px 14px; margin-bottom: 14px; border-radius: 14px; background: #2ca66c12; color: #27925e; font-size: 12px; line-height: 1.6; }.settings-error { color: #db5049; background: #ef444412; }.settings-link-fallback { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }.settings-link-fallback a { color: var(--accent); text-decoration: underline; }
+.settings-caption { color: var(--text-secondary); text-align: center; font-size: 10px; margin-top: 24px; }
+.settings-page :focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }.settings-page button:disabled { opacity: .5; cursor: wait; }
+@media(max-width:639px) { .settings-page { padding: 20px 14px; }.settings-heading { margin-bottom: 16px; }.settings-heading h1 { font-size: 24px; }.settings-profile { padding: 22px 14px 14px; border-radius: 20px; }.settings-avatar { width: 74px; height: 74px; }.settings-profile h2 { font-size: 18px; }.settings-row { padding: 12px 14px; gap: 10px; min-height: 68px; }.settings-row-copy strong { font-size: 13px; }.settings-row-copy small { font-size: 11px; }.settings-row-icon { flex-basis: 32px; height: 32px; border-radius: 10px; }.settings-expanded { padding-inline: 14px; }.settings-fields { grid-template-columns: minmax(0,1fr); gap: 12px; }.settings-telegram-action { padding-left: 56px; }.settings-group-label { margin-top: 18px; }.settings-group { border-radius: 17px; } }
+@media(prefers-reduced-motion:reduce) { .settings-chevron { transition: none; } }
+
+.settings-theme-row { cursor: pointer; }.settings-theme-row:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+@media(max-width:639px) { .settings-fields input { font-size: 16px; } }

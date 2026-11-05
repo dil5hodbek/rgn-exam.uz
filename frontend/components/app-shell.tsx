@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import "./student-responsive.css";
 import { Logo } from "./logo";
 import { ThemeToggle } from "./theme-toggle";
 import { cn } from "@/lib/utils";
@@ -25,6 +26,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [today, setToday] = useState("");
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState("");
   useEffect(() => {
     setToday(new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }));
     api<{ first_name: string; last_name: string; role: string; avatar_url: string | null }>("/auth/me")
@@ -38,15 +41,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       });
   }, [router]);
   async function signOut() {
-    await api("/auth/logout", { method: "POST" }).catch(() => undefined);
-    router.push("/sign-in");
+    setSigningOut(true);
+    setSignOutError("");
+    try {
+      await api("/auth/logout", { method: "POST" });
+      // A fresh document discards authenticated pages from the client router cache.
+      window.location.replace("/sign-in");
+    } catch (reason) {
+      setSignOutError(reason instanceof Error ? reason.message : "Unable to sign out. Please try again.");
+      setSigningOut(false);
+    }
   }
   const nav = isAdmin
     ? [...studentNav, { href: "/admin", label: "Admin Panel", icon: ShieldCheck }]
     : studentNav;
   return (
     <div className="min-h-screen bg-surface">
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 border-r border-line bg-canvas px-5 py-6 lg:flex lg:flex-col">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 overflow-y-auto border-r border-line bg-canvas px-5 py-6 lg:flex lg:flex-col">
         <Logo />
         <nav className="mt-10 space-y-1">
           {nav.map((item) => {
@@ -67,11 +78,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <p className="relative mt-3 text-sm font-bold">Keep your streak alive</p>
           <p className="relative mt-1 text-xs leading-5 text-orange-50">One focused session today moves you forward.</p>
         </div>
-        <button onClick={signOut} className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold text-muted hover:bg-surface hover:text-ink">
-          <LogOut className="h-5 w-5" /> Sign Out
+        <button onClick={signOut} disabled={signingOut} className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold text-muted hover:bg-surface hover:text-ink disabled:opacity-60">
+          <LogOut className="h-5 w-5" /> {signingOut ? "Signing out…" : "Sign Out"}
         </button>
+        {signOutError && <p role="alert" className="px-3 text-sm text-red-600">{signOutError}</p>}
       </aside>
-      <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-line bg-canvas/85 px-4 backdrop-blur-xl lg:ml-64 lg:px-8">
+      <header className="student-header sticky top-0 z-30 flex h-16 items-center justify-between border-b border-line bg-canvas/85 px-4 backdrop-blur-xl lg:ml-64 lg:px-8">
         <div className="lg:hidden"><Logo /></div>
         <p className="hidden text-sm font-medium text-muted lg:block">{today}</p>
         <div className="flex items-center gap-2">
@@ -86,11 +98,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </header>
-      <main className="pb-24 lg:ml-64 lg:pb-8">{children}</main>
-      <nav className="fixed inset-x-3 bottom-3 z-40 flex justify-around rounded-2xl border border-line bg-canvas/95 p-2 shadow-soft backdrop-blur-xl lg:hidden">
+      <main className="student-content min-w-0 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:ml-64 lg:pb-8">{children}</main>
+      <nav className="student-bottom-nav fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 flex rounded-2xl border border-line bg-canvas/95 p-2 shadow-soft backdrop-blur-xl lg:hidden">
         {nav.map((item) => {
           const active = pathname.startsWith(item.href);
-          return <Link key={item.href} href={item.href} className={cn("flex min-w-20 flex-col items-center gap-1 rounded-xl px-3 py-2 text-[11px] font-semibold", active ? "bg-orange-500/10 text-brand" : "text-muted")}><item.icon className="h-5 w-5" />{item.label}</Link>;
+          return <Link key={item.href} href={item.href} className={cn("flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-1 py-2 text-center text-[10px] leading-tight sm:px-3 sm:text-[11px] font-semibold", active ? "bg-orange-500/10 text-brand" : "text-muted")}><item.icon className="h-5 w-5" />{item.label}</Link>;
         })}
       </nav>
     </div>

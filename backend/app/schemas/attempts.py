@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from app.models import AttemptStatus
+from app.schemas.catalog import TestDetailOut
 
 
 class AnswerStateOut(BaseModel):
@@ -22,6 +23,11 @@ class AttemptStateOut(BaseModel):
     answers: list[AnswerStateOut]
     checked_task_ids: list[str]
     task_order: list[str] | None
+
+
+class ExamSessionOut(BaseModel):
+    attempt: AttemptStateOut
+    test: TestDetailOut
 
 
 class SaveAnswersOut(BaseModel):

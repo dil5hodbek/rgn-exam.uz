@@ -35,15 +35,15 @@ function CreateTeacherDialog({ onClose, onCreated }: { onClose: () => void; onCr
   return <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onClick={onClose}>
     <form onSubmit={submit} className="w-full max-w-md rounded-3xl border border-line bg-canvas p-6 shadow-lift" onClick={(event) => event.stopPropagation()}>
       <div className="flex items-center justify-between"><h2 className="text-lg font-extrabold text-ink">Add teacher</h2><button type="button" onClick={onClose} className="rounded-lg p-1.5 text-muted hover:text-ink"><X className="h-4 w-4" /></button></div>
-      <div className="mt-5 grid grid-cols-2 gap-3">
+      <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="space-y-2 text-sm font-semibold text-ink">First Name<Input placeholder="Alex" value={firstName} onChange={(event) => setFirstName(event.target.value)} required /></label>
         <label className="space-y-2 text-sm font-semibold text-ink">Last Name<Input placeholder="Morgan" value={lastName} onChange={(event) => setLastName(event.target.value)} required /></label>
       </div>
       <label className="mt-4 block space-y-2 text-sm font-semibold text-ink">
         Phone Number
         <div className="flex">
-          <span className="grid h-12 place-items-center rounded-l-xl border border-r-0 border-line bg-surface px-3 text-sm font-bold text-ink">+998</span>
-          <Input className="rounded-l-none" inputMode="numeric" placeholder="90 123 45 67" value={phone} onChange={(event) => setPhone(event.target.value)} required />
+          <span className="grid h-12 shrink-0 whitespace-nowrap place-items-center rounded-l-xl border border-r-0 border-line bg-surface px-3 text-sm font-bold text-ink">+998</span>
+          <Input className="min-w-0 flex-1 rounded-l-none" inputMode="numeric" placeholder="90 123 45 67" value={phone} onChange={(event) => setPhone(event.target.value)} required />
         </div>
       </label>
       <label className="mt-4 block space-y-2 text-sm font-semibold text-ink">Password<Input type="password" placeholder="Their password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
@@ -64,7 +64,7 @@ export default function Teachers() {
   }
   return <div className="mx-auto max-w-6xl p-4 sm:p-8">
     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-      <div><p className="text-xs font-bold uppercase tracking-[.18em] text-brand">Monitor panel access</p><h1 className="mt-2 text-3xl font-extrabold text-ink">Teachers</h1><p className="mt-2 text-sm text-muted">Teachers can grade writing and view student results in the Monitor panel.</p></div>
+      <div><p className="text-xs font-bold uppercase tracking-[.08em] text-brand">Monitor panel access</p><h1 className="mt-2 text-3xl font-extrabold text-ink">Teachers</h1><p className="mt-2 text-sm text-muted">Teachers can grade writing and view student results in the Monitor panel.</p></div>
       <Button onClick={() => setCreating(true)}><Plus className="h-4 w-4" /> Add teacher</Button>
     </div>
     {error && <p className="mt-4 text-red-600">{error}</p>}

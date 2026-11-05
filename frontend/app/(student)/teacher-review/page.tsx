@@ -48,7 +48,7 @@ export default function TeacherReviewPage() {
   const active = tab === "new" ? pending : graded;
 
   return <div className="mx-auto max-w-4xl p-4 sm:p-8">
-    <p className="text-xs font-bold uppercase tracking-[.18em] text-brand">Feedback</p>
+    <p className="text-xs font-bold uppercase tracking-[.08em] text-brand">Feedback</p>
     <h1 className="mt-2 text-3xl font-extrabold text-ink">Writing Feedback</h1>
     <p className="mt-2 text-sm text-muted">Your writing and speaking answers, graded automatically by AI with a score and a short comment.</p>
     {error && <p className="mt-4 rounded-xl bg-red-500/10 p-3 text-sm font-semibold text-red-600">{error}</p>}
