@@ -3,16 +3,18 @@ import "./globals.css";
 import { CursorGlow } from "@/components/landing/cursor-glow";
 import { NavigationProgress } from "@/components/navigation-progress";
 import { Providers } from "@/components/providers";
+import { getLang } from "@/lib/lang-server";
 
 export const metadata: Metadata = {
   title: "Registon O'quv Markazi",
-  description: "A focused English examination platform.",
+  description: "Registon o'quv markazi o'quvchilari uchun ingliz tili imtihonlari.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const lang = getLang();
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body><Providers><NavigationProgress />{children}<CursorGlow /></Providers></body>
+    <html lang={lang} suppressHydrationWarning>
+      <body><Providers lang={lang}><NavigationProgress />{children}<CursorGlow /></Providers></body>
     </html>
   );
 }

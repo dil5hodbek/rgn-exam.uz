@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Bookmark, Check, X } from "lucide-react";
 import { api } from "@/lib/api";
+import { useLang } from "@/lib/i18n";
 
 type Saved = {
   id: string;
@@ -25,24 +26,26 @@ function answerText(value: unknown): string {
 }
 
 export default function SavedQuestions() {
+  const { t } = useLang();
   const [rows, setRows] = useState<Saved[] | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
     api<Saved[]>("/me/saved-questions")
       .then(setRows)
-      .catch((reason) => setError(reason instanceof Error ? reason.message : "Unable to load saved questions."));
+      .catch((reason) => setError(reason instanceof Error ? reason.message : t("Saqlangan savollarni yuklab bo'lmadi.", "Unable to load saved questions.")));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return <div className="mx-auto max-w-4xl p-4 sm:p-8">
     <div className="flex items-center gap-3">
       <span className="grid h-11 w-11 place-items-center rounded-2xl bg-orange-500/10 text-brand"><Bookmark className="h-5 w-5" /></span>
       <div>
-        <p className="text-xs font-bold uppercase tracking-[.08em] text-brand">Review</p>
-        <h1 className="text-2xl font-extrabold text-ink">Saved questions</h1>
+        <p className="text-xs font-bold uppercase tracking-[.08em] text-brand">{t("Takrorlash", "Review")}</p>
+        <h1 className="text-2xl font-extrabold text-ink">{t("Saqlangan savollar", "Saved questions")}</h1>
       </div>
     </div>
-    <p className="mt-2 text-sm text-muted">Questions you bookmarked (flagged) while taking tests. Tap the flag on any question during a test to save it here.</p>
+    <p className="mt-2 text-sm text-muted">{t("Test paytida belgilagan savollaringiz. Test vaqtida istalgan savoldagi bayroqchani bossangiz, u shu yerga saqlanadi.", "Questions you bookmarked (flagged) while taking tests. Tap the flag on any question during a test to save it here.")}</p>
 
     {error && <p className="mt-6 rounded-xl bg-red-500/10 p-3 text-sm font-semibold text-red-600">{error}</p>}
 
@@ -50,8 +53,8 @@ export default function SavedQuestions() {
 
     {rows !== null && rows.length === 0 && <div className="mt-8 rounded-3xl border border-dashed border-line bg-canvas p-10 text-center">
       <Bookmark className="mx-auto h-8 w-8 text-muted" />
-      <p className="mt-3 text-sm font-semibold text-ink">No saved questions yet</p>
-      <p className="mt-1 text-sm text-muted">While taking a test, tap the flag icon on a question to save it for review.</p>
+      <p className="mt-3 text-sm font-semibold text-ink">{t("Hali saqlangan savol yo'q", "No saved questions yet")}</p>
+      <p className="mt-1 text-sm text-muted">{t("Test yechayotganda savolni keyin takrorlash uchun bayroqcha belgisini bosing.", "While taking a test, tap the flag icon on a question to save it for review.")}</p>
     </div>}
 
     {rows !== null && rows.length > 0 && <div className="mt-6 space-y-3">
@@ -60,10 +63,10 @@ export default function SavedQuestions() {
           <span className="rounded-full bg-orange-500/10 px-2.5 py-1 text-brand">{row.level} · {row.exam_type}</span>
           <span className="rounded-full bg-surface px-2.5 py-1 text-muted">{row.test_title}</span>
           <span className="rounded-full bg-surface px-2.5 py-1 text-muted">{row.exercise_type}</span>
-          {row.is_correct === true && <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-emerald-600"><Check className="h-3 w-3" /> Correct</span>}
-          {row.is_correct === false && <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2.5 py-1 text-red-600"><X className="h-3 w-3" /> Incorrect</span>}
+          {row.is_correct === true && <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-emerald-600"><Check className="h-3 w-3" /> {t("To'g'ri", "Correct")}</span>}
+          {row.is_correct === false && <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2.5 py-1 text-red-600"><X className="h-3 w-3" /> {t("Noto'g'ri", "Incorrect")}</span>}
         </div>
-        <p className="mt-3 font-bold leading-7 text-ink">{row.prompt || <span className="italic text-muted">(no prompt)</span>}</p>
+        <p className="mt-3 font-bold leading-7 text-ink">{row.prompt || <span className="italic text-muted">{t("(savol matni yo'q)", "(no prompt)")}</span>}</p>
         {Array.isArray(row.options) && row.options.length > 0 && <div className="mt-3 flex flex-wrap gap-2">
           {row.options.map((option, index) => {
             const value = typeof option === "string" ? option : String(option);
@@ -72,8 +75,8 @@ export default function SavedQuestions() {
           })}
         </div>}
         <div className="mt-3 grid gap-1.5 text-sm sm:grid-cols-2">
-          <p className="text-muted">Your answer: <span className="font-semibold text-ink">{answerText(row.student_answer)}</span></p>
-          {row.correct_answer != null && <p className="text-muted">Correct answer: <span className="font-semibold text-emerald-600">{answerText(row.correct_answer)}</span></p>}
+          <p className="text-muted">{t("Sizning javobingiz", "Your answer")}: <span className="font-semibold text-ink">{answerText(row.student_answer)}</span></p>
+          {row.correct_answer != null && <p className="text-muted">{t("To'g'ri javob", "Correct answer")}: <span className="font-semibold text-emerald-600">{answerText(row.correct_answer)}</span></p>}
         </div>
       </article>)}
     </div>}

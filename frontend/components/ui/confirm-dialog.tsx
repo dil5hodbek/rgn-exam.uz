@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useLang } from "@/lib/i18n";
 
 export type ConfirmDialogState = {
   title: string;
@@ -14,6 +15,7 @@ export type ConfirmDialogState = {
 };
 
 export function ConfirmDialog({ state, onClose }: { state: ConfirmDialogState | null; onClose: () => void }) {
+  const { t } = useLang();
   const confirmRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -49,13 +51,13 @@ export function ConfirmDialog({ state, onClose }: { state: ConfirmDialogState | 
           </div>
         </div>
         <div className="mt-6 flex flex-wrap justify-end gap-3">
-          <Button variant="secondary" onClick={onClose}>{state.cancelLabel ?? "Cancel"}</Button>
+          <Button variant="secondary" onClick={onClose}>{state.cancelLabel ?? t("Bekor qilish", "Cancel")}</Button>
           <Button
             ref={confirmRef}
             variant={danger ? "danger" : "primary"}
             onClick={() => { state.onConfirm(); onClose(); }}
           >
-            {state.confirmLabel ?? "Confirm"}
+            {state.confirmLabel ?? t("Tasdiqlash", "Confirm")}
           </Button>
         </div>
       </div>

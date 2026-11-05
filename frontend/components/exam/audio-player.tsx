@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Pause, Play, Volume1, Volume2, VolumeX } from "lucide-react";
+import { useLang } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 function formatTime(seconds: number) {
@@ -23,6 +24,7 @@ export function AudioPlayer({
   autoStartDelay?: number;
 }) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const { t } = useLang();
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -104,7 +106,7 @@ export function AudioPlayer({
       <button
         type="button"
         onClick={togglePlay}
-        aria-label={playing ? "Pause" : "Play"}
+        aria-label={playing ? t("Pauza", "Pause") : t("Ijro etish", "Play")}
         className={cn(
           "grid h-9 w-9 shrink-0 place-items-center rounded-full text-white transition-all active:scale-90",
           playing
@@ -128,7 +130,7 @@ export function AudioPlayer({
         onChange={seek}
         className="player-seek h-1.5 min-w-[48px] flex-1"
         style={{ background: `linear-gradient(to right, var(--accent) ${progress}%, var(--border) ${progress}%)` }}
-        aria-label="Seek"
+        aria-label={t("Vaqtni tanlash", "Seek")}
       />
 
       {/* Volume: icon toggles mute, slider sets the level */}
@@ -136,7 +138,7 @@ export function AudioPlayer({
         <button
           type="button"
           onClick={toggleMute}
-          aria-label={muted ? "Unmute" : "Mute"}
+          aria-label={muted ? t("Ovozni yoqish", "Unmute") : t("Ovozni o'chirish", "Mute")}
           className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-muted transition hover:bg-canvas hover:text-brand"
         >
           <VolumeIcon className="h-4 w-4" />
@@ -150,7 +152,7 @@ export function AudioPlayer({
           onChange={changeVolume}
           className="player-seek hidden h-1 w-14 sm:block"
           style={{ background: `linear-gradient(to right, var(--accent) ${volumePercent}%, var(--border) ${volumePercent}%)` }}
-          aria-label="Volume"
+          aria-label={t("Ovoz balandligi", "Volume")}
         />
       </div>
     </div>

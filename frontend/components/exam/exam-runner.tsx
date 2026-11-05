@@ -10,6 +10,7 @@ import { AudioPlayer } from "@/components/exam/audio-player";
 import { GapMatch } from "@/components/exam/gap-match";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/use-confirm";
+import { useLang } from "@/lib/i18n";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { Input } from "@/components/ui/input";
 import { api, mediaUrl } from "@/lib/api";
@@ -22,6 +23,7 @@ import {
 } from "@/lib/exam-helpers";
 
 export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testId: string; resultBasePath: string; initialAttemptId?: string }) {
+  const { t } = useLang();
   const [test, setTest] = useState<TestDetail | null>(null);
   const [attemptId, setAttemptId] = useState("");
   const [taskOrder, setTaskOrder] = useState<string[] | null>(null);
@@ -228,8 +230,10 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
       } catch { /* start from the first exercise */ }
       setSeconds(Math.max(0, detail.time_limit_minutes * 60 - (attempt.elapsed_seconds ?? 0)));
       setTimerStarted(true);
-    }).catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : "Unable to load this test."); });
+    }).catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : t("Testni yuklab bo'lmadi.", "Unable to load this test.")); });
     return () => { active = false; };
+    // Switching language must not reload the test; t only shapes the error text.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [testId, initialAttemptId]);
 
   useEffect(() => {
@@ -338,7 +342,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
       await saveAnswers();
       await api(`/attempts/${attemptId}/pause`, { method: "POST" });
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not save before exit. Check your connection.");
+      setError(reason instanceof Error ? reason.message : t("Chiqishdan oldin saqlab bo'lmadi. Internetni tekshiring.", "Could not save before exit. Check your connection."));
       return;
     }
     router.push("/dashboard");
@@ -349,9 +353,9 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
   function restartAttempt() {
     if (!attemptId) return;
     confirm({
-      title: "Start the test over?",
-      description: "All your answers and results will be erased.",
-      confirmLabel: "Start over",
+      title: t("Testni boshidan boshlaysizmi?", "Start the test over?"),
+      description: t("Barcha javoblaringiz va natijalaringiz o'chiriladi.", "All your answers and results will be erased."),
+      confirmLabel: t("Boshidan boshlash", "Start over"),
       variant: "danger",
       onConfirm: doRestartAttempt,
     });
@@ -362,7 +366,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     try {
       await api(`/attempts/${attemptId}/restart`, { method: "POST" });
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to restart the test.");
+      setError(reason instanceof Error ? reason.message : t("Testni qayta boshlab bo'lmadi.", "Unable to restart the test."));
       return;
     }
     try {
@@ -391,7 +395,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
       await api(`/attempts/${attemptId}/submit`, { method: "POST" });
       router.push(`${resultBasePath}/${attemptId}`);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to submit this test.");
+      setError(reason instanceof Error ? reason.message : t("Testni topshirib bo'lmadi.", "Unable to submit this test."));
     }
   }
 
@@ -410,7 +414,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     const limit = exercise.audio_replay_limit;
     if (limit && (mediaPlays[exercise.id] ?? 0) >= limit) {
       media.pause();
-      setError(`This recording can only be played ${limit} time${limit === 1 ? "" : "s"}.`);
+      setError(t(`Bu yozuvni faqat ${limit} marta tinglash mumkin.`, `This recording can only be played ${limit} time${limit === 1 ? "" : "s"}.`));
     }
   }
 
@@ -433,7 +437,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
       try {
         await api(`/attempts/${attemptId}/tasks/${exercise.id}/check`, { method: "DELETE" });
       } catch (reason) {
-        setError(reason instanceof Error ? reason.message : "Unable to unlock this exercise.");
+        setError(reason instanceof Error ? reason.message : t("Mashqni qayta ochib bo'lmadi.", "Unable to unlock this exercise."));
         return;
       }
     }
@@ -461,9 +465,9 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     const unanswered = scorableQuestions(exercise.questions).filter((question) => !hasAnswer(answers[question.id]));
     if (unanswered.length) {
       confirm({
-        title: `${unanswered.length} unanswered question${unanswered.length === 1 ? "" : "s"}`,
-        description: "Are you sure you want to finish this exercise?",
-        confirmLabel: "Finish exercise",
+        title: t(`${unanswered.length} ta savolga javob berilmagan`, `${unanswered.length} unanswered question${unanswered.length === 1 ? "" : "s"}`),
+        description: t("Mashqni yakunlashni xohlaysizmi?", "Are you sure you want to finish this exercise?"),
+        confirmLabel: t("Mashqni yakunlash", "Finish exercise"),
         onConfirm: () => doCheckExercise(exercise),
       });
       return;
@@ -488,7 +492,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
       }));
       setCheckedTaskIds((current) => current.includes(exercise.id) ? current : [...current, exercise.id]);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to check this exercise.");
+      setError(reason instanceof Error ? reason.message : t("Mashqni tekshirib bo'lmadi.", "Unable to check this exercise."));
     } finally {
       setCheckingExercise(false);
     }
@@ -528,12 +532,12 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
             : value ? "border-brand bg-orange-500/5 text-ink" : "border-line bg-surface text-muted hover:border-orange-300",
       )}
     >
-      <span className="max-w-48 truncate">{label || (selectedToken ? "Place here" : "Drop answer")}</span>
+      <span className="max-w-48 truncate">{label || (selectedToken ? t("Shu yerga qo'yish", "Place here") : t("Javobni qo'ying", "Drop answer"))}</span>
       {result === true && <CheckCircle2 className="h-4 w-4 shrink-0" />}
       {result === false && <XCircle className="h-4 w-4 shrink-0" />}
       {value && <span
         role="button"
-        aria-label={`Clear answer ${questionNumbers.get(question.id)}`}
+        aria-label={t(`${questionNumbers.get(question.id)}-javobni tozalash`, `Clear answer ${questionNumbers.get(question.id)}`)}
         onClick={(event) => { event.stopPropagation(); setAnswer(question.id, ""); }}
         className="rounded p-0.5 hover:bg-black/5"
       ><X className="h-3.5 w-3.5" /></span>}
@@ -706,10 +710,10 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
       });
       return <div className="mt-5 space-y-3">
         <div className="flex min-h-14 flex-wrap items-center gap-2 rounded-xl border-2 border-dashed border-orange-200 bg-orange-500/[.025] p-3">
-          {selected.length ? selected.map((token, index) => <button type="button" key={`${token}-${index}`} onClick={() => setAnswer(question.id, selected.filter((_, itemIndex) => itemIndex !== index))} className="rounded-lg bg-brand px-3 py-2 text-sm font-bold text-white">{index + 1}. {token}</button>) : <span className="text-xs font-semibold text-muted">Click words below to build the answer.</span>}
+          {selected.length ? selected.map((token, index) => <button type="button" key={`${token}-${index}`} onClick={() => setAnswer(question.id, selected.filter((_, itemIndex) => itemIndex !== index))} className="rounded-lg bg-brand px-3 py-2 text-sm font-bold text-white">{index + 1}. {token}</button>) : <span className="text-xs font-semibold text-muted">{t("Javobni tuzish uchun pastdagi so'zlarni bosing.", "Click words below to build the answer.")}</span>}
         </div>
         <div className="flex flex-wrap gap-2">{remaining.map((token, index) => <button type="button" key={`${token}-${index}`} onClick={() => setAnswer(question.id, [...selected, token])} className="rounded-lg border border-line bg-canvas px-3 py-2 text-sm font-bold text-ink hover:border-brand hover:text-brand">{token}</button>)}</div>
-        {selected.length > 0 && <button type="button" onClick={() => setAnswer(question.id, [])} className="flex items-center gap-1 text-xs font-bold text-muted hover:text-ink"><RotateCcw className="h-3 w-3" /> Reset order</button>}
+        {selected.length > 0 && <button type="button" onClick={() => setAnswer(question.id, [])} className="flex items-center gap-1 text-xs font-bold text-muted hover:text-ink"><RotateCcw className="h-3 w-3" /> {t("Tartibni tiklash", "Reset order")}</button>}
       </div>;
     }
 
@@ -779,7 +783,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
       const inRange = (!minimum || count >= minimum) && (!maximum || count <= maximum);
       return <div className="mt-4">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs font-bold">
-          <span className="rounded-full bg-orange-500/10 px-3 py-1 text-brand">🤖 AI graded</span>
+          <span className="rounded-full bg-orange-500/10 px-3 py-1 text-brand">🤖 {t("AI baholaydi", "AI graded")}</span>
           <span className={cn(
             "rounded-full px-3 py-1 transition-colors",
             count === 0 ? "bg-surface text-muted"
@@ -787,7 +791,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
               : !inRange ? "bg-amber-500/10 text-amber-600"
               : "bg-emerald-500/10 text-emerald-600",
           )}>
-            {count} words{minimum || maximum ? ` · guide ${minimum ?? 0}–${maximum ?? "∞"}` : ""}{count > 0 && inRange ? " ✓" : ""}
+            {count} {t("so'z", "words")}{minimum || maximum ? ` · ${t("tavsiya", "guide")} ${minimum ?? 0}–${maximum ?? "∞"}` : ""}{count > 0 && inRange ? " ✓" : ""}
           </span>
         </div>
         {/* Short answers (a sentence or two) get a compact box; essays without a
@@ -800,7 +804,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
           )}
           value={content}
           onChange={(event) => setAnswer(question.id, event.target.value)}
-          placeholder="Write your answer…"
+          placeholder={t("Javobingizni yozing…", "Write your answer…")}
         />
       </div>;
     }
@@ -810,7 +814,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
         aria-label={`Answer ${questionNumbers.get(question.id)}`}
         value={textAnswer(answer)}
         onChange={(event) => setAnswer(question.id, event.target.value)}
-        placeholder="Rewrite the correct sentence…"
+        placeholder={t("To'g'ri gapni qayta yozing…", "Rewrite the correct sentence…")}
       /></div>;
     }
     // Gap-fill blanks are now typed inline inside the sentence (see renderPrompt) —
@@ -820,7 +824,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
       aria-label={`Answer ${questionNumbers.get(question.id)}`}
       value={textAnswer(answer)}
       onChange={(event) => setAnswer(question.id, event.target.value)}
-      placeholder="Type your answer…"
+      placeholder={t("Javobingizni kiriting…", "Type your answer…")}
     /></div>;
   }
 
@@ -878,8 +882,8 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     </article>;
   }
 
-  if (error && !test) return <div className="grid min-h-screen place-items-center bg-surface p-6"><div className="max-w-md rounded-3xl border border-line bg-canvas p-7 text-center"><h1 className="text-xl font-extrabold text-ink">Test unavailable</h1><p className="mt-3 text-sm text-red-600">{error}</p><Button className="mt-5" onClick={() => router.back()}>Go Back</Button></div></div>;
-  if (!test || !exercises.length) return <div className="grid min-h-screen place-items-center bg-surface"><div className="text-center"><span className="mx-auto block h-10 w-10 animate-spin rounded-full border-4 border-orange-100 border-t-brand" /><p className="mt-4 text-sm font-bold text-muted">Preparing your test…</p></div></div>;
+  if (error && !test) return <div className="grid min-h-screen place-items-center bg-surface p-6"><div className="max-w-md rounded-3xl border border-line bg-canvas p-7 text-center"><h1 className="text-xl font-extrabold text-ink">{t("Test mavjud emas", "Test unavailable")}</h1><p className="mt-3 text-sm text-red-600">{error}</p><Button className="mt-5" onClick={() => router.back()}>{t("Orqaga", "Go Back")}</Button></div></div>;
+  if (!test || !exercises.length) return <div className="grid min-h-screen place-items-center bg-surface"><div className="text-center"><span className="mx-auto block h-10 w-10 animate-spin rounded-full border-4 border-orange-100 border-t-brand" /><p className="mt-4 text-sm font-bold text-muted">{t("Test tayyorlanmoqda…", "Preparing your test…")}</p></div></div>;
 
   const exercise = exercises[Math.min(currentExercise, exercises.length - 1)];
   // A reading text may be typed into the dedicated (rich-text) passage field OR
@@ -896,7 +900,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
   // and icon follow the exercise type.
   const isManualTask = ["writing", "rich_text_question", "speaking_prompt_placeholder"].includes(exercise.type);
   const PanelIcon = isManualTask ? PenLine : BookOpen;
-  const panelLabel = isManualTask ? "Writing task" : "Reading passage";
+  const panelLabel = isManualTask ? t("Writing topshirig'i", "Writing task") : t("Reading matni", "Reading passage");
   const headerInstructions = exercise.instructions.trim() && exercise.instructions.trim() !== passageText
     ? exercise.instructions : "";
   const scoredQuestions = scorableQuestions(questions);
@@ -919,8 +923,8 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     {dialog}
     <div className="min-h-screen bg-surface p-4 sm:p-8"><div className="mx-auto max-w-5xl rounded-3xl border border-line bg-canvas p-6 shadow-soft sm:p-9">
     <span className="grid h-12 w-12 place-items-center rounded-2xl bg-orange-500/10 text-orange-500"><Check /></span>
-    <h1 className="mt-6 text-3xl font-extrabold text-ink">Ready to submit?</h1>
-    <p className="mt-3 text-muted">{answered} of {scoredQuestions.length} questions answered. Open an exercise to review it.</p>
+    <h1 className="mt-6 text-3xl font-extrabold text-ink">{t("Topshirishga tayyormisiz?", "Ready to submit?")}</h1>
+    <p className="mt-3 text-muted">{t(`${scoredQuestions.length} ta savoldan ${answered} tasiga javob berildi. Ko'rib chiqish uchun mashqni oching.`, `${answered} of ${scoredQuestions.length} questions answered. Open an exercise to review it.`)}</p>
     <div className="mt-7 space-y-5">{test.sections.map((section) => {
       const sectionExercises = exercises.map((item, index) => ({ item, index })).filter(({ item }) => item.section.id === section.id);
       return <section key={section.id}><h2 className="text-sm font-extrabold text-ink">{section.title}</h2><div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{sectionExercises.map(({ item, index }) => {
@@ -932,9 +936,9 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     })}</div>
     {error && <p className="mt-5 text-sm font-semibold text-red-600">{error}</p>}
     <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-      <Button variant="danger" onClick={restartAttempt} className="sm:mr-auto"><RotateCcw className="h-4 w-4" /> Restart Test</Button>
-      <Button variant="secondary" onClick={() => setShowReview(false)}>Return to Test</Button>
-      <Button onClick={submit}><Send className="h-4 w-4" /> Submit Test</Button>
+      <Button variant="danger" onClick={restartAttempt} className="sm:mr-auto"><RotateCcw className="h-4 w-4" /> {t("Boshidan boshlash", "Restart Test")}</Button>
+      <Button variant="secondary" onClick={() => setShowReview(false)}>{t("Testga qaytish", "Return to Test")}</Button>
+      <Button onClick={submit}><Send className="h-4 w-4" /> {t("Testni topshirish", "Submit Test")}</Button>
     </div>
   </div></div>
   </>;
@@ -947,8 +951,8 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
         <div className="flex min-w-0 max-w-full items-center gap-3">
           <button
             onClick={() => (window.history.length > 1 ? router.back() : router.push("/dashboard"))}
-            aria-label="Go back"
-            title="Back"
+            aria-label={t("Orqaga", "Go back")}
+            title={t("Orqaga", "Back")}
             className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line text-muted transition hover:bg-surface hover:text-ink"
           ><ArrowLeft className="h-4 w-4" /></button>
           <div className="min-w-0">
@@ -958,17 +962,17 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
         <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2.5 xl:w-auto">
           {exercise.media?.mime_type.startsWith("audio/") && <>
             <AudioPlayer className="w-full min-w-0 sm:w-64 sm:shrink-0" src={mediaUrl(exercise.media.url)} autoStartDelay={5000} onPlay={(media) => guardMediaPlay(exercise, media)} onEnded={() => recordMediaPlay(exercise)} />
-            {exercise.audio_replay_limit && <span className="hidden shrink-0 rounded-lg bg-surface px-2 py-2 text-[10px] font-bold text-muted xl:block">{Math.max(0, exercise.audio_replay_limit - (mediaPlays[exercise.id] ?? 0))} left</span>}
+            {exercise.audio_replay_limit && <span className="hidden shrink-0 rounded-lg bg-surface px-2 py-2 text-[10px] font-bold text-muted xl:block">{Math.max(0, exercise.audio_replay_limit - (mediaPlays[exercise.id] ?? 0))} {t("ta qoldi", "left")}</span>}
           </>}
           <span className="hidden shrink-0 rounded-xl bg-surface px-2.5 py-2 text-xs font-bold text-muted sm:block">{exerciseAnswered}/{exerciseQuestions.length}</span>
-          <span className={cn("hidden shrink-0 text-xs font-semibold xl:block", saveState === "error" ? "text-red-500" : "text-muted")}>{saveState === "saving" ? "Saving…" : saveState === "saved" ? "All answers saved" : saveState === "error" ? "⚠ Not saved — retrying…" : "Autosave enabled"}</span>
+          <span className={cn("hidden shrink-0 text-xs font-semibold xl:block", saveState === "error" ? "text-red-500" : "text-muted")}>{saveState === "saving" ? t("Saqlanmoqda…", "Saving…") : saveState === "saved" ? t("Barcha javoblar saqlandi", "All answers saved") : saveState === "error" ? t("⚠ Saqlanmadi — qayta urinilmoqda…", "⚠ Not saved — retrying…") : t("Avtosaqlash yoqilgan", "Autosave enabled")}</span>
           <span className={cn("flex shrink-0 items-center gap-2 rounded-xl bg-surface px-3 py-2 font-mono text-sm font-bold", seconds < 300 ? "text-red-500" : "text-ink")}><Clock3 className="h-4 w-4 text-brand" />{time}</span>
           <button
             type="button"
             onClick={saveAndExit}
-            title="Save everything and continue later"
+            title={t("Hammasini saqlab, keyin davom ettirish", "Save everything and continue later")}
             className="flex shrink-0 items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-xs font-bold text-ink transition hover:border-brand hover:text-brand"
-          ><LogOut className="h-4 w-4" /><span className="hidden md:inline">Save & exit</span></button>
+          ><LogOut className="h-4 w-4" /><span className="hidden md:inline">{t("Saqlab chiqish", "Save & exit")}</span></button>
         </div>
       </div>
       <div className="h-1 bg-surface"><div className="h-full bg-brand transition-all" style={{ width: `${scoredQuestions.length ? (answered / scoredQuestions.length) * 100 : 0}%` }} /></div>
@@ -987,12 +991,12 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
           className="no-scrollbar h-full w-60 overflow-y-auto rounded-2xl border border-line bg-canvas p-3"
         >
           <div className="flex items-center justify-between px-2">
-            <p className="text-xs font-bold uppercase tracking-wider text-muted">Exercises</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-muted">{t("Mashqlar", "Exercises")}</p>
             <button
               type="button"
               onClick={toggleSidebarPin}
-              title={sidebarPinnedOn ? "Unpin (auto-collapse on)" : "Pin panel open"}
-              aria-label={sidebarPinnedOn ? "Unpin exercises panel" : "Pin exercises panel open"}
+              title={sidebarPinnedOn ? t("Mahkamlashni olish (avto-yig'ish)", "Unpin (auto-collapse on)") : t("Panelni ochiq qoldirish", "Pin panel open")}
+              aria-label={sidebarPinnedOn ? t("Mashqlar panelini mahkamlashdan olish", "Unpin exercises panel") : t("Mashqlar panelini ochiq qoldirish", "Pin exercises panel open")}
               className={cn(
                 "grid h-6 w-6 shrink-0 place-items-center rounded-md transition",
                 sidebarPinnedOn ? "bg-brand/15 text-brand" : "text-muted hover:bg-orange-500/10 hover:text-brand",
@@ -1019,7 +1023,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
                     const isFlagged = flagged.includes(q.id);
                     return <button
                       key={q.id}
-                      title={isFlagged ? "Flagged" : undefined}
+                      title={isFlagged ? t("Belgilangan", "Flagged") : undefined}
                       onClick={() => document.getElementById(`q-${q.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" })}
                       className={cn("relative grid h-7 place-items-center rounded-md text-[11px] font-bold transition",
                         checkedQ && r === true ? "bg-emerald-500 text-white"
@@ -1048,7 +1052,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
       <button
         type="button"
         onClick={toggleSidebar}
-        aria-label={sidebarOpen ? "Collapse exercises panel" : "Open exercises panel"}
+        aria-label={sidebarOpen ? t("Mashqlar panelini yig'ish", "Collapse exercises panel") : t("Mashqlar panelini ochish", "Open exercises panel")}
         className={cn(
           "absolute top-1/2 z-20 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-brand text-white shadow-lg shadow-orange-500/30 transition-transform duration-300 ease-out hover:scale-105",
           sidebarOpen ? "-right-3" : "left-1",
@@ -1065,8 +1069,8 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
           {exercise.media.mime_type.startsWith("image/") ? <img className="max-h-72 w-full rounded-xl object-contain" src={mediaUrl(exercise.media.url)} alt={exercise.media.file_name} /> : <>
             <div className="mb-2 flex items-center gap-2">
               <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand/10 text-brand"><Headphones className="h-4 w-4" /></span>
-              <div className="min-w-0 flex-1"><p className="text-[10px] font-bold uppercase tracking-wide text-muted">Listening video</p><p className="truncate text-xs font-extrabold text-ink">{exercise.media.file_name}</p></div>
-              {exercise.audio_replay_limit && <span className="shrink-0 rounded-lg bg-surface px-2 py-1 text-[10px] font-bold text-muted">{Math.max(0, exercise.audio_replay_limit - (mediaPlays[exercise.id] ?? 0))} plays left</span>}
+              <div className="min-w-0 flex-1"><p className="text-[10px] font-bold uppercase tracking-wide text-muted">{t("Listening videosi", "Listening video")}</p><p className="truncate text-xs font-extrabold text-ink">{exercise.media.file_name}</p></div>
+              {exercise.audio_replay_limit && <span className="shrink-0 rounded-lg bg-surface px-2 py-1 text-[10px] font-bold text-muted">{t(`${Math.max(0, exercise.audio_replay_limit - (mediaPlays[exercise.id] ?? 0))} marta qoldi`, `${Math.max(0, exercise.audio_replay_limit - (mediaPlays[exercise.id] ?? 0))} plays left`)}</span>}
             </div>
             <video className="max-h-48 w-full rounded-xl bg-black" controls preload="metadata" src={mediaUrl(exercise.media.url)} onPlay={(event) => guardMediaPlay(exercise, event.currentTarget)} onEnded={() => recordMediaPlay(exercise)} />
           </>}
@@ -1081,12 +1085,12 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
             <PanelIcon className="h-4 w-4" /><p className="text-xs font-bold uppercase tracking-wider">{panelLabel}</p>
             {/* Text zoom: − / current / + */}
             <div className="ml-auto flex items-center gap-1">
-              <button type="button" aria-label="Smaller text" title="Smaller text" disabled={passageZoom <= 12}
+              <button type="button" aria-label={t("Matnni kichraytirish", "Smaller text")} title={t("Matnni kichraytirish", "Smaller text")} disabled={passageZoom <= 12}
                 onClick={() => setPassageZoom((size) => Math.max(12, size - 1.5))}
                 className="grid h-7 w-7 place-items-center rounded-lg border border-line bg-surface text-sm font-extrabold text-muted transition hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-40">−</button>
-              <button type="button" title="Reset text size" onClick={() => setPassageZoom(15)}
+              <button type="button" title={t("Matn o'lchamini tiklash", "Reset text size")} onClick={() => setPassageZoom(15)}
                 className="min-w-10 rounded-lg px-1 py-1 text-[10px] font-bold text-muted transition hover:text-ink">{Math.round((passageZoom / 15) * 100)}%</button>
-              <button type="button" aria-label="Larger text" title="Larger text" disabled={passageZoom >= 27}
+              <button type="button" aria-label={t("Matnni kattalashtirish", "Larger text")} title={t("Matnni kattalashtirish", "Larger text")} disabled={passageZoom >= 27}
                 onClick={() => setPassageZoom((size) => Math.min(27, size + 1.5))}
                 className="grid h-7 w-7 place-items-center rounded-lg border border-line bg-surface text-sm font-extrabold text-muted transition hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-40">+</button>
             </div>
@@ -1095,7 +1099,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
             ? <div className="passage-content text-ink" style={{ fontSize: `${passageZoom}px`, lineHeight: 1.85 }} dangerouslySetInnerHTML={{ __html: sanitizeHtml(passageHtml) }} />
             : <div className="text-ink" style={{ fontSize: `${passageZoom}px`, lineHeight: 1.85 }}>{renderInstructionBlocks(passagePlain, false)}</div>}
         </aside>
-        <div onPointerDown={startSplitDrag} title="Drag to resize" className="group hidden shrink-0 cursor-col-resize touch-none items-center justify-center px-2 xl:flex">
+        <div onPointerDown={startSplitDrag} title={t("O'lchamni o'zgartirish uchun torting", "Drag to resize")} className="group hidden shrink-0 cursor-col-resize touch-none items-center justify-center px-2 xl:flex">
           <div className="h-16 w-1.5 rounded-full bg-line transition group-hover:bg-brand" />
         </div>
         </>}
@@ -1114,7 +1118,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
               )}
             </div>
             {!!exercise.interaction?.word_box?.length && <div className="mb-4 rounded-2xl border border-line bg-surface p-4">
-              <p className="mb-2.5 text-xs font-extrabold uppercase tracking-wider text-muted">Word box</p>
+              <p className="mb-2.5 text-xs font-extrabold uppercase tracking-wider text-muted">{t("So'zlar qutisi", "Word box")}</p>
               <div className="flex flex-wrap gap-2">
                 {exercise.interaction.word_box.map((word, index) => <span
                   key={`${word}-${index}`}
@@ -1149,29 +1153,29 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
                     : hasAnswer(answers[question.id]) ? "bg-brand text-white"
                     : question.is_example ? "bg-sky-500/10 text-sky-600" : "bg-surface text-muted",
                 )}>{result === true ? <CheckCircle2 className="h-5 w-5" /> : result === false ? <XCircle className="h-5 w-5" /> : checked ? <Clock3 className="h-5 w-5" /> : question.is_example ? "e.g" : number}</span>
-                <div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-3">{renderPrompt(exercise, question)}{!question.is_example && <button aria-label={`Flag question ${number}`} title="Flag for review" onClick={() => toggleFlag(question.id)} className={cn(
+                <div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-3">{renderPrompt(exercise, question)}{!question.is_example && <button aria-label={t(`${number}-savolni belgilash`, `Flag question ${number}`)} title={t("Takrorlash uchun belgilash", "Flag for review")} onClick={() => toggleFlag(question.id)} className={cn(
                   "shrink-0 rounded-lg p-2 transition-all",
                   flagged.includes(question.id)
                     ? "bg-orange-500/10 text-orange-500"
                     : "text-muted/50 hover:bg-orange-500/10 hover:text-orange-500 sm:opacity-0 sm:group-hover/card:opacity-100",
-                )}><Bookmark className={cn("h-4 w-4", flagged.includes(question.id) && "fill-current")} /></button>}</div>{question.is_example && <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-sky-500/10 px-3 py-1 text-xs font-bold text-sky-600"><CheckCircle2 className="h-3.5 w-3.5" /> Example — not scored</p>}{renderAnswer(exercise, question)}{checked && result === null && <p className="mt-3 text-xs font-bold text-brand">🤖 The AI will grade this after you submit the test.</p>}</div>
+                )}><Bookmark className={cn("h-4 w-4", flagged.includes(question.id) && "fill-current")} /></button>}</div>{question.is_example && <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-sky-500/10 px-3 py-1 text-xs font-bold text-sky-600"><CheckCircle2 className="h-3.5 w-3.5" /> {t("Namuna — baholanmaydi", "Example — not scored")}</p>}{renderAnswer(exercise, question)}{checked && result === null && <p className="mt-3 text-xs font-bold text-brand">🤖 {t("Testni topshirganingizdan keyin AI buni baholaydi.", "The AI will grade this after you submit the test.")}</p>}</div>
               </div>
             </article>;
           })}
               {error && <p className="rounded-xl bg-red-500/10 p-3 text-sm font-semibold text-red-600">{error}</p>}
               <div className="mt-2 flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
-                <Button variant="ghost" disabled={currentExercise === 0} onClick={() => goToExercise(currentExercise - 1)}><ChevronLeft className="h-4 w-4" /> Previous</Button>
-                <span className="order-first text-center text-xs font-bold text-muted sm:order-none">{exerciseAnswered}/{exerciseQuestions.length} answered in this exercise</span>
+                <Button variant="ghost" disabled={currentExercise === 0} onClick={() => goToExercise(currentExercise - 1)}><ChevronLeft className="h-4 w-4" /> {t("Oldingi", "Previous")}</Button>
+                <span className="order-first text-center text-xs font-bold text-muted sm:order-none">{t(`Bu mashqda ${exerciseAnswered}/${exerciseQuestions.length} ta javob berildi`, `${exerciseAnswered}/${exerciseQuestions.length} answered in this exercise`)}</span>
                 {!checkedTaskIds.includes(exercise.id)
-                  ? <Button variant="secondary" onClick={() => checkExercise(exercise)} disabled={checkingExercise}><Check className="h-4 w-4" /> {checkingExercise ? "Checking…" : "Finish Exercise"}</Button>
+                  ? <Button variant="secondary" onClick={() => checkExercise(exercise)} disabled={checkingExercise}><Check className="h-4 w-4" /> {checkingExercise ? t("Tekshirilmoqda…", "Checking…") : t("Mashqni yakunlash", "Finish Exercise")}</Button>
                   : currentExercise < exercises.length - 1
-                    ? <Button onClick={() => goToExercise(currentExercise + 1)}>Next Exercise <ChevronRight className="h-4 w-4" /></Button>
-                    : <Button onClick={() => setShowReview(true)}>Review & Submit <ChevronRight className="h-4 w-4" /></Button>}
+                    ? <Button onClick={() => goToExercise(currentExercise + 1)}>{t("Keyingi mashq", "Next Exercise")} <ChevronRight className="h-4 w-4" /></Button>
+                    : <Button onClick={() => setShowReview(true)}>{t("Ko'rib chiqish va topshirish", "Review & Submit")} <ChevronRight className="h-4 w-4" /></Button>}
               </div>
             </div>
 
             {bankOptions.length > 0 && <aside className="exam-word-bank order-first mb-5 rounded-2xl border border-orange-200 bg-orange-500/[.035] p-4">
-              <div className="flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-wider text-brand">{exercise.interaction?.kind === "matching" ? "Speakers" : "Word bank"}</p><p className="mt-1 text-[11px] leading-4 text-muted">{reusableOptions ? "Answers can be reused." : "Each word can be used once."}</p></div><GripVertical className="h-5 w-5 text-orange-300" /></div>
+              <div className="flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-wider text-brand">{exercise.interaction?.kind === "matching" ? t("Gapiruvchilar", "Speakers") : t("So'zlar banki", "Word bank")}</p><p className="mt-1 text-[11px] leading-4 text-muted">{reusableOptions ? t("Javoblarni qayta ishlatish mumkin.", "Answers can be reused.") : t("Har bir so'z bir marta ishlatiladi.", "Each word can be used once.")}</p></div><GripVertical className="h-5 w-5 text-orange-300" /></div>
               <div className="exam-bank-options mt-4 flex flex-wrap gap-2">{bankOptions.map((option) => {
                 const used = !reusableOptions && usedOptions.has(option.value);
                 const selected = selectedToken === option.value;
@@ -1204,7 +1208,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
                   return updated;
                 });
                 setSelectedToken(null);
-              }} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-bold text-muted hover:bg-canvas hover:text-ink"><RotateCcw className="h-3.5 w-3.5" /> Clear exercise</button>
+              }} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-bold text-muted hover:bg-canvas hover:text-ink"><RotateCcw className="h-3.5 w-3.5" /> {t("Mashqni tozalash", "Clear exercise")}</button>
             </aside>}
           </div>
         </section>

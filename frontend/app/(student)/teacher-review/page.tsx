@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Clock3, FilePenLine, MessageSquareText } from "lucide-react";
 import { api } from "@/lib/api";
+import { useLang } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 type Annotation = { start: number; end: number; comment: string };
@@ -15,6 +16,7 @@ type Review = {
 
 // The student's answer with the teacher's marked errors highlighted.
 function AnnotatedAnswer({ text, annotations }: { text: string; annotations: Annotation[] }) {
+  const { t } = useLang();
   const sorted = [...annotations].sort((a, b) => a.start - b.start);
   const parts: React.ReactNode[] = [];
   let cursor = 0;
@@ -31,10 +33,11 @@ function AnnotatedAnswer({ text, annotations }: { text: string; annotations: Ann
     cursor = end;
   });
   if (cursor < text.length) parts.push(<span key="tail">{text.slice(cursor)}</span>);
-  return <div className="whitespace-pre-wrap rounded-xl bg-surface p-4 text-sm leading-7 text-ink">{parts.length ? parts : (text || "No answer")}</div>;
+  return <div className="whitespace-pre-wrap rounded-xl bg-surface p-4 text-sm leading-7 text-ink">{parts.length ? parts : (text || t("Javob yo'q", "No answer"))}</div>;
 }
 
 export default function TeacherReviewPage() {
+  const { lang, t } = useLang();
   const [rows, setRows] = useState<Review[] | null>(null);
   const [error, setError] = useState("");
   const [tab, setTab] = useState<"new" | "graded">("new");
@@ -48,20 +51,20 @@ export default function TeacherReviewPage() {
   const active = tab === "new" ? pending : graded;
 
   return <div className="mx-auto max-w-4xl p-4 sm:p-8">
-    <p className="text-xs font-bold uppercase tracking-[.08em] text-brand">Feedback</p>
-    <h1 className="mt-2 text-3xl font-extrabold text-ink">Writing Feedback</h1>
-    <p className="mt-2 text-sm text-muted">Your writing and speaking answers, graded automatically by AI with a score and a short comment.</p>
+    <p className="text-xs font-bold uppercase tracking-[.08em] text-brand">{t("Baholar", "Feedback")}</p>
+    <h1 className="mt-2 text-3xl font-extrabold text-ink">{t("Writing baholari", "Writing Feedback")}</h1>
+    <p className="mt-2 text-sm text-muted">{t("Writing va speaking javoblaringiz — sun'iy intellekt ball va qisqa izoh bilan avtomatik baholaydi.", "Your writing and speaking answers, graded automatically by AI with a score and a short comment.")}</p>
     {error && <p className="mt-4 rounded-xl bg-red-500/10 p-3 text-sm font-semibold text-red-600">{error}</p>}
 
     {rows === null ? <div className="grid place-items-center py-24"><span className="h-9 w-9 animate-spin rounded-full border-4 border-orange-100 border-t-brand" /></div> : <>
 
     <div className="mt-6 flex flex-wrap gap-2">
       <button onClick={() => setTab("new")} className={`relative flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold transition ${tab === "new" ? "bg-brand text-white" : "bg-canvas text-muted hover:text-ink"}`}>
-        New
+        {t("Yangi", "New")}
         {pending.length > 0 && <span className={`grid h-5 min-w-5 place-items-center rounded-full px-1 text-xs font-extrabold ${tab === "new" ? "bg-white text-brand" : "bg-amber-500 text-white"}`}>{pending.length}</span>}
       </button>
       <button onClick={() => setTab("graded")} className={`rounded-full px-4 py-2 text-sm font-bold transition ${tab === "graded" ? "bg-brand text-white" : "bg-canvas text-muted hover:text-ink"}`}>
-        Recently graded {graded.length > 0 && `(${graded.length})`}
+        {t("Baholanganlar", "Recently graded")} {graded.length > 0 && `(${graded.length})`}
       </button>
     </div>
 
@@ -69,8 +72,8 @@ export default function TeacherReviewPage() {
       <FilePenLine className="h-8 w-8 text-muted" />
       <p className="mt-3 text-sm font-semibold text-muted">
         {tab === "new"
-          ? "No new answers — everything you've submitted has been graded."
-          : "Nothing graded recently — finish a test with a writing exercise and the AI feedback will appear here."}
+          ? t("Yangi javob yo'q — topshirganlaringizning hammasi baholangan.", "No new answers — everything you've submitted has been graded.")
+          : t("Hali baholangan javob yo'q — writing mashqi bor testni yakunlang, AI bahosi shu yerda chiqadi.", "Nothing graded recently — finish a test with a writing exercise and the AI feedback will appear here.")}
       </p>
     </div>}
 
@@ -79,7 +82,7 @@ export default function TeacherReviewPage() {
         <p className="text-xs font-bold text-muted">{row.test_title}</p>
         <p className="mt-1 text-sm font-extrabold text-ink">{row.prompt}</p>
         <div className="mt-3"><AnnotatedAnswer text={String(row.answer ?? "")} annotations={[]} /></div>
-        <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-700"><Clock3 className="h-3.5 w-3.5" /> Not graded yet</p>
+        <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-700"><Clock3 className="h-3.5 w-3.5" /> {t("Hali baholanmagan", "Not graded yet")}</p>
       </article>)}
     </div>}
 
@@ -91,7 +94,7 @@ export default function TeacherReviewPage() {
         return <article key={row.id} className="rounded-2xl border border-line bg-canvas p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-xs font-bold text-muted">{row.test_title}{row.graded_at ? ` · ${new Date(row.graded_at).toLocaleDateString()}` : ""}</p>
+              <p className="text-xs font-bold text-muted">{row.test_title}{row.graded_at ? ` · ${new Date(row.graded_at).toLocaleDateString(lang === "uz" ? "uz-UZ" : "en-US")}` : ""}</p>
               <p className="mt-1 text-sm font-extrabold text-ink">{row.prompt}</p>
             </div>
             <span className={cn(
@@ -107,7 +110,7 @@ export default function TeacherReviewPage() {
             </li>)}
           </ol>}
           {row.feedback && <div className="mt-4 rounded-xl border border-orange-200 bg-orange-500/5 p-3.5">
-            <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-brand"><MessageSquareText className="h-3.5 w-3.5" /> AI feedback</p>
+            <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-brand"><MessageSquareText className="h-3.5 w-3.5" /> {t("AI izohi", "AI feedback")}</p>
             <p className="text-sm leading-6 text-ink">{row.feedback}</p>
           </div>}
         </article>;

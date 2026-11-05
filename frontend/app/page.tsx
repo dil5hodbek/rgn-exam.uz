@@ -9,8 +9,7 @@ import "./landing.css";
 import { BrandImage } from "@/components/brand-image";
 import { LevelIcon } from "@/components/dashboard/level-icon";
 import { levelVisuals } from "@/lib/levels";
-
-type Lang = "uz" | "en";
+import { useLang, type Lang } from "@/lib/i18n";
 
 const LEVELS = ["Beginner", "Elementary", "Pre-Intermediate", "Intermediate"];
 const stepIcons = [LogIn, Layers3, PenLine, Award];
@@ -140,20 +139,11 @@ function BookArtwork() {
 }
 
 export default function Home() {
-  const [lang, setLang] = useState<Lang>("en");
+  const { lang, setLang } = useLang();
   const [picked, setPicked] = useState<string | null>(null);
   const [sampleIndex, setSampleIndex] = useState(0);
   const sample = SAMPLES[sampleIndex];
   const sampleProgress = sampleIndex + (picked ? 1 : 0);
-  useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem("landing-lang");
-      if (saved === "en" || saved === "uz") setLang(saved);
-    } catch {
-      // Storage can be blocked (private mode) — English stays the default.
-    }
-  }, []);
-
   const t = dict[lang];
   const v = visuals[lang];
   const [skillPosition, setSkillPosition] = useState(1);
@@ -275,13 +265,7 @@ export default function Home() {
   const isRight = picked === sample.answer;
 
   function toggleLang() {
-    const next = lang === "uz" ? "en" : "uz";
-    setLang(next);
-    try {
-      window.localStorage.setItem("landing-lang", next);
-    } catch {
-      // Not remembering the choice is fine.
-    }
+    setLang(lang === "uz" ? "en" : "uz");
   }
 
   return (

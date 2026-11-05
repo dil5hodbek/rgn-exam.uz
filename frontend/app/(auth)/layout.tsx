@@ -1,11 +1,14 @@
 import Image from "next/image";
 import { Logo } from "@/components/logo";
+import { LangToggle } from "@/components/lang-toggle";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { getT } from "@/lib/lang-server";
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
+  const t = getT();
   return (
     <main className="auth-layout noise relative min-h-screen overflow-hidden bg-surface">
-      <header className="auth-header relative z-10 flex items-center justify-between px-5 py-5 sm:px-10"><Logo href="/" /><ThemeToggle /></header>
+      <header className="auth-header relative z-10 flex items-center justify-between px-5 py-5 sm:px-10"><Logo href="/" /><div className="flex items-center gap-1"><LangToggle /><ThemeToggle /></div></header>
       <div className="auth-content relative z-10 mx-auto grid min-w-0 min-h-[calc(100dvh-80px)] max-w-6xl items-center gap-8 px-4 sm:px-5 lg:gap-16 pb-12 lg:grid-cols-[1fr_460px]">
         <section className="relative hidden lg:block">
           <Image
@@ -17,12 +20,12 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             className="pointer-events-none absolute -right-24 top-1/2 -z-10 h-[640px] w-[640px] -translate-y-1/2 opacity-[.06] brightness-0 invert dark:opacity-[.08]"
           />
           <div className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-bold text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300">
-            <span className="h-2 w-2 rounded-full bg-orange-500" /> Purpose-built for progress
+            <span className="h-2 w-2 rounded-full bg-orange-500" /> {t("Natija uchun yaratilgan", "Purpose-built for progress")}
           </div>
-          <h2 className="mt-7 max-w-xl text-6xl font-extrabold leading-[1.15] tracking-[-.02em] text-ink">Learn clearly.<br /><span className="text-brand">Grow confidently.</span></h2>
-          <p className="mt-6 max-w-lg text-lg leading-8 text-muted">Structured English assessments that show where you are, celebrate how far you’ve come, and make the next step obvious.</p>
+          <h2 className="mt-7 max-w-xl text-6xl font-extrabold leading-[1.15] tracking-[-.02em] text-ink">{t("Aniq o'rganing.", "Learn clearly.")}<br /><span className="text-brand">{t("Ishonch bilan o'sing.", "Grow confidently.")}</span></h2>
+          <p className="mt-6 max-w-lg text-lg leading-8 text-muted">{t("Ingliz tili imtihonlari qaysi darajada ekaningizni, qancha yo'l bosib o'tganingizni va keyingi qadamni aniq ko'rsatadi.", "Structured English assessments that show where you are, celebrate how far you’ve come, and make the next step obvious.")}</p>
           <div className="mt-10 grid max-w-lg grid-cols-3 gap-3">
-            {["Focused exams", "Instant insight", "Real progress"].map((item) => <div key={item} className="rounded-2xl border border-line bg-canvas/70 p-4 text-sm font-bold text-ink backdrop-blur"><span className="mb-3 block h-1.5 w-8 rounded-full bg-brand" />{item}</div>)}
+            {[t("Aniq imtihonlar", "Focused exams"), t("Tezkor natija", "Instant insight"), t("Haqiqiy o'sish", "Real progress")].map((item) => <div key={item} className="rounded-2xl border border-line bg-canvas/70 p-4 text-sm font-bold text-ink backdrop-blur"><span className="mb-3 block h-1.5 w-8 rounded-full bg-brand" />{item}</div>)}
           </div>
         </section>
         {children}

@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
+import { useLang } from "@/lib/i18n";
 
 export default function TelegramSignIn() {
+  const { t } = useLang();
   const started = useRef(false);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -20,7 +22,7 @@ export default function TelegramSignIn() {
       // Reloading this callback URL has no fragment, but the saved session remains.
       api<{ role: string }>("/auth/me")
         .then((user) => openPanel({ user }))
-        .catch(() => setError("Please request a new sign-in link in Telegram."));
+        .catch(() => setError(t("Telegramda yangi kirish havolasini so'rang.", "Please request a new sign-in link in Telegram.")));
       return;
     }
     // Persist the browser proof before redemption so a lost response can be retried.
@@ -30,15 +32,15 @@ export default function TelegramSignIn() {
       }))
       .then(openPanel)
       .catch((reason) => {
-        setError(reason instanceof Error ? reason.message : "Unable to sign in. Request a new link in Telegram.");
+        setError(reason instanceof Error ? reason.message : t("Kirib bo'lmadi. Telegramda yangi havola so'rang.", "Unable to sign in. Request a new link in Telegram."));
       });
-
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return <section className="mx-auto w-full max-w-md rounded-3xl border border-line bg-canvas p-6 text-center shadow-soft">
-    <h1 className="text-2xl font-bold text-ink">Telegram sign-in</h1>
+    <h1 className="text-2xl font-bold text-ink">{t("Telegram orqali kirish", "Telegram sign-in")}</h1>
     {error ? <>
       <p role="alert" className="mt-4 text-sm text-red-500">{error}</p>
-      <Link href="/sign-in" className="mt-5 inline-flex rounded-xl bg-brand px-5 py-3 font-semibold text-white">Return to Sign In</Link>
-    </> : <p role="status" className="mt-4 text-sm text-muted">Signing you in…</p>}
+      <Link href="/sign-in" className="mt-5 inline-flex rounded-xl bg-brand px-5 py-3 font-semibold text-white">{t("Kirish sahifasiga qaytish", "Return to Sign In")}</Link>
+    </> : <p role="status" className="mt-4 text-sm text-muted">{t("Kirilmoqda…", "Signing you in…")}</p>}
   </section>;
 }
