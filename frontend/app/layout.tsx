@@ -10,11 +10,15 @@ export const metadata: Metadata = {
   description: "Registon o'quv markazi o'quvchilari uchun ingliz tili imtihonlari.",
 };
 
+// Orange hexagon trail that follows the mouse. Switched off for now;
+// set to true to bring it back.
+const CURSOR_TRAIL_ENABLED = false;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const lang = getLang();
   return (
     <html lang={lang} suppressHydrationWarning>
-      <body><Providers lang={lang}><NavigationProgress />{children}<CursorGlow /></Providers></body>
+      <body><Providers lang={lang}><NavigationProgress />{children}{CURSOR_TRAIL_ENABLED && <CursorGlow />}</Providers></body>
     </html>
   );
 }
