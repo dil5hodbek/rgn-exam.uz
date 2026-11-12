@@ -870,9 +870,8 @@ async def attempt_certificate(
         raise HTTPException(403, "Certificate is only available for passing attempts.")
 
     pdf_bytes = generate_certificate_pdf(
-        full_name=f"{user.first_name} {user.last_name}",
-        phone_number=user.phone_number,
         level_name=level.name,
+        exam_type_slug=exam_type.slug,
         exam_type_name=exam_type.name,
         percentage=percentage,
     )
