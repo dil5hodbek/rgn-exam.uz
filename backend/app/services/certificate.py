@@ -80,7 +80,7 @@ def generate_certificate_pdf(
     overlay_buf = io.BytesIO()
     c = canvas.Canvas(overlay_buf, pagesize=(width, height))
     c.setFillColor(INK)
-    _draw_left(c, level_name, _LEVEL_SLOT)
+    _draw_centred(c, level_name, _LEVEL_SLOT)
     _draw_left(c, course_stage_label(exam_type_slug, exam_type_name), _STAGE_SLOT)
     _draw_centred(c, f"{percentage:.0f}%", _PERCENT_SLOT)
     c.showPage()
