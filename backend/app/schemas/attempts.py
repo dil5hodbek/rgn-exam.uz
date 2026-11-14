@@ -25,6 +25,9 @@ class AttemptStateOut(BaseModel):
     task_order: list[str] | None
     exam_session_id: uuid.UUID | None = None
     paused: bool = False
+    violations: int = 0
+    max_violations: int = 3
+    exam_mode: bool = True
 
 
 class ExamSessionOut(BaseModel):

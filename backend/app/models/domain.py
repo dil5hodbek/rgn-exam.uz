@@ -60,6 +60,9 @@ class User(Base):
     # Optional sign-in name an examiner assigns to a student (stored
     # lower-case); login accepts it in place of the phone number.
     username: Mapped[str | None] = mapped_column(String(40), unique=True, index=True, nullable=True)
+    # Exam mode (fullscreen lock + leave counter) is on for everyone by
+    # default; an examiner/admin can switch it off for one student.
+    exam_mode_enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[Role] = mapped_column(Enum(Role), default=Role.STUDENT)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -213,6 +216,9 @@ class Attempt(Base):
     # student cannot save answers. Resuming shifts started_at forward by the
     # paused duration, so elapsed time = (paused_at or now) - started_at.
     paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Exam mode: times the student left fullscreen or switched to another
+    # window/app. Reaching MAX_EXAM_VIOLATIONS auto-submits the attempt.
+    violation_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     answers: Mapped[list["AttemptAnswer"]] = relationship(cascade="all, delete-orphan")
 
 

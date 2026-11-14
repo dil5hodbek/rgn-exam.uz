@@ -41,6 +41,12 @@ export type AttemptState = {
   // Set for an examiner-proctored attempt: the examiner owns the clock.
   exam_session_id?: string | null;
   paused?: boolean;
+  // Exam mode: times the student left fullscreen / switched app, and the
+  // count at which the attempt is submitted automatically.
+  violations?: number;
+  max_violations?: number;
+  // An examiner can switch exam mode off for one student.
+  exam_mode?: boolean;
 };
 export type ExerciseResult = Record<string, boolean | null>;
 

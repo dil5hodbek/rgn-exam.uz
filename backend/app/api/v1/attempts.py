@@ -25,8 +25,8 @@ from app.services.ai_grading import ai_grade_text
 from app.services.exercise_registry import MANUAL_TASK_TYPES
 from app.services.certificate import generate_certificate_pdf
 from app.services.exam_access import (
-    attempt_elapsed_seconds, can_open_variant, ensure_scope_access, ensure_session_attempt_allowed, ensure_variant_access,
-    remaining_seconds, session_participant_for_attempt,
+    MAX_EXAM_VIOLATIONS, attempt_elapsed_seconds, can_open_variant, ensure_scope_access, ensure_session_attempt_allowed,
+    ensure_variant_access, remaining_seconds, session_participant_for_attempt,
 )
 from app.services.grading import grade_answer, scaled_score
 
@@ -35,6 +35,11 @@ router = APIRouter(tags=["Attempts"])
 
 def redis_client() -> Redis:
     return Redis.from_url(settings.redis_url, decode_responses=True)
+
+
+async def exam_mode_on(db: AsyncSession, attempt: Attempt) -> bool:
+    enabled = await db.scalar(select(User.exam_mode_enabled).where(User.id == attempt.user_id))
+    return enabled is not False
 
 
 async def attempt_state(db: AsyncSession, attempt: Attempt) -> dict:
@@ -54,6 +59,9 @@ async def attempt_state(db: AsyncSession, attempt: Attempt) -> dict:
         # Proctored (exam-session) attempts: the examiner owns the clock.
         "exam_session_id": attempt.exam_session_id,
         "paused": attempt.paused_at is not None,
+        "violations": attempt.violation_count or 0,
+        "max_violations": MAX_EXAM_VIOLATIONS,
+        "exam_mode": await exam_mode_on(db, attempt),
         # When the server copy was last written — the client compares this
         # against its local backup so an older device never overwrites newer work.
         "answers_updated_at": max((row.updated_at for row in rows), default=None),
@@ -494,7 +502,48 @@ async def heartbeat(attempt_id: uuid.UUID, user: User = Depends(current_user), d
         "removed": removed,
         "elapsed_seconds": int(attempt_elapsed_seconds(attempt)),
         "remaining_seconds": remaining_seconds(attempt, limit),
+        # An examiner may switch exam mode off for this student mid-exam.
+        "exam_mode": await exam_mode_on(db, attempt),
     }
+
+
+VIOLATION_KINDS = {"fullscreen", "hidden", "blur"}
+
+
+@router.post("/attempts/{attempt_id}/violation")
+async def record_violation(
+    attempt_id: uuid.UUID, payload: dict | None = None,
+    user: User = Depends(current_user), db: AsyncSession = Depends(get_db),
+):
+    """Exam mode: the exam screen reports each time the student leaves
+    fullscreen or switches to another window/app. The count lives on the
+    attempt (a refresh cannot reset it); the MAX_EXAM_VIOLATIONS-th one
+    submits the attempt with the answers saved so far."""
+    attempt = await db.scalar(
+        select(Attempt).where(Attempt.id == attempt_id, Attempt.user_id == user.id).with_for_update()
+    )
+    if not attempt:
+        raise HTTPException(404, "Attempt not found.")
+    result = {"violations": attempt.violation_count or 0, "max_violations": MAX_EXAM_VIOLATIONS, "submitted": False}
+    if attempt.status != AttemptStatus.IN_PROGRESS:
+        return {**result, "submitted": True}
+    if not await exam_mode_on(db, attempt):
+        return result
+    if attempt.exam_session_id is not None:
+        # An examiner pause or removal already blocks the screen — leaving
+        # it then is not cheating, so it does not count.
+        participant = await session_participant_for_attempt(db, attempt)
+        if attempt.paused_at is not None or not participant or participant.status != "APPROVED":
+            return result
+    kind = str((payload or {}).get("kind", ""))
+    attempt.violation_count = (attempt.violation_count or 0) + 1
+    count = attempt.violation_count
+    if count >= MAX_EXAM_VIOLATIONS:
+        await finalize_attempt(db, attempt)
+        return {"violations": count, "max_violations": MAX_EXAM_VIOLATIONS, "submitted": True,
+                "kind": kind if kind in VIOLATION_KINDS else None}
+    await db.commit()
+    return {"violations": count, "max_violations": MAX_EXAM_VIOLATIONS, "submitted": False}
 
 
 @router.get("/me/teacher-reviews", response_model=list[TeacherReviewOut])
@@ -925,6 +974,8 @@ async def attempt_result(
         "retake_allowed": variant.retake_allowed and attempt.exam_session_id is None
         and await can_open_variant(db, user, variant),
         "proctored": attempt.exam_session_id is not None,
+        "violations": attempt.violation_count or 0,
+        "max_violations": MAX_EXAM_VIOLATIONS,
         "correct_count": correct_count,
         "incorrect_count": incorrect_count,
         "pending_count": pending_count,

@@ -23,7 +23,7 @@ from redis.asyncio import Redis
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.attempts import create_attempt, finalize_attempt
+from app.api.v1.attempts import attempt_sections, create_attempt, finalize_attempt
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import current_user, require_examiner
@@ -33,8 +33,10 @@ from app.models import (
     ExamType, GrantScope, Level, ParticipantStatus, Question, Role, Section, SessionStatus, Task, TestVariant, User,
 )
 from app.services.audit import write_audit
+from app.services.exercise_registry import MANUAL_TASK_TYPES
 from app.services.exam_access import (
-    generate_session_code, pause_attempt_clock, remaining_seconds, resume_attempt_clock, attempt_elapsed_seconds,
+    MAX_EXAM_VIOLATIONS, generate_session_code, pause_attempt_clock, remaining_seconds, resume_attempt_clock,
+    attempt_elapsed_seconds,
 )
 
 router = APIRouter(tags=["Exam sessions"])
@@ -83,6 +85,8 @@ class StudentUpdate(BaseModel):
     # None = leave unchanged, "" = remove the username.
     username: str | None = Field(default=None, max_length=40)
     password: str | None = Field(default=None, min_length=4, max_length=128)
+    # Exam mode (fullscreen lock + leave counter); None = leave unchanged.
+    exam_mode: bool | None = None
 
 
 class GrantCreate(BaseModel):
@@ -327,6 +331,21 @@ async def list_sessions(user: User = Depends(require_examiner), db: AsyncSession
             bucket["in_progress"] += 1
         elif attempt_status is not None:
             bucket["submitted"] += 1
+    writing: dict[uuid.UUID, dict[str, int]] = {}
+    for session_id, is_correct, graded_by in (await db.execute(
+        select(Attempt.exam_session_id, AttemptAnswer.is_correct, AttemptAnswer.graded_by)
+        .join(Attempt, Attempt.id == AttemptAnswer.attempt_id)
+        .join(Question, Question.id == AttemptAnswer.question_id)
+        .join(Task, Task.id == Question.task_id)
+        .where(
+            Attempt.exam_session_id.in_(session_ids), Attempt.status != AttemptStatus.IN_PROGRESS,
+            Task.type.in_(MANUAL_TASK_TYPES), func.jsonb_typeof(AttemptAnswer.student_answer) != "null",
+        )
+    )).all():
+        bucket = writing.setdefault(session_id, {"writing_total": 0, "writing_awaiting": 0})
+        bucket["writing_total"] += 1
+        if is_correct is None:
+            bucket["writing_awaiting"] += 1
     examiners = {}
     if user.role != Role.EXAMINER:
         examiner_rows = (await db.execute(
@@ -338,6 +357,7 @@ async def list_sessions(user: User = Depends(require_examiner), db: AsyncSession
         "code": session.code, "status": session.status, "created_at": session.created_at,
         "closed_at": session.closed_at, "examiner_name": examiners.get(session.examiner_id),
         **meta.get(session.test_variant_id, {}), **counts[session.id],
+        **writing.get(session.id, {"writing_total": 0, "writing_awaiting": 0}),
     } for session in sessions]
 
 
@@ -408,6 +428,9 @@ async def session_detail_payload(db: AsyncSession, session: ExamSession) -> dict
             "elapsed_seconds": int(attempt_elapsed_seconds(attempt, now)) if attempt else 0,
             "remaining_seconds": remaining_seconds(attempt, time_limit, now) if attempt else time_limit * 60,
             "answered_count": answered.get(attempt.id, 0) if attempt else 0,
+            "violations": (attempt.violation_count or 0) if attempt else 0,
+            "exam_mode": student.exam_mode_enabled is not False,
+            "max_violations": MAX_EXAM_VIOLATIONS,
             "percentage": float(attempt.percentage) if attempt and attempt.percentage is not None else None,
         })
     return {
@@ -592,6 +615,7 @@ def student_payload(student: User, grants: list[ExamAccessGrant], names: dict) -
         "id": student.id, "first_name": student.first_name, "last_name": student.last_name,
         "phone_number": student.phone_number, "username": student.username,
         "is_active": student.is_active, "created_at": student.created_at, "avatar_url": student.avatar_url,
+        "exam_mode": student.exam_mode_enabled is not False,
         "grants": [grant_payload(grant, names) for grant in grants],
     }
 
@@ -669,6 +693,9 @@ async def update_student(
     if payload.password:
         student.password_hash = hash_password(payload.password)
         changes["password"] = "changed"
+    if payload.exam_mode is not None:
+        student.exam_mode_enabled = payload.exam_mode
+        changes["exam_mode"] = payload.exam_mode
     await write_audit(db, user.id, "examiner.student.update", "User", str(student.id), changes, _ip(request))
     await db.commit()
     await db.refresh(student)
@@ -753,3 +780,145 @@ async def student_attempts(
         "proctored": attempt.exam_session_id is not None,
     } for attempt, variant in rows]
 
+
+
+# --- Results & writing review ---------------------------------------------
+# The examiner sees every answer of every student in the exams they ran:
+# which questions were right, and how the AI graded each writing. Teachers
+# can still change a writing grade at any time from the monitor panel; this
+# view always shows the current grade and who gave it.
+
+def writing_status(answer: AttemptAnswer | None) -> str:
+    if answer is None or answer.is_correct is None:
+        return "awaiting"
+    return "ai_graded" if answer.graded_by is None else "teacher_graded"
+
+
+def _answer_present(answer: AttemptAnswer | None) -> bool:
+    if answer is None or answer.student_answer is None:
+        return False
+    value = answer.student_answer
+    return not (isinstance(value, str) and not value.strip()) and value != [] and value != {}
+
+
+@router.get("/examiner/sessions/{session_id}/results")
+async def session_results(session_id: uuid.UUID, user: User = Depends(require_examiner), db: AsyncSession = Depends(get_db)):
+    session = await owned_session(db, user, session_id)
+    meta = (await variant_meta(db, {session.test_variant_id})).get(session.test_variant_id, {})
+    rows = (await db.execute(
+        select(ExamSessionParticipant, User, Attempt)
+        .join(User, User.id == ExamSessionParticipant.user_id)
+        .join(Attempt, Attempt.id == ExamSessionParticipant.attempt_id)
+        .where(ExamSessionParticipant.session_id == session.id)
+        .order_by(User.first_name, User.last_name)
+    )).all()
+    attempt_ids = [attempt.id for _, _, attempt in rows]
+    stats: dict[uuid.UUID, dict] = {
+        attempt_id: {"correct": 0, "incorrect": 0, "pending": 0, "writing_total": 0, "writing_ai": 0,
+                     "writing_teacher": 0, "writing_awaiting": 0, "writing_points": 0.0, "writing_max": 0.0}
+        for attempt_id in attempt_ids
+    }
+    if attempt_ids:
+        for answer, question, task in (await db.execute(
+            select(AttemptAnswer, Question, Task)
+            .join(Question, Question.id == AttemptAnswer.question_id)
+            .join(Task, Task.id == Question.task_id)
+            .where(AttemptAnswer.attempt_id.in_(attempt_ids), Question.is_example.is_(False))
+        )).all():
+            bucket = stats[answer.attempt_id]
+            if answer.is_correct is True:
+                bucket["correct"] += 1
+            elif answer.is_correct is False:
+                bucket["incorrect"] += 1
+            else:
+                bucket["pending"] += 1
+            if task.type in MANUAL_TASK_TYPES and _answer_present(answer):
+                bucket["writing_total"] += 1
+                bucket["writing_max"] += float(question.points)
+                bucket["writing_points"] += float(answer.points_awarded or 0)
+                bucket[{"awaiting": "writing_awaiting", "ai_graded": "writing_ai",
+                        "teacher_graded": "writing_teacher"}[writing_status(answer)]] += 1
+    return {
+        "id": session.id, "title": session.title or meta.get("test_title", ""), "code": session.code,
+        "status": session.status, "created_at": session.created_at, **meta,
+        "students": [{
+            "participant_id": participant.id, "user_id": student.id, "attempt_id": attempt.id,
+            "first_name": student.first_name, "last_name": student.last_name,
+            "phone_number": student.phone_number, "username": student.username,
+            "exam_mode": student.exam_mode_enabled is not False,
+            "status": attempt.status, "removed": participant.status != ParticipantStatus.APPROVED.value,
+            "score": float(attempt.total_score or 0), "max_score": float(attempt.max_score or 0),
+            "percentage": float(attempt.percentage) if attempt.percentage is not None else None,
+            "submitted_at": attempt.submitted_at, "time_spent_seconds": attempt.time_spent_seconds or 0,
+            "violations": attempt.violation_count or 0, "max_violations": MAX_EXAM_VIOLATIONS,
+            **stats[attempt.id],
+        } for participant, student, attempt in rows],
+    }
+
+
+@router.get("/examiner/attempts/{attempt_id}/review")
+async def attempt_review(attempt_id: uuid.UUID, user: User = Depends(require_examiner), db: AsyncSession = Depends(get_db)):
+    attempt = await db.get(Attempt, attempt_id)
+    if not attempt or attempt.exam_session_id is None:
+        raise HTTPException(404, "Natija topilmadi.")
+    session = await owned_session(db, user, attempt.exam_session_id)
+    student = await db.get(User, attempt.user_id)
+    variant = await db.get(TestVariant, attempt.test_variant_id)
+    answers = {row.question_id: row for row in (await db.execute(
+        select(AttemptAnswer).where(AttemptAnswer.attempt_id == attempt.id)
+    )).scalars().all()}
+    graders = {}
+    grader_ids = {row.graded_by for row in answers.values() if row.graded_by}
+    if grader_ids:
+        graders = {row.id: f"{row.first_name} {row.last_name}" for row in (await db.execute(
+            select(User).where(User.id.in_(grader_ids))
+        )).scalars().all()}
+    submitted = attempt.status != AttemptStatus.IN_PROGRESS
+    sections = []
+    for section in await attempt_sections(db, attempt):
+        tasks = []
+        for task in section.tasks:
+            manual = task.type in MANUAL_TASK_TYPES
+            questions = []
+            for question in task.questions:
+                if question.is_example:
+                    continue
+                # A submitted attempt stores one answer row per question it
+                # actually contained — anything else was added afterwards.
+                if submitted and question.id not in answers:
+                    continue
+                answer = answers.get(question.id)
+                questions.append({
+                    "id": question.id, "prompt": question.prompt, "options": question.options,
+                    "student_answer": answer.student_answer if answer else None,
+                    "correct_answer": None if manual else question.correct_answer,
+                    "is_correct": answer.is_correct if answer else None,
+                    "points_awarded": float(answer.points_awarded) if answer and answer.points_awarded is not None else None,
+                    "max_points": float(question.points),
+                    "feedback": answer.feedback if answer else None,
+                    "annotations": ((answer.rubric_scores or {}).get("annotations", []) if answer else []),
+                    "status": writing_status(answer) if manual else None,
+                    "graded_by_name": graders.get(answer.graded_by) if answer and answer.graded_by else None,
+                    "graded_at": answer.graded_at if answer else None,
+                })
+            if questions:
+                tasks.append({
+                    "id": task.id, "title": task.title, "type": task.type, "manual": manual,
+                    "instructions": task.instructions, "questions": questions,
+                })
+        if tasks:
+            sections.append({"title": section.title, "tasks": tasks})
+    return {
+        "attempt_id": attempt.id, "session_id": session.id, "session_title": session.title or variant.title,
+        "test_title": variant.title, "status": attempt.status,
+        "student": {"id": student.id, "first_name": student.first_name, "last_name": student.last_name,
+                    "phone_number": student.phone_number, "username": student.username,
+                    "exam_mode": student.exam_mode_enabled is not False},
+        "score": float(attempt.total_score or 0), "max_score": float(attempt.max_score or 0),
+        "percentage": float(attempt.percentage) if attempt.percentage is not None else None,
+        "passing_percentage": variant.passing_percentage,
+        "started_at": attempt.started_at, "submitted_at": attempt.submitted_at,
+        "time_spent_seconds": attempt.time_spent_seconds or 0,
+        "violations": attempt.violation_count or 0, "max_violations": MAX_EXAM_VIOLATIONS,
+        "sections": sections,
+    }

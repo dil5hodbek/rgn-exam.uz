@@ -1,5 +1,5 @@
 "use client";
-import { ClipboardCheck, LogOut, ShieldCheck, Users } from "lucide-react";
+import { ClipboardCheck, FileText, LogOut, ShieldCheck, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -26,6 +26,7 @@ export function ExaminerShell({ children }: { children: React.ReactNode }) {
   }, [router]);
   const items = [
     { href: "/examiner", label: t("Imtihonlar", "Exam sessions"), icon: ClipboardCheck, exact: false },
+    { href: "/examiner/writing", label: t("Writing va natijalar", "Writing & results"), icon: FileText, exact: false },
     { href: "/examiner/students", label: t("O'quvchilar bazasi", "Students"), icon: Users, exact: false },
     ...(role !== "EXAMINER" ? [{ href: "/admin", label: t("Admin panel", "Admin panel"), icon: ShieldCheck, exact: false }] : []),
   ];

@@ -2,12 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
-  ArrowLeft, BookOpen, Bookmark, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock3, GripVertical,
-  Headphones, Lock, LogOut, PauseCircle, PenLine, Pin, PinOff, RotateCcw, Send, ShieldAlert, X, XCircle,
+  AlertTriangle, ArrowLeft, BookOpen, Bookmark, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock3, GripVertical,
+  Headphones, Lock, LogOut, Maximize, PauseCircle, PenLine, Pin, PinOff, RotateCcw, Send, ShieldAlert, X, XCircle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { AudioPlayer } from "@/components/exam/audio-player";
 import { GapMatch } from "@/components/exam/gap-match";
+import { useExamLockdown, type ViolationKind } from "@/components/exam/use-exam-lockdown";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/use-confirm";
 import { useLang } from "@/lib/i18n";
@@ -37,6 +38,14 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
   const [proctored, setProctored] = useState(false);
   const [paused, setPaused] = useState(false);
   const [removed, setRemoved] = useState(false);
+  // Exam mode: fullscreen lock + a count of trips away from the exam. The
+  // server keeps the count; reaching maxViolations submits the attempt.
+  const [violationBase, setViolationBase] = useState(0);
+  const [maxViolations, setMaxViolations] = useState(3);
+  const [examMode, setExamMode] = useState(true);
+  // Set while the student deliberately leaves (submit, save & exit, back) so
+  // the fullscreen exit that follows is not counted as a violation.
+  const [leaving, setLeaving] = useState(false);
   const [showReview, setShowReview] = useState(false);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [selectedToken, setSelectedToken] = useState<string | null>(null);
@@ -236,6 +245,9 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
       setSeconds(Math.max(0, detail.time_limit_minutes * 60 - (attempt.elapsed_seconds ?? 0)));
       setProctored(Boolean(attempt.exam_session_id));
       setPaused(Boolean(attempt.paused));
+      setViolationBase(attempt.violations ?? 0);
+      setMaxViolations(attempt.max_violations ?? 3);
+      setExamMode(attempt.exam_mode !== false);
       setTimerStarted(true);
     }).catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : t("Testni yuklab bo'lmadi.", "Unable to load this test.")); });
     return () => { active = false; };
@@ -257,7 +269,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     let alive = true;
     const beat = async () => {
       try {
-        const state = await api<{ status: string; paused: boolean; removed: boolean; remaining_seconds: number }>(
+        const state = await api<{ status: string; paused: boolean; removed: boolean; remaining_seconds: number; exam_mode?: boolean }>(
           `/attempts/${attemptId}/heartbeat`, { method: "POST" },
         );
         if (!alive) return;
@@ -266,11 +278,13 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
             localStorage.removeItem(`exam-progress:${attemptId}`);
             localStorage.removeItem(`exam-position:${attemptId}`);
           } catch { /* ignore */ }
+          setLeaving(true);
           router.replace(`${resultBasePath}/${attemptId}`);
           return;
         }
         setRemoved(state.removed);
         setPaused(state.paused);
+        setExamMode(state.exam_mode !== false);
         setSeconds((value) => (Math.abs(value - state.remaining_seconds) > 2 ? state.remaining_seconds : value));
       } catch { /* offline — the next beat retries */ }
     };
@@ -296,6 +310,37 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     openSidebarFor(5000);
     return () => { if (sidebarTimer.current) clearTimeout(sidebarTimer.current); };
   }, [test]);
+
+  const lockdown = useExamLockdown({
+    active: examMode && timerStarted && Boolean(attemptId) && !paused && !removed && !leaving,
+    initialViolations: violationBase,
+    onViolation: (kind, localCount) => { reportViolation(kind, localCount).catch(() => {}); },
+  });
+
+  // Each trip away is reported to the server, which keeps the count and
+  // submits the attempt itself on the last one (saved answers are pushed first).
+  async function reportViolation(kind: ViolationKind, localCount: number) {
+    if (!attemptId) return;
+    await saveAnswers().catch(() => {});
+    try {
+      const state = await api<{ violations: number; max_violations: number; submitted: boolean }>(
+        `/attempts/${attemptId}/violation`, { method: "POST", body: JSON.stringify({ kind }) },
+      );
+      lockdown.syncViolations(state.violations);
+      setMaxViolations(state.max_violations);
+      if (state.submitted) {
+        try {
+          localStorage.removeItem(`exam-progress:${attemptId}`);
+          localStorage.removeItem(`exam-position:${attemptId}`);
+        } catch { /* ignore */ }
+        setLeaving(true);
+        router.replace(`${resultBasePath}/${attemptId}`);
+      }
+    } catch {
+      // Offline: still enforce the limit with a normal submit.
+      if (localCount >= maxViolations) submit();
+    }
+  }
 
   async function saveAnswers() {
     if (!attemptId) return;
@@ -382,10 +427,12 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
   // Coming back resumes from the same exercise with the same time remaining.
   async function saveAndExit() {
     if (!attemptId) return;
+    setLeaving(true);
     try {
       await saveAnswers();
       await api(`/attempts/${attemptId}/pause`, { method: "POST" });
     } catch (reason) {
+      setLeaving(false);
       setError(reason instanceof Error ? reason.message : t("Chiqishdan oldin saqlab bo'lmadi. Internetni tekshiring.", "Could not save before exit. Check your connection."));
       return;
     }
@@ -430,6 +477,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
 
   async function submit() {
     if (!attemptId) return;
+    setLeaving(true);
     try {
       await saveAnswers();
       try {
@@ -439,6 +487,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
       await api(`/attempts/${attemptId}/submit`, { method: "POST" });
       router.push(`${resultBasePath}/${attemptId}`);
     } catch (reason) {
+      setLeaving(false);
       setError(reason instanceof Error ? reason.message : t("Testni topshirib bo'lmadi.", "Unable to submit this test."));
     }
   }
@@ -963,6 +1012,40 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
       {removed && <Button className="mt-6" onClick={() => router.replace("/dashboard")}>{t("Bosh sahifa", "Dashboard")}</Button>}
     </div>
   </div>;
+  const violationsLeft = Math.max(0, maxViolations - lockdown.violations);
+  const lockdownOverlay = examMode && lockdown.away && !paused && !removed && !leaving && <div role="alertdialog" aria-modal="true" aria-labelledby="lockdown-title" className="fixed inset-0 z-[70] grid place-items-center bg-[#0b1020]/85 p-4 backdrop-blur-md">
+    <div className="w-full max-w-md rounded-3xl border border-line bg-canvas p-8 text-center shadow-lift">
+      <span className={cn("mx-auto grid h-14 w-14 place-items-center rounded-2xl", lockdown.away === "start" ? "bg-orange-500/10 text-orange-500" : "bg-red-500/10 text-red-500")}>
+        {lockdown.away === "start" ? <Lock className="h-7 w-7" /> : <AlertTriangle className="h-7 w-7" />}
+      </span>
+      <h2 id="lockdown-title" className="mt-5 text-2xl font-extrabold text-ink">{lockdown.away === "start"
+        ? t("Imtihon rejimi", "Exam mode")
+        : t("Imtihon rejimidan chiqdingiz", "You left exam mode")}</h2>
+      <p className="mt-2 text-sm leading-6 text-muted">{lockdown.away === "start"
+        ? t(`Imtihon to'liq ekranda o'tadi. Boshqa oyna, tab yoki ilovaga o'tish yoki to'liq ekrandan chiqish qoidabuzarlik hisoblanadi — ${maxViolations} marta chiqilsa, imtihon avtomatik yakunlanadi va javoblaringiz topshiriladi. Nusxalash va qo'yish o'chirilgan.`,
+          `The exam runs in fullscreen. Switching to another window, tab or app, or leaving fullscreen, counts as a violation — after ${maxViolations} the exam ends automatically and your answers are submitted. Copy and paste are disabled.`)
+        : lockdown.away === "fullscreen"
+          ? t("To'liq ekrandan chiqish qoidabuzarlik sifatida qayd etildi.", "Leaving fullscreen was recorded as a violation.")
+          : t("Boshqa oyna yoki ilovaga o'tish qoidabuzarlik sifatida qayd etildi.", "Switching to another window or app was recorded as a violation.")}</p>
+      {lockdown.violations > 0 && <div className="mt-5" aria-label={`${lockdown.violations} / ${maxViolations}`}>
+        <div className="flex justify-center gap-2">{Array.from({ length: maxViolations }, (_, index) => <i key={index} className={cn("h-2.5 w-10 rounded-full", index < lockdown.violations ? "bg-red-500" : "bg-surface ring-1 ring-line")} />)}</div>
+        <p className="mt-2 text-xs font-bold text-red-500">{lockdown.violations} / {maxViolations} — {violationsLeft > 0
+          ? t(`yana ${violationsLeft} marta chiqilsa, imtihon avtomatik yakunlanadi`, `${violationsLeft} more and the exam ends automatically`)
+          : t("imtihon yakunlanmoqda…", "ending the exam…")}</p>
+      </div>}
+      <Button className="mt-6 w-full" disabled={violationsLeft === 0} onClick={() => { lockdown.resume().catch(() => {}); }}>
+        <Maximize className="h-4 w-4" />
+        {lockdown.fullscreen.current
+          ? (lockdown.away === "start" ? t("To'liq ekranda davom etish", "Continue in fullscreen") : t("To'liq ekranga qaytish", "Back to fullscreen"))
+          : t("Imtihonga qaytish", "Back to the exam")}
+      </Button>
+      <p className="mt-4 text-xs text-muted">{t("Qolgan vaqt", "Time left")}: <b className="font-mono text-ink">{time}</b> — {t("vaqt to'xtamaydi", "the clock keeps running")}</p>
+    </div>
+  </div>;
+  const lockdownPill = <span
+    title={t(`Imtihon rejimi: ${maxViolations} marta chiqilsa imtihon avtomatik yakunlanadi`, `Exam mode: leaving ${maxViolations} times ends the exam`)}
+    className={cn("flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold", lockdown.violations ? "bg-red-500/10 text-red-600 dark:text-red-400" : "bg-surface text-muted")}
+  ><Lock className="h-3.5 w-3.5" /><span className={cn(!lockdown.violations && "hidden md:inline")}>{lockdown.violations ? `${lockdown.violations}/${maxViolations}` : t("Imtihon rejimi", "Exam mode")}</span></span>;
   // gap_match draws its own two banks (words + replies) — keep the generic
   // right-hand bank for the other interactive kinds only.
   const isGapMatch = exercise.interaction?.kind === "gap_match";
@@ -976,6 +1059,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
 
   if (showReview) return <>
     {proctorOverlay}
+    {lockdownOverlay}
     {dialog}
     <div className="min-h-screen bg-surface p-4 sm:p-8"><div className="mx-auto max-w-5xl rounded-3xl border border-line bg-canvas p-6 shadow-soft sm:p-9">
     <span className="grid h-12 w-12 place-items-center rounded-2xl bg-orange-500/10 text-orange-500"><Check /></span>
@@ -1002,6 +1086,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
   return <>
     {dialog}
     {proctorOverlay}
+    {lockdownOverlay}
     <div className="min-h-[100dvh] bg-surface xl:flex xl:h-[100dvh] xl:flex-col xl:overflow-hidden">
     <header className="sticky top-0 z-30 border-b border-line bg-canvas/95 backdrop-blur">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5 xl:px-6">
@@ -1009,7 +1094,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
           <button
             // A proctored attempt's history entry is the waiting room, which
             // would bounce straight back here — go to the dashboard instead.
-            onClick={() => (proctored || window.history.length <= 1 ? router.push("/dashboard") : router.back())}
+            onClick={() => { setLeaving(true); if (proctored || window.history.length <= 1) router.push("/dashboard"); else router.back(); }}
             aria-label={t("Orqaga", "Go back")}
             title={t("Orqaga", "Back")}
             className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line text-muted transition hover:bg-surface hover:text-ink"
@@ -1026,6 +1111,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
           <span className="hidden shrink-0 rounded-xl bg-surface px-2.5 py-2 text-xs font-bold text-muted sm:block">{exerciseAnswered}/{exerciseQuestions.length}</span>
           <span className={cn("hidden shrink-0 text-xs font-semibold xl:block", saveState === "error" ? "text-red-500" : "text-muted")}>{saveState === "saving" ? t("Saqlanmoqda…", "Saving…") : saveState === "saved" ? t("Barcha javoblar saqlandi", "All answers saved") : saveState === "error" ? t("⚠ Saqlanmadi — qayta urinilmoqda…", "⚠ Not saved — retrying…") : t("Avtosaqlash yoqilgan", "Autosave enabled")}</span>
           <span className={cn("flex shrink-0 items-center gap-2 rounded-xl bg-surface px-3 py-2 font-mono text-sm font-bold", seconds < 300 ? "text-red-500" : "text-ink")}><Clock3 className="h-4 w-4 text-brand" />{time}</span>
+          {examMode && lockdownPill}
           {proctored
             ? <span title={t("Examiner nazoratidagi imtihon", "Examiner-proctored exam")} className="flex shrink-0 items-center gap-1.5 rounded-xl bg-teal-500/10 px-3 py-2 text-xs font-bold text-teal-700 dark:text-teal-300"><ShieldAlert className="h-4 w-4" /><span className="hidden md:inline">{t("Nazoratdagi imtihon", "Proctored")}</span></span>
             : <button

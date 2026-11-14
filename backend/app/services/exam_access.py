@@ -24,6 +24,10 @@ from app.models import (
 
 LOCKED_MESSAGE = "Bu imtihon yopiq. Examiner bergan parolni kiriting."
 
+# Exam mode: leaving fullscreen or switching to another window/app this many
+# times ends the attempt automatically (it is submitted with saved answers).
+MAX_EXAM_VIOLATIONS = 3
+
 
 def is_staff(user: User) -> bool:
     return user.role != Role.STUDENT

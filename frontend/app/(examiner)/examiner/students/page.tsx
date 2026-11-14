@@ -4,6 +4,7 @@ import { AtSign, KeyRound, Search, ShieldCheck, Unlock, UserRound, X } from "luc
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
+import { ExamModeToggle } from "@/components/examiner/exam-mode-toggle";
 import { grantLabel, type ExaminerCatalog, type Grant, type StudentRow } from "@/lib/examiner";
 import { useLang } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -79,6 +80,7 @@ function StudentDialog({ student, catalog, onClose, onChange }: {
     <div className="flex max-h-[92vh] w-full max-w-xl flex-col rounded-3xl border border-line bg-canvas shadow-lift" onClick={(event) => event.stopPropagation()}>
       <div className="flex items-start justify-between border-b border-line p-5"><div><h2 className="text-lg font-extrabold text-ink">{student.first_name} {student.last_name}</h2><p className="text-xs text-muted">{student.phone_number}{student.username ? ` · @${student.username}` : ""}</p></div><button type="button" onClick={onClose} className="rounded-lg p-1.5 text-muted hover:text-ink"><X className="h-4 w-4" /></button></div>
       <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-5">
+        <ExamModeToggle studentId={student.id} enabled={student.exam_mode !== false} onChange={(_, row) => onChange(row)} />
         <section>
           <h3 className="flex items-center gap-2 text-sm font-extrabold text-ink"><AtSign className="h-4 w-4 text-teal-600" /> {t("Kirish ma'lumotlari", "Sign-in details")}</h3>
           <p className="mt-1 text-xs text-muted">{t("O'quvchi telefon raqami yoki shu username bilan kira oladi.", "The student can sign in with their phone number or this username.")}</p>
@@ -153,7 +155,7 @@ export default function ExaminerStudents() {
     <div className="mt-2 overflow-hidden rounded-2xl border border-line bg-canvas">
       {rows.length ? rows.map((row, index) => <button key={row.id} type="button" onClick={() => setSelected(row)} className={cn("flex w-full flex-wrap items-center gap-4 p-4 text-left transition hover:bg-surface", index && "border-t border-line")}>
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-teal-500/10 text-teal-600"><UserRound className="h-4 w-4" /></span>
-        <div className="min-w-0 flex-1"><p className="text-sm font-extrabold text-ink">{row.first_name} {row.last_name} {!row.is_active && <span className="ml-1 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] text-red-600">{t("nofaol", "inactive")}</span>}</p><p className="text-xs text-muted">{row.phone_number}{row.username ? <span className="ml-2 font-bold text-teal-600">@{row.username}</span> : ""}</p></div>
+        <div className="min-w-0 flex-1"><p className="text-sm font-extrabold text-ink">{row.first_name} {row.last_name} {!row.is_active && <span className="ml-1 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] text-red-600">{t("nofaol", "inactive")}</span>}{row.exam_mode === false && <span className="ml-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-700 dark:text-amber-300">{t("imtihon rejimi o'chiq", "exam mode off")}</span>}</p><p className="text-xs text-muted">{row.phone_number}{row.username ? <span className="ml-2 font-bold text-teal-600">@{row.username}</span> : ""}</p></div>
         <div className="flex max-w-full flex-wrap gap-1.5">{row.grants.length ? row.grants.slice(0, 3).map((grant) => <span key={grant.id} className="rounded-full bg-teal-500/10 px-2.5 py-1 text-[11px] font-bold text-teal-700 dark:text-teal-300">{grantLabel(grant, t)}</span>) : <span className="rounded-full bg-surface px-2.5 py-1 text-[11px] font-bold text-muted">{t("Parol bilan", "Password only")}</span>}{row.grants.length > 3 && <span className="text-[11px] font-bold text-muted">+{row.grants.length - 3}</span>}</div>
       </button>) : !loading && <p className="p-10 text-center text-sm text-muted">{t("O'quvchi topilmadi.", "No students found.")}</p>}
     </div>

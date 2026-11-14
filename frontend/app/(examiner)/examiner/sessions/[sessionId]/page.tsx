@@ -2,8 +2,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowLeft, Check, CheckCheck, Copy, KeyRound, LogOut, Pause, Play, RefreshCw, Send, UserX, Wifi, WifiOff, X,
+  AlertTriangle, ArrowLeft, Check, CheckCheck, Copy, KeyRound, LogOut, Pause, Play, RefreshCw, Send, ShieldOff, UserX, Wifi, WifiOff, X,
 } from "lucide-react";
+import { ExamModeToggle } from "@/components/examiner/exam-mode-toggle";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/use-confirm";
 import { api } from "@/lib/api";
@@ -23,6 +24,8 @@ export default function SessionMonitor({ params }: { params: { sessionId: string
   const [busy, setBusy] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [closing, setClosing] = useState(false);
+  // Clicking a student opens their card: exam-mode switch + leave count.
+  const [studentCard, setStudentCard] = useState<string | null>(null);
   const alive = useRef(true);
 
   const apply = useCallback((data: SessionDetail) => {
@@ -89,8 +92,23 @@ export default function SessionMonitor({ params }: { params: { sessionId: string
     ? new Date(value).toLocaleTimeString(lang === "uz" ? "uz-UZ" : "en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
     : "—";
 
+  const cardRow = studentCard ? session.participants.find((row) => row.id === studentCard) : undefined;
   return <div className="mx-auto max-w-6xl p-4 sm:p-8">
     {dialog}
+    {cardRow && <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onClick={() => setStudentCard(null)}>
+      <div className="w-full max-w-md rounded-3xl border border-line bg-canvas p-5 shadow-lift" onClick={(event) => event.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3">
+          <div><h2 className="text-lg font-extrabold text-ink">{cardRow.first_name} {cardRow.last_name}</h2><p className="text-xs text-muted">{cardRow.username ? `@${cardRow.username} · ` : ""}{cardRow.phone_number}</p></div>
+          <button type="button" aria-label={t("Yopish", "Close")} onClick={() => setStudentCard(null)} className="rounded-lg p-1.5 text-muted hover:text-ink"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="rounded-2xl bg-surface p-3"><p className="text-[11px] font-bold uppercase tracking-wider text-muted">{t("Holat", "State")}</p><p className="mt-1 text-sm font-extrabold text-ink">{stateLabel(cardRow.state, t)}</p></div>
+          <div className={cn("rounded-2xl p-3", (cardRow.violations ?? 0) > 0 ? "bg-red-500/10" : "bg-surface")}><p className="text-[11px] font-bold uppercase tracking-wider text-muted">{t("Imtihon rejimidan chiqishlar", "Exam-mode leaves")}</p><p className={cn("mt-1 text-sm font-extrabold", (cardRow.violations ?? 0) > 0 ? "text-red-600 dark:text-red-400" : "text-ink")}>{cardRow.violations ?? 0} / {cardRow.max_violations ?? 3}</p></div>
+        </div>
+        <div className="mt-4"><ExamModeToggle studentId={cardRow.user_id} enabled={cardRow.exam_mode !== false} maxViolations={cardRow.max_violations ?? 3} onChange={() => { load(); }} /></div>
+        <p className="mt-3 text-xs leading-5 text-muted">{t("O'zgarish darhol kuchga kiradi — o'quvchi hozir imtihon yozayotgan bo'lsa ham bir necha soniyada qo'llanadi.", "The change applies right away — within seconds even if the student is sitting the exam now.")}</p>
+      </div>
+    </div>}
     <Link href="/examiner" className="inline-flex items-center gap-2 text-sm font-bold text-muted hover:text-ink"><ArrowLeft className="h-4 w-4" /> {t("Imtihonlar", "Exam sessions")}</Link>
     <div className="mt-5 flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
       <div className="min-w-0">
@@ -159,12 +177,20 @@ export default function SessionMonitor({ params }: { params: { sessionId: string
             const share = session.total_questions ? Math.min(100, Math.round(row.answered_count / session.total_questions * 100)) : 0;
             const running = ["IN_PROGRESS", "PAUSED", "TIME_UP"].includes(row.state);
             return <tr key={row.id} className={cn("border-t border-line", running && !row.online && "bg-red-500/5")}>
-              <td className="px-4 py-3"><p className="font-extrabold text-ink">{row.first_name} {row.last_name}</p><p className="text-xs text-muted">{row.username ? `@${row.username}` : row.phone_number}</p></td>
+              <td className="px-4 py-3"><button type="button" onClick={() => setStudentCard(row.id)} title={t("O'quvchi kartasi: imtihon rejimi", "Student card: exam mode")} className="group text-left">
+                <p className="font-extrabold text-ink underline-offset-4 group-hover:text-teal-600 group-hover:underline">{row.first_name} {row.last_name}</p>
+                <p className="text-xs text-muted">{row.username ? `@${row.username}` : row.phone_number}</p>
+                {row.exam_mode === false && <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300"><ShieldOff className="h-3 w-3" /> {t("Imtihon rejimi o'chiq", "Exam mode off")}</span>}
+              </button></td>
               <td className="px-4 py-3"><span className={cn("rounded-full px-2.5 py-1 text-xs font-bold", STATE_STYLES[row.state])}>{stateLabel(row.state, t)}</span>{row.state === "SUBMITTED" && row.percentage !== null && <span className="ml-2 text-xs font-bold text-ink">{Math.round(row.percentage)}%</span>}</td>
               <td className="px-4 py-3">{running ? (row.online
                 ? <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600"><Wifi className="h-3.5 w-3.5" /> {t("Imtihonda", "On exam")}</span>
                 : <span className="inline-flex items-center gap-1.5 text-xs font-bold text-red-600" title={lastSeen(row.last_seen_at)}><WifiOff className="h-3.5 w-3.5" /> {t("Chiqib ketgan", "Left")} · {lastSeen(row.last_seen_at)}</span>)
-                : <span className="text-xs text-muted">—</span>}</td>
+                : <span className="text-xs text-muted">—</span>}
+                {row.attempt_id && row.exam_mode !== false && <span
+                  title={t("Imtihon rejimidan chiqishlar (to'liq ekrandan chiqish yoki boshqa oynaga o'tish). Limitga yetganda imtihon avtomatik topshiriladi.", "Times the student left exam mode (fullscreen or switched window). Reaching the limit submits the exam automatically.")}
+                  className={cn("mt-1 flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold", (row.violations ?? 0) > 0 ? "bg-red-500/10 text-red-600 dark:text-red-400" : "bg-surface text-muted")}
+                ><AlertTriangle className="h-3 w-3" /> {t("Chiqishlar", "Leaves")} {row.violations ?? 0}/{row.max_violations ?? 3}</span>}</td>
               <td className="px-4 py-3">{row.attempt_id ? <span className={cn("font-mono text-base font-extrabold", remaining <= 300 && row.state !== "SUBMITTED" ? "text-red-600" : "text-ink")}>{row.state === "SUBMITTED" ? "—" : clock(remaining)}</span> : <span className="text-xs text-muted">{t("Boshlamagan", "Not started")}</span>}</td>
               <td className="px-4 py-3"><div className="flex items-center gap-2"><div className="h-2 w-24 overflow-hidden rounded-full bg-surface"><div className="h-full rounded-full bg-teal-500" style={{ width: `${share}%` }} /></div><span className="text-xs font-bold text-muted">{row.answered_count}/{session.total_questions}</span></div></td>
               <td className="px-4 py-3"><div className="flex justify-end gap-1.5">
