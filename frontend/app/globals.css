@@ -162,3 +162,10 @@ input.player-seek::-moz-range-track { background: transparent; border: none; }
 @keyframes page-pulse { 50% { opacity: .4; } }
 @media(min-width:1024px) { .page-loading-grid { grid-template-columns: repeat(4,minmax(0,1fr)); } }
 @media(prefers-reduced-motion:reduce) { .navigation-progress > span { animation: none; width: 100%; }.page-loading-heading, .page-loading-description, .page-loading-grid > div { animation: none; } }
+
+/* Respect the OS "reduce motion" setting across the app (the landing page
+   already does): keep looping spinners/pulses still and transitions instant. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse, .animate-bounce, .animate-ping { animation: none !important; }
+  *, *::before, *::after { transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}

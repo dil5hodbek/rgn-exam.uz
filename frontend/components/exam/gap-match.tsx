@@ -103,7 +103,7 @@ export function GapMatch({
         const wordValue = word.is_example ? exampleAnswerText(word) : textAnswer(answers[word.id]);
         const replyValue = textAnswer(answers[reply.id]);
         const replyLabel = replies.find((option) => option.value === replyValue)?.label ?? "";
-        return <article key={word.id} id={`q-${word.id}`} className="scroll-mt-4 rounded-2xl border border-line bg-canvas p-4 transition-all hover:border-orange-200/70 sm:p-5">
+        return <article key={word.id} id={`q-${word.id}`} className="scroll-mt-4 rounded-2xl border border-line bg-canvas p-4 transition hover:border-orange-200/70 sm:p-5">
           <div className="flex items-start gap-3.5">
             <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-surface text-sm font-extrabold text-muted">{index + 1}</span>
             <div className="min-w-0 flex-1">

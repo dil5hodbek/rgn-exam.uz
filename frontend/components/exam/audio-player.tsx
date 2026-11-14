@@ -108,7 +108,7 @@ export function AudioPlayer({
         onClick={togglePlay}
         aria-label={playing ? t("Pauza", "Pause") : t("Ijro etish", "Play")}
         className={cn(
-          "grid h-9 w-9 shrink-0 place-items-center rounded-full text-white transition-all active:scale-90",
+          "grid h-9 w-9 shrink-0 place-items-center rounded-full text-white transition active:scale-90",
           playing
             ? "bg-brand shadow-lg shadow-orange-500/40 ring-4 ring-orange-500/15"
             : "bg-brand shadow-md shadow-orange-500/30 hover:scale-105 hover:shadow-lg hover:shadow-orange-500/40",

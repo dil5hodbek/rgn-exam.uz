@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { AudioPlayer } from "@/components/exam/audio-player";
+import { ExamCountdown, timeLeft, type ClockBase } from "@/components/exam/exam-countdown";
 import { GapMatch } from "@/components/exam/gap-match";
 import { useExamLockdown, type ViolationKind } from "@/components/exam/use-exam-lockdown";
 import { Button } from "@/components/ui/button";
@@ -31,7 +32,11 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
   const [currentExercise, setCurrentExercise] = useState(0);
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
   const [flagged, setFlagged] = useState<string[]>([]);
-  const [seconds, setSeconds] = useState(0);
+  // Clock anchor (time left at a moment). <ExamCountdown> does the per-second
+  // ticking, so this screen re-renders only when the anchor moves.
+  const [clockBase, setClockBase] = useState<ClockBase>({ remaining: 0, at: 0 });
+  const clockRef = useRef(clockBase);
+  clockRef.current = clockBase;
   const [timerStarted, setTimerStarted] = useState(false);
   // Examiner-proctored attempt: the examiner can pause the clock or remove
   // the student; a heartbeat keeps both sides in sync.
@@ -242,7 +247,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
         const total = detail.sections.flatMap((section) => section.tasks).length;
         if (Number.isFinite(position) && position > 0 && position < total) setCurrentExercise(position);
       } catch { /* start from the first exercise */ }
-      setSeconds(Math.max(0, detail.time_limit_minutes * 60 - (attempt.elapsed_seconds ?? 0)));
+      setClockBase({ remaining: Math.max(0, detail.time_limit_minutes * 60 - (attempt.elapsed_seconds ?? 0)), at: Date.now() });
       setProctored(Boolean(attempt.exam_session_id));
       setPaused(Boolean(attempt.paused));
       setViolationBase(attempt.violations ?? 0);
@@ -255,11 +260,8 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [testId, initialAttemptId]);
 
-  useEffect(() => {
-    if (!timerStarted || paused || seconds <= 0) return;
-    const timer = window.setTimeout(() => setSeconds((value) => Math.max(0, value - 1)), 1000);
-    return () => window.clearTimeout(timer);
-  }, [seconds, timerStarted, paused]);
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
 
   // Proctored heartbeat: tells the examiner the student is still on the exam,
   // and picks up the examiner's pause/resume, removal or force-submit, plus
@@ -282,10 +284,14 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
           router.replace(`${resultBasePath}/${attemptId}`);
           return;
         }
+        // Re-anchor the clock on pause/resume or when it drifted from the server.
+        const local = timeLeft(clockRef.current, pausedRef.current);
+        if (pausedRef.current !== state.paused || Math.abs(local - state.remaining_seconds) > 2) {
+          setClockBase({ remaining: state.remaining_seconds, at: Date.now() });
+        }
         setRemoved(state.removed);
         setPaused(state.paused);
         setExamMode(state.exam_mode !== false);
-        setSeconds((value) => (Math.abs(value - state.remaining_seconds) > 2 ? state.remaining_seconds : value));
       } catch { /* offline — the next beat retries */ }
     };
     beat();
@@ -294,9 +300,6 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proctored, attemptId]);
 
-  useEffect(() => {
-    if (timerStarted && seconds === 0) setShowReview(true);
-  }, [seconds, timerStarted]);
 
   // Leaving a paused exam must flush answers the moment it resumes.
   useEffect(() => {
@@ -472,7 +475,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     setShowReview(false);
     setError("");
     setSaveState("idle");
-    if (test) setSeconds(test.time_limit_minutes * 60);
+    if (test) setClockBase({ remaining: test.time_limit_minutes * 60, at: Date.now() });
   }
 
   async function submit() {
@@ -821,13 +824,13 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
           key={`${option}-${index}`}
           onClick={() => setAnswer(question.id, active ? selected.filter((item) => item !== option) : [...selected, option])}
           className={cn(
-            "group flex items-center gap-3 rounded-xl border-2 px-3.5 py-3 text-left text-sm font-semibold transition-all duration-150",
+            "group flex items-center gap-3 rounded-xl border-2 px-3.5 py-3 text-left text-sm font-semibold transition duration-150",
             active
               ? "border-brand bg-orange-500/[.07] text-ink shadow-sm shadow-orange-500/10"
               : "border-line bg-canvas text-ink hover:-translate-y-px hover:border-orange-300 hover:shadow-sm",
           )}
         ><span className={cn(
-          "grid h-7 w-7 shrink-0 place-items-center rounded-lg border-2 text-[11px] font-extrabold transition-all duration-150",
+          "grid h-7 w-7 shrink-0 place-items-center rounded-lg border-2 text-[11px] font-extrabold transition duration-150",
           active ? "border-brand bg-brand text-white" : "border-line bg-surface text-muted group-hover:border-orange-300 group-hover:text-brand",
         )}>{active ? <Check className="h-4 w-4" /> : String.fromCharCode(97 + index)}</span><span className="min-w-0">{option}</span></button>;
       })}</div>;
@@ -842,7 +845,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
             key={option}
             onClick={() => setAnswer(question.id, option)}
             className={cn(
-              "flex items-center gap-2 rounded-xl border-2 px-4 py-2.5 text-sm font-bold transition-all duration-150",
+              "flex items-center gap-2 rounded-xl border-2 px-4 py-2.5 text-sm font-bold transition duration-150",
               active
                 ? "border-brand bg-brand text-white shadow-md shadow-orange-500/25"
                 : "border-line bg-canvas text-ink hover:-translate-y-px hover:border-orange-300 hover:shadow-sm",
@@ -856,13 +859,13 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
           key={`${option}-${index}`}
           onClick={() => setAnswer(question.id, option)}
           className={cn(
-            "group flex items-center gap-3 rounded-xl border-2 px-3.5 py-3 text-left text-sm font-semibold transition-all duration-150",
+            "group flex items-center gap-3 rounded-xl border-2 px-3.5 py-3 text-left text-sm font-semibold transition duration-150",
             active
               ? "border-brand bg-orange-500/[.07] text-ink shadow-sm shadow-orange-500/10"
               : "border-line bg-canvas text-ink hover:-translate-y-px hover:border-orange-300 hover:shadow-sm",
           )}
         ><span className={cn(
-          "grid h-7 w-7 shrink-0 place-items-center rounded-full border-2 text-[11px] font-extrabold transition-all duration-150",
+          "grid h-7 w-7 shrink-0 place-items-center rounded-full border-2 text-[11px] font-extrabold transition duration-150",
           active ? "border-brand bg-brand text-white" : "border-line bg-surface text-muted group-hover:border-orange-300 group-hover:text-brand",
         )}>{active ? <Check className="h-4 w-4" /> : String.fromCharCode(97 + index)}</span><span className="min-w-0">{option}</span></button>;
       })}</div>;
@@ -1000,7 +1003,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
   const exerciseQuestions = scorableQuestions(exercise.questions);
   const answered = scoredQuestions.filter((question) => hasAnswer(answers[question.id])).length;
   const exerciseAnswered = exerciseQuestions.filter((question) => hasAnswer(answers[question.id])).length;
-  const time = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  const time = <ExamCountdown base={clockBase} paused={paused} />;
   const proctorOverlay = proctored && (paused || removed) && <div className="fixed inset-0 z-[60] grid place-items-center bg-[#0b1020]/80 p-4 backdrop-blur-sm">
     <div className="w-full max-w-md rounded-3xl border border-line bg-canvas p-8 text-center shadow-lift">
       {removed ? <ShieldAlert className="mx-auto h-14 w-14 text-red-500" /> : <PauseCircle className="mx-auto h-14 w-14 animate-pulse text-violet-500" />}
@@ -1110,7 +1113,9 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
           </>}
           <span className="hidden shrink-0 rounded-xl bg-surface px-2.5 py-2 text-xs font-bold text-muted sm:block">{exerciseAnswered}/{exerciseQuestions.length}</span>
           <span className={cn("hidden shrink-0 text-xs font-semibold xl:block", saveState === "error" ? "text-red-500" : "text-muted")}>{saveState === "saving" ? t("Saqlanmoqda…", "Saving…") : saveState === "saved" ? t("Barcha javoblar saqlandi", "All answers saved") : saveState === "error" ? t("⚠ Saqlanmadi — qayta urinilmoqda…", "⚠ Not saved — retrying…") : t("Avtosaqlash yoqilgan", "Autosave enabled")}</span>
-          <span className={cn("flex shrink-0 items-center gap-2 rounded-xl bg-surface px-3 py-2 font-mono text-sm font-bold", seconds < 300 ? "text-red-500" : "text-ink")}><Clock3 className="h-4 w-4 text-brand" />{time}</span>
+          <ExamCountdown base={clockBase} paused={paused} onExpire={() => { if (timerStarted) setShowReview(true); }}>{(left, text) =>
+            <span className={cn("flex shrink-0 items-center gap-2 rounded-xl bg-surface px-3 py-2 font-mono text-sm font-bold", left < 300 ? "text-red-500" : "text-ink")}><Clock3 className="h-4 w-4 text-brand" />{text}</span>}
+          </ExamCountdown>
           {examMode && lockdownPill}
           {proctored
             ? <span title={t("Examiner nazoratidagi imtihon", "Examiner-proctored exam")} className="flex shrink-0 items-center gap-1.5 rounded-xl bg-teal-500/10 px-3 py-2 text-xs font-bold text-teal-700 dark:text-teal-300"><ShieldAlert className="h-4 w-4" /><span className="hidden md:inline">{t("Nazoratdagi imtihon", "Proctored")}</span></span>
@@ -1122,7 +1127,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
           ><LogOut className="h-4 w-4" /><span className="hidden md:inline">{t("Saqlab chiqish", "Save & exit")}</span></button>}
         </div>
       </div>
-      <div className="h-1 bg-surface"><div className="h-full bg-brand transition-all" style={{ width: `${scoredQuestions.length ? (answered / scoredQuestions.length) * 100 : 0}%` }} /></div>
+      <div className="h-1 bg-surface"><div className="h-full bg-brand transition-[width]" style={{ width: `${scoredQuestions.length ? (answered / scoredQuestions.length) * 100 : 0}%` }} /></div>
     </header>
 
     <div className="p-3 xl:flex xl:min-h-0 xl:flex-1 xl:gap-4 xl:p-4">
@@ -1285,7 +1290,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
               const result = exerciseResults[question.id];
               const checked = question.id in exerciseResults;
               return <article key={question.id} id={`q-${question.id}`} className={cn(
-                "group/card scroll-mt-4 rounded-2xl border p-4 transition-all duration-150 sm:p-5",
+                "group/card scroll-mt-4 rounded-2xl border p-4 transition duration-150 sm:p-5",
                 result === true ? "border-emerald-300 bg-emerald-500/[.04]"
                   : result === false ? "border-red-300 bg-red-500/[.04]"
                     : checked ? "border-amber-300 bg-amber-500/[.04]"
@@ -1301,7 +1306,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
                     : question.is_example ? "bg-sky-500/10 text-sky-600" : "bg-surface text-muted",
                 )}>{result === true ? <CheckCircle2 className="h-5 w-5" /> : result === false ? <XCircle className="h-5 w-5" /> : checked ? <Clock3 className="h-5 w-5" /> : question.is_example ? "e.g" : number}</span>
                 <div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-3">{renderPrompt(exercise, question)}{!question.is_example && <button aria-label={t(`${number}-savolni belgilash`, `Flag question ${number}`)} title={t("Takrorlash uchun belgilash", "Flag for review")} onClick={() => toggleFlag(question.id)} className={cn(
-                  "shrink-0 rounded-lg p-2 transition-all",
+                  "shrink-0 rounded-lg p-2 transition",
                   flagged.includes(question.id)
                     ? "bg-orange-500/10 text-orange-500"
                     : "text-muted/50 hover:bg-orange-500/10 hover:text-orange-500 sm:opacity-0 sm:group-hover/card:opacity-100",

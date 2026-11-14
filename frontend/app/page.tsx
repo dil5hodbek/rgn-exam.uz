@@ -138,6 +138,57 @@ function BookArtwork() {
   </div>;
 }
 
+/**
+ * "How it works" steps. The highlight/pulse loop lives here and writes the
+ * pulse position straight to the DOM every frame; React only re-renders this
+ * list when the active step changes (a few times per loop), never the page.
+ */
+function HowSteps({ steps, pageHidden }: { steps: ReadonlyArray<ReadonlyArray<string>>; pageHidden: boolean }) {
+  const listRef = useRef<HTMLOListElement>(null);
+  const pulseRefs = useRef<(HTMLSpanElement | null)[]>([]);
+  const [visible, setVisible] = useState(false);
+  const [phase, setPhase] = useState({ active: 0, source: -1 });
+  useEffect(() => {
+    const element = listRef.current;
+    if (!element) return;
+    const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), { threshold: 0.15 });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let frame = 0;
+    function start() {
+      cancelAnimationFrame(frame);
+      setPhase({ active: 0, source: -1 });
+      if (!visible || pageHidden || motion.matches) return;
+      const startedAt = performance.now();
+      let previous = "";
+      const tick = (now: number) => {
+        const elapsed = (now - startedAt) % 12000;
+        const index = Math.floor(elapsed / 3000);
+        const localTime = elapsed % 3000;
+        const moving = index < 3 && localTime >= 900;
+        const key = `${moving ? "s" : "a"}${index}`;
+        if (key !== previous) {
+          previous = key;
+          setPhase({ active: moving ? -1 : index, source: moving ? index : -1 });
+        }
+        if (moving) pulseRefs.current[index]?.style.setProperty("--pulse-position", `${((localTime - 900) / 2100) * 100}%`);
+        frame = requestAnimationFrame(tick);
+      };
+      frame = requestAnimationFrame(tick);
+    }
+    start();
+    motion.addEventListener("change", start);
+    return () => { cancelAnimationFrame(frame); motion.removeEventListener("change", start); };
+  }, [visible, pageHidden]);
+  return <ol ref={listRef} className={`lp-steps${visible && !pageHidden ? " is-visible" : ""}`}>{steps.map(([title, text], index) => {
+    const Icon = stepIcons[index];
+    return <li key={title}><span className={`lp-step-visual${phase.active === index ? " is-active" : ""}`} aria-hidden="true"><Icon size={28} strokeWidth={1.6} /></span><h3>{title}</h3><p>{text}</p>{index < 3 && <span className="lp-step-cable" aria-hidden="true"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><path className="lp-cable-horizontal lp-cable-base" d="M0 50 H100" /><path className="lp-cable-vertical lp-cable-base" d="M50 0 V100" /></svg><span ref={(node) => { pulseRefs.current[index] = node; }} className={`lp-cable-pulse${phase.source === index ? " is-moving" : ""}`} style={{ "--pulse-position": "0%" } as CSSProperties} /></span>}</li>;
+  })}</ol>;
+}
+
 export default function Home() {
   const { lang, setLang } = useLang();
   const [picked, setPicked] = useState<string | null>(null);
@@ -177,44 +228,7 @@ export default function Home() {
   const [dragOffset, setDragOffset] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [showBackToTop, setShowBackToTop] = useState(false);
-  const [scrollProgress, setScrollProgress] = useState(0);
-  const stepsRef = useRef<HTMLOListElement>(null);
-  const [stepsVisible, setStepsVisible] = useState(false);
-  const [stepFrame, setStepFrame] = useState({ active: 0, source: -1, progress: 0 });
-  useEffect(() => {
-    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    let frame = 0;
-    function start() {
-      cancelAnimationFrame(frame);
-      setStepFrame({ active: 0, source: -1, progress: 0 });
-      if (!stepsVisible || pageHidden || motion.matches) return;
-      const startedAt = performance.now();
-      let previousTick = -1;
-      const tick = (now: number) => {
-        const elapsed = (now - startedAt) % 12000;
-        const index = Math.floor(elapsed / 3000);
-        const localTime = elapsed % 3000;
-        const moving = index < 3 && localTime >= 900;
-        const tickIndex = Math.floor(elapsed / 33);
-        if (tickIndex !== previousTick) {
-          previousTick = tickIndex;
-          setStepFrame({ active: moving ? -1 : index, source: moving ? index : -1, progress: moving ? (localTime - 900) / 2100 : 0 });
-        }
-        frame = requestAnimationFrame(tick);
-      };
-      frame = requestAnimationFrame(tick);
-    }
-    start();
-    motion.addEventListener("change", start);
-    return () => { cancelAnimationFrame(frame); motion.removeEventListener("change", start); };
-  }, [stepsVisible, pageHidden]);
-  useEffect(() => {
-    const element = stepsRef.current;
-    if (!element) return;
-    const observer = new IntersectionObserver(([entry]) => setStepsVisible(entry.isIntersecting), { threshold: 0.15 });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
+  const progressRef = useRef<HTMLSpanElement>(null);
   const carouselRef = useRef<HTMLDivElement>(null);
   const swipeStart = useRef<{ id: number; x: number; y: number } | null>(null);
   const rotating = rotationEnabled && carouselVisible && !pageHidden && !dragging;
@@ -241,15 +255,25 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, [rotating, skillPosition, skillResetting]);
   useEffect(() => {
+    // Written straight to the DOM once per frame — a React state update on
+    // every scroll event re-rendered the whole landing page while scrolling.
+    let frame = 0;
     const update = () => {
+      frame = 0;
       const max = document.documentElement.scrollHeight - window.innerHeight;
-      setScrollProgress(max > 0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0);
+      const progress = max > 0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
+      if (progressRef.current) progressRef.current.style.transform = `scaleX(${progress})`;
       setShowBackToTop(window.scrollY > window.innerHeight * 0.6);
     };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
     update();
-    window.addEventListener("scroll", update, { passive: true });
-    window.addEventListener("resize", update);
-    return () => { window.removeEventListener("scroll", update); window.removeEventListener("resize", update); };
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+    };
   }, []);
   function selectSkill(index: number) {
     if (skillResetting || skillPosition === 0 || skillPosition === SKILLS.length + 1) return;
@@ -270,7 +294,7 @@ export default function Home() {
 
   return (
     <div className="landing-root" lang={lang}>
-      <div className="lp-reading-progress" aria-hidden="true"><span style={{ transform: `scaleX(${scrollProgress})` }} /></div>
+      <div className="lp-reading-progress" aria-hidden="true"><span ref={progressRef} style={{ transform: "scaleX(0)" }} /></div>
       <header className="lp-nav lp-wrap">
         <Link href="/" className="lp-brand" aria-label="Registon">
           <BrandImage />
@@ -381,7 +405,7 @@ export default function Home() {
             </div>
           </div>
         </section>
-        <section id="how" className="lp-how lp-wrap"><div className="lp-how-heading"><p className="lp-kicker">{v.howLabel}</p><h2 className="lp-h2">{t.howTitle}</h2><p>{v.howSub}</p></div><ol ref={stepsRef} className={`lp-steps${stepsVisible && !pageHidden ? " is-visible" : ""}`}>{t.steps.map(([title,text],index)=>{const Icon = stepIcons[index]; return <li key={title}><span className={`lp-step-visual${stepFrame.active === index ? " is-active" : ""}`} aria-hidden="true"><Icon size={28} strokeWidth={1.6} /></span><h3>{title}</h3><p>{text}</p>{index<3&&<span className="lp-step-cable" aria-hidden="true"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><path className="lp-cable-horizontal lp-cable-base" d="M0 50 H100" /><path className="lp-cable-vertical lp-cable-base" d="M50 0 V100" /></svg><span className={`lp-cable-pulse${stepFrame.source === index ? " is-moving" : ""}`} style={{ "--pulse-position": `${stepFrame.progress * 100}%` } as CSSProperties} /></span>}</li>;})}</ol></section>
+        <section id="how" className="lp-how lp-wrap"><div className="lp-how-heading"><p className="lp-kicker">{v.howLabel}</p><h2 className="lp-h2">{t.howTitle}</h2><p>{v.howSub}</p></div><HowSteps steps={t.steps} pageHidden={pageHidden} /></section>
         <section className="lp-end-wrap lp-wrap"><div className="lp-end"><div className="lp-end-copy"><p className="lp-kicker">{v.ctaLabel}</p><h2>{t.ctaTitle}</h2><p>{v.ctaSub}</p><Link className="lp-btn lp-btn-solid lp-btn-lg" href="/create-account">{t.create}<ArrowUpRight size={20}/></Link></div><div className="lp-end-art" aria-hidden="true"><div className="lp-pass-outline"/><div className="lp-exam-pass"><div className="lp-pass-header"><span>REGISTON</span><ArrowUpRight size={18}/></div><div className="lp-pass-emblem"><GraduationCap size={48} strokeWidth={1.6}/></div><strong>{lang === "uz" ? "Yangi bosqichga tayyor." : "Ready for your next level."}</strong><div className="lp-pass-path"><span/><span/><span/><span><Check size={15}/></span></div><div className="lp-pass-footer"><span><Headphones size={17}/><BookOpen size={17}/><PenLine size={17}/></span><ArrowRight size={20}/></div></div></div></div></section>
       </main>
       {showBackToTop && <button type="button" className="lp-back-top" onClick={backToTop} aria-label={lang === "uz" ? "Sahifa boshiga qaytish" : "Back to top"}><ArrowUp size={19}/><span>{lang === "uz" ? "Yuqoriga" : "Top"}</span></button>}
