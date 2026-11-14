@@ -23,6 +23,8 @@ class AttemptStateOut(BaseModel):
     answers: list[AnswerStateOut]
     checked_task_ids: list[str]
     task_order: list[str] | None
+    exam_session_id: uuid.UUID | None = None
+    paused: bool = False
 
 
 class ExamSessionOut(BaseModel):

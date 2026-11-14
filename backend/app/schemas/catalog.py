@@ -26,6 +26,9 @@ class VariantSummaryOut(BaseModel):
     time_limit_minutes: int
     passing_percentage: int
     retake_allowed: bool
+    # True when this student may not open the variant directly: they need an
+    # examiner's session password (or an access grant) first.
+    locked: bool = False
 
 
 class MediaOut(BaseModel):

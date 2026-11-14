@@ -6,7 +6,7 @@ when neither is available (see conftest.py).
 from app.models import ContentStatus, ExamType, Level, Question, Section, Task, TestVariant
 
 
-async def _register_and_login(client, phone="+998901112233"):
+async def _register_and_login(client, phone="+998901112233", db=None):
     await client.post(
         "/api/v1/auth/register",
         json={
@@ -18,6 +18,18 @@ async def _register_and_login(client, phone="+998901112233"):
         },
     )
     await client.post("/api/v1/auth/login", json={"phone_number": phone, "password": "Passw0rd!"})
+    if db is not None:
+        await grant_all_access(db, phone)
+
+
+async def grant_all_access(db, phone):
+    """Tests are locked by default now (examiner password or access grant);
+    practice-mode tests give the student a standing ALL grant."""
+    from sqlalchemy import select
+    from app.models import ExamAccessGrant, User
+    user = await db.scalar(select(User).where(User.phone_number == phone))
+    db.add(ExamAccessGrant(user_id=user.id, scope="ALL"))
+    await db.commit()
 
 
 async def test_levels_and_test_detail(client, db_session):
@@ -48,7 +60,7 @@ async def test_levels_and_test_detail(client, db_session):
     db_session.add(question)
     await db_session.commit()
 
-    await _register_and_login(client)
+    await _register_and_login(client, db=db_session)
 
     levels_resp = await client.get("/api/v1/levels")
     assert levels_resp.status_code == 200

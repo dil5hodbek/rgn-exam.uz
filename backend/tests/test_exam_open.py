@@ -37,7 +37,7 @@ def task_ids(test):
 async def test_open_returns_state_and_questions_without_answer_keys(client, db_session):
     variants = await seed_exam(db_session)
     assert (await client.post(f"/api/v1/tests/{variants[0].id}/open")).status_code == 401
-    await _register_and_login(client)
+    await _register_and_login(client, db=db_session)
     response = await client.post(f"/api/v1/tests/{variants[0].id}/open")
     assert response.status_code == 200
     data = response.json()
@@ -55,7 +55,7 @@ async def test_open_returns_state_and_questions_without_answer_keys(client, db_s
 
 async def test_level_open_preserves_exact_mix_answers_and_paused_time(client, db_session):
     await seed_exam(db_session)
-    await _register_and_login(client)
+    await _register_and_login(client, db=db_session)
     started = (await client.post("/api/v1/levels/beginner/level-test-attempt")).json()
     path = f"/api/v1/tests/{started['test_variant_id']}/open?attempt_id={started['id']}"
     opened = await client.post(path)
@@ -83,7 +83,7 @@ async def test_level_open_preserves_exact_mix_answers_and_paused_time(client, db
 
 async def test_open_rejects_other_user_mismatch_and_submitted_attempt(client, db_session):
     variants = await seed_exam(db_session)
-    await _register_and_login(client)
+    await _register_and_login(client, db=db_session)
     state = (await client.post(f"/api/v1/tests/{variants[0].id}/open")).json()["attempt"]
     path = f"/api/v1/tests/{variants[0].id}/open?attempt_id={state['id']}"
     mismatch = await client.post(f"/api/v1/tests/{variants[1].id}/open?attempt_id={state['id']}")
@@ -94,13 +94,13 @@ async def test_open_rejects_other_user_mismatch_and_submitted_attempt(client, db
     await db_session.commit()
     assert (await client.post(path)).status_code == 409
     await client.post("/api/v1/auth/logout")
-    await _register_and_login(client, phone="+998905556688")
+    await _register_and_login(client, phone="+998905556688", db=db_session)
     assert (await client.post(path)).status_code == 404
 
 
 async def test_random_open_keeps_bonus_exercises(client, db_session):
     await seed_exam(db_session)
-    await _register_and_login(client)
+    await _register_and_login(client, db=db_session)
     started = (await client.post("/api/v1/levels/beginner/exam-types/mid-course/random-attempt")).json()
     opened = await client.post(f"/api/v1/tests/{started['test_variant_id']}/open?attempt_id={started['id']}")
     assert opened.status_code == 200

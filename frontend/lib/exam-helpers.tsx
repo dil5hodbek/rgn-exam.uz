@@ -38,6 +38,9 @@ export type AttemptState = {
   checked_task_ids?: string[];
   answers_updated_at?: string | null;
   task_order?: string[] | null;
+  // Set for an examiner-proctored attempt: the examiner owns the clock.
+  exam_session_id?: string | null;
+  paused?: boolean;
 };
 export type ExerciseResult = Record<string, boolean | null>;
 

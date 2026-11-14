@@ -16,7 +16,7 @@ export default function TelegramSignIn() {
     // Remove the credential from history before contacting the API.
     window.history.replaceState(null, "", window.location.pathname);
     const openPanel = ({ user }: { user: { role: string } }) => {
-      window.location.replace(user.role === "STUDENT" ? "/dashboard" : user.role === "TEACHER" ? "/monitor" : "/admin");
+      window.location.replace(user.role === "STUDENT" ? "/dashboard" : user.role === "TEACHER" ? "/monitor" : user.role === "EXAMINER" ? "/examiner" : "/admin");
     };
     if (!token) {
       // Reloading this callback URL has no fragment, but the saved session remains.

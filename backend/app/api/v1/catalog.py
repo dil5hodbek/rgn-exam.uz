@@ -7,8 +7,11 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.deps import current_user
-from app.models import ContentStatus, ExamType, Level, Section, Task, TestVariant, User
+from app.models import Attempt, ContentStatus, ExamType, Level, Section, Task, TestVariant, User
 from app.schemas.catalog import ExamTypeOut, LevelOut, TestDetailOut, VariantSummaryOut
+from app.services.exam_access import (
+    can_open_variant, grant_covers_scope, grant_covers_variant, is_staff, locked_error, user_grants,
+)
 from app.services.media import batch_media_by_ids
 
 router = APIRouter(tags=["Catalog"])
@@ -77,22 +80,43 @@ async def exam_types(level_slug: str, _: User = Depends(current_user), db: Async
 
 
 @router.get("/levels/{level_slug}/exam-types/{type_slug}/variants", response_model=list[VariantSummaryOut])
-async def variants(level_slug: str, type_slug: str, _: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+async def variants(level_slug: str, type_slug: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     rows = (await db.execute(
         select(TestVariant)
         .join(Level).join(ExamType)
         .where(Level.slug == level_slug, ExamType.slug == type_slug, TestVariant.status == ContentStatus.PUBLISHED)
         .order_by(TestVariant.variant_number)
     )).scalars().all()
+    grants = [] if is_staff(user) else await user_grants(db, user.id)
     return [{
         "id": row.id, "title": row.title, "variant_number": row.variant_number,
         "time_limit_minutes": row.time_limit_minutes, "passing_percentage": row.passing_percentage,
         "retake_allowed": row.retake_allowed,
+        "locked": not is_staff(user) and not any(grant_covers_variant(grant, row) for grant in grants),
     } for row in rows]
 
 
+@router.get("/levels/{level_slug}/access")
+async def level_access(level_slug: str, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    """Which of this level's pooled tests the student may start without a
+    session password: the level test, and the shuffled test per exam type."""
+    level = await db.scalar(select(Level).where(Level.slug == level_slug))
+    if not level:
+        raise HTTPException(404, "Level not found.")
+    types = (await db.execute(select(ExamType))).scalars().all()
+    if is_staff(user):
+        return {"level_test": True, "exam_types": {row.slug: True for row in types}}
+    grants = await user_grants(db, user.id)
+    return {
+        "level_test": any(grant_covers_scope(grant, level.id, None) for grant in grants),
+        "exam_types": {
+            row.slug: any(grant_covers_scope(grant, level.id, row.id) for grant in grants) for row in types
+        },
+    }
+
+
 @router.get("/tests/{test_id}", response_model=TestDetailOut)
-async def test_detail(test_id: uuid.UUID, _: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+async def test_detail(test_id: uuid.UUID, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     variant = await db.scalar(
         select(TestVariant)
         .where(TestVariant.id == test_id, TestVariant.status == ContentStatus.PUBLISHED)
@@ -104,6 +128,14 @@ async def test_detail(test_id: uuid.UUID, _: User = Depends(current_user), db: A
     )
     if not variant:
         raise HTTPException(404, "Published test not found.")
+    if not await can_open_variant(db, user, variant):
+        # A locked test's questions are only served through an attempt the
+        # student was let into (see /attempts/{id}/test and /tests/{id}/open).
+        has_attempt = await db.scalar(select(Attempt.id).where(
+            Attempt.user_id == user.id, Attempt.test_variant_id == variant.id,
+        ).limit(1))
+        if not has_attempt:
+            raise locked_error()
     return {
         "id": variant.id,
         "title": variant.title,

@@ -22,6 +22,16 @@ def normalize_phone(value: str) -> str:
     raise ValueError("Enter a valid Uzbekistan phone number.")
 
 
+USERNAME_PATTERN = re.compile(r"^[a-z][a-z0-9._]{2,31}$")
+
+
+def normalize_username(value: str) -> str | None:
+    """Lower-cased username if it is well-formed (3-32 chars, starts with a
+    letter, then letters/digits/dot/underscore), else None."""
+    candidate = (value or "").strip().lower().lstrip("@")
+    return candidate if USERNAME_PATTERN.match(candidate) else None
+
+
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 

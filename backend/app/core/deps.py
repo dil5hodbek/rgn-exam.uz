@@ -42,3 +42,11 @@ async def require_teacher(user: User = Depends(current_user)) -> User:
     if user.role not in {Role.TEACHER, Role.ADMIN, Role.SUPER_ADMIN}:
         raise HTTPException(status_code=403, detail="Teacher access required.")
     return user
+
+
+async def require_examiner(user: User = Depends(current_user)) -> User:
+    """Examiners run proctored exam sessions and manage student access;
+    admins can do the same (and see every examiner's sessions)."""
+    if user.role not in {Role.EXAMINER, Role.ADMIN, Role.SUPER_ADMIN}:
+        raise HTTPException(status_code=403, detail="Examiner access required.")
+    return user

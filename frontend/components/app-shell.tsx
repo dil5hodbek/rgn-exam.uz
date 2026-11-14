@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, Bookmark, FilePenLine, LayoutDashboard, LogOut, Settings, ShieldCheck, Sparkles } from "lucide-react";
+import { BarChart3, Bookmark, ClipboardCheck, FilePenLine, LayoutDashboard, LogOut, Settings, ShieldCheck, Sparkles } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -28,6 +28,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [initials, setInitials] = useState("ME");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isExaminer, setIsExaminer] = useState(false);
   const [today, setToday] = useState("");
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState("");
@@ -38,6 +39,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setInitials(`${user.first_name[0] ?? ""}${user.last_name[0] ?? ""}`.toUpperCase());
         setAvatarUrl(user.avatar_url);
         setIsAdmin(["ADMIN", "SUPER_ADMIN"].includes(user.role));
+        setIsExaminer(user.role === "EXAMINER");
       })
       .catch((error) => {
         if (error instanceof ApiError && error.status === 401) router.replace("/sign-in");
@@ -57,7 +59,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
   const nav = (isAdmin
     ? [...studentNav, { href: "/admin", label: ["Admin panel", "Admin Panel"], icon: ShieldCheck }]
-    : studentNav).map((item) => ({ ...item, label: t(item.label[0], item.label[1]) }));
+    : isExaminer
+      ? [...studentNav, { href: "/examiner", label: ["Examiner paneli", "Examiner Panel"], icon: ClipboardCheck }]
+      : studentNav).map((item) => ({ ...item, label: t(item.label[0], item.label[1]) }));
   return (
     <div className="min-h-screen bg-surface">
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 overflow-y-auto border-r border-line bg-canvas px-5 py-6 lg:flex lg:flex-col">

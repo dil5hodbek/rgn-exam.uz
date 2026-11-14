@@ -20,10 +20,11 @@ export function AuthCard({ initialTab = "sign-in" }: { initialTab?: "sign-in" | 
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  type AuthResult = { user: { role: "STUDENT" | "TEACHER" | "ADMIN" | "SUPER_ADMIN" } };
+  type AuthResult = { user: { role: "STUDENT" | "TEACHER" | "EXAMINER" | "ADMIN" | "SUPER_ADMIN" } };
   function landingFor(role: AuthResult["user"]["role"]) {
     if (role === "STUDENT") return "/dashboard";
     if (role === "TEACHER") return "/monitor";
+    if (role === "EXAMINER") return "/examiner";
     return "/admin";
   }
   // A visitor who still has a valid session (cookies intact, possibly just
@@ -88,13 +89,17 @@ export function AuthCard({ initialTab = "sign-in" }: { initialTab?: "sign-in" | 
               <label className="min-w-0 text-sm font-semibold text-ink"><span className="sr-only">{t("Familiya", "Last Name")}</span><Input className="min-w-0" placeholder={t("Familiya", "Last name")} value={lastName} onChange={(event) => setLastName(event.target.value)} required /></label>
             </div>
           )}
-          <label className="block text-sm font-semibold text-ink">
+          {tab === "create" ? <label className="block text-sm font-semibold text-ink">
             <span className="sr-only">{t("Telefon raqam", "Phone Number")}</span>
             <div className="flex">
               <span className="grid h-12 shrink-0 whitespace-nowrap place-items-center rounded-l-xl border border-r-0 border-line bg-surface px-3 text-sm font-bold text-ink">+998</span>
               <Input className="min-w-0 flex-1 rounded-l-none" inputMode="numeric" placeholder="90 123 45 67" value={phone} onChange={(event) => setPhone(event.target.value)} required />
             </div>
-          </label>
+          </label> : <label className="block text-sm font-semibold text-ink">
+            {/* Sign-in takes a phone number or a username an examiner assigned. */}
+            <span className="sr-only">{t("Telefon raqam yoki username", "Phone number or username")}</span>
+            <Input autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder={t("Telefon (90 123 45 67) yoki username", "Phone (90 123 45 67) or username")} value={phone} onChange={(event) => setPhone(event.target.value)} required />
+          </label>}
           <div className={tab === "create" ? "auth-password-fields grid grid-cols-1 gap-3 sm:grid-cols-2" : ""}>
           <label className="block min-w-0 text-sm font-semibold text-ink">
             <span className="sr-only">{t("Parol", "Password")}</span>

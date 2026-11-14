@@ -82,6 +82,7 @@ class UserOut(BaseModel):
     first_name: str
     last_name: str
     phone_number: str
+    username: str | None = None
     role: Role
     theme: str
     avatar_url: str | None = None

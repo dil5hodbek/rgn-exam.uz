@@ -11,10 +11,10 @@ from app.core.deps import require_admin
 from app.models import Attempt, AttemptAnswer, Role, TestVariant, User
 from app.schemas.content import (
     GradeInput, QuestionCreate, QuestionInput, ReorderTasks, ResetContent,
-    SectionInput, TaskCreate, TeacherCreate, VariantCreate, VariantUpdate,
+    ExaminerCreate, SectionInput, TaskCreate, TeacherCreate, VariantCreate, VariantUpdate,
 )
 from app.services import (
-    admin_content, admin_grading, admin_import, admin_media, admin_reports, admin_students,
+    admin_content, admin_examiners, admin_grading, admin_import, admin_media, admin_reports, admin_students,
     admin_teachers, admin_tests,
 )
 from app.services.exercise_registry import registry_payload
@@ -324,6 +324,27 @@ async def set_teacher_active(
     admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
 ):
     return await admin_teachers.set_teacher_active(db, admin.id, _ip(request), teacher_id, active)
+
+
+@router.get("/examiners")
+async def examiners(_: User = Depends(require_admin), db: AsyncSession = Depends(get_db)):
+    return await admin_examiners.list_examiners(db)
+
+
+@router.post("/examiners", status_code=201)
+async def create_examiner(
+    payload: ExaminerCreate, request: Request,
+    admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
+):
+    return await admin_examiners.create_examiner(db, admin.id, _ip(request), payload)
+
+
+@router.patch("/examiners/{examiner_id}/active")
+async def set_examiner_active(
+    examiner_id: uuid.UUID, active: bool, request: Request,
+    admin: User = Depends(require_admin), db: AsyncSession = Depends(get_db),
+):
+    return await admin_examiners.set_examiner_active(db, admin.id, _ip(request), examiner_id, active)
 
 
 @router.get("/audit-log")

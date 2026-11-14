@@ -1,5 +1,5 @@
 "use client";
-import { Activity, BookOpenCheck, GraduationCap, LayoutDashboard, LogOut, PenLine, Users } from "lucide-react";
+import { Activity, BookOpenCheck, ClipboardCheck, GraduationCap, LayoutDashboard, LogOut, PenLine, ShieldCheck, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -15,6 +15,8 @@ const items = [
   { href: "/admin/submissions", label: "Writing Review", icon: GraduationCap },
   { href: "/admin/students", label: "Students", icon: Users },
   { href: "/admin/teachers", label: "Teachers", icon: PenLine },
+  { href: "/admin/examiners", label: "Examiners", icon: ShieldCheck },
+  { href: "/examiner", label: "Exam sessions", icon: ClipboardCheck },
   { href: "/admin/audit-log", label: "Audit Log", icon: Activity },
 ];
 

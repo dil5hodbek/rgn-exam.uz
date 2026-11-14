@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, ArrowRight, BookMarked, GraduationCap, Layers } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookMarked, GraduationCap, Layers, Lock } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -15,11 +15,15 @@ export default function LevelPage({ params }: { params: { level: string } }) {
   const [examTypes, setExamTypes] = useState<ExamType[]>([]);
   const [error, setError] = useState("");
   const [startingLevelTest, setStartingLevelTest] = useState(false);
+  const [levelTestUnlocked, setLevelTestUnlocked] = useState<boolean | null>(null);
   const router = useRouter();
   const levelName = params.level.split("-").map((item) => item[0].toUpperCase() + item.slice(1)).join("-");
   useEffect(() => {
     api<ExamType[]>(`/levels/${params.level}/exam-types`).then(setExamTypes)
       .catch((reason) => setError(reason instanceof Error ? reason.message : t("Imtihon turlarini yuklab bo'lmadi.", "Unable to load exam types.")));
+    api<{ level_test: boolean }>(`/levels/${params.level}/access`)
+      .then((access) => setLevelTestUnlocked(access.level_test))
+      .catch(() => setLevelTestUnlocked(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.level]);
 
@@ -47,7 +51,9 @@ export default function LevelPage({ params }: { params: { level: string } }) {
           <h2 className="mt-3 text-2xl font-extrabold sm:text-3xl">{t("Daraja testi", "Level Test")}</h2>
           <p className="mt-1.5 max-w-md text-sm text-white/95">{t(`${levelName} darajasining Mid-course va End-course mashqlaridan tuzilgan bitta test — darajani to'liq tekshiradi.`, `One test drawing from both Mid-course and End-course exercises for ${levelName} — a full sweep of the level.`)}</p>
         </div>
-        <Button onClick={startLevelTest} disabled={startingLevelTest} className="w-full shrink-0 !bg-white !text-[#bf3e16] shadow-lg hover:!bg-white/90 sm:w-auto"><Layers className="h-4 w-4" /> {startingLevelTest ? t("Boshlanmoqda…", "Starting…") : t("Daraja testini boshlash", "Start Level Test")}</Button>
+        {levelTestUnlocked === false
+          ? <span className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-white/15 px-5 py-3 text-sm font-bold sm:w-auto" title={t("Examiner ruxsat berishi kerak", "Needs examiner access")}><Lock className="h-4 w-4" /> {t("Yopiq — examiner ruxsati kerak", "Locked — needs examiner access")}</span>
+          : <Button onClick={startLevelTest} disabled={startingLevelTest || levelTestUnlocked === null} className="w-full shrink-0 !bg-white !text-[#bf3e16] shadow-lg hover:!bg-white/90 sm:w-auto"><Layers className="h-4 w-4" /> {startingLevelTest ? t("Boshlanmoqda…", "Starting…") : t("Daraja testini boshlash", "Start Level Test")}</Button>}
       </div>
     </div>
     {error && <p className="mt-6 text-sm font-semibold text-red-600">{error}</p>}

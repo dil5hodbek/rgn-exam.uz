@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   ArrowLeft, BookOpen, Bookmark, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock3, GripVertical,
-  Headphones, Lock, LogOut, PenLine, Pin, PinOff, RotateCcw, Send, X, XCircle,
+  Headphones, Lock, LogOut, PauseCircle, PenLine, Pin, PinOff, RotateCcw, Send, ShieldAlert, X, XCircle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { AudioPlayer } from "@/components/exam/audio-player";
@@ -32,6 +32,11 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
   const [flagged, setFlagged] = useState<string[]>([]);
   const [seconds, setSeconds] = useState(0);
   const [timerStarted, setTimerStarted] = useState(false);
+  // Examiner-proctored attempt: the examiner can pause the clock or remove
+  // the student; a heartbeat keeps both sides in sync.
+  const [proctored, setProctored] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [removed, setRemoved] = useState(false);
   const [showReview, setShowReview] = useState(false);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [selectedToken, setSelectedToken] = useState<string | null>(null);
@@ -229,6 +234,8 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
         if (Number.isFinite(position) && position > 0 && position < total) setCurrentExercise(position);
       } catch { /* start from the first exercise */ }
       setSeconds(Math.max(0, detail.time_limit_minutes * 60 - (attempt.elapsed_seconds ?? 0)));
+      setProctored(Boolean(attempt.exam_session_id));
+      setPaused(Boolean(attempt.paused));
       setTimerStarted(true);
     }).catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : t("Testni yuklab bo'lmadi.", "Unable to load this test.")); });
     return () => { active = false; };
@@ -237,14 +244,51 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
   }, [testId, initialAttemptId]);
 
   useEffect(() => {
-    if (!timerStarted || seconds <= 0) return;
+    if (!timerStarted || paused || seconds <= 0) return;
     const timer = window.setTimeout(() => setSeconds((value) => Math.max(0, value - 1)), 1000);
     return () => window.clearTimeout(timer);
-  }, [seconds, timerStarted]);
+  }, [seconds, timerStarted, paused]);
+
+  // Proctored heartbeat: tells the examiner the student is still on the exam,
+  // and picks up the examiner's pause/resume, removal or force-submit, plus
+  // the server's authoritative time left.
+  useEffect(() => {
+    if (!proctored || !attemptId) return;
+    let alive = true;
+    const beat = async () => {
+      try {
+        const state = await api<{ status: string; paused: boolean; removed: boolean; remaining_seconds: number }>(
+          `/attempts/${attemptId}/heartbeat`, { method: "POST" },
+        );
+        if (!alive) return;
+        if (state.status !== "IN_PROGRESS") {
+          try {
+            localStorage.removeItem(`exam-progress:${attemptId}`);
+            localStorage.removeItem(`exam-position:${attemptId}`);
+          } catch { /* ignore */ }
+          router.replace(`${resultBasePath}/${attemptId}`);
+          return;
+        }
+        setRemoved(state.removed);
+        setPaused(state.paused);
+        setSeconds((value) => (Math.abs(value - state.remaining_seconds) > 2 ? state.remaining_seconds : value));
+      } catch { /* offline — the next beat retries */ }
+    };
+    beat();
+    const timer = window.setInterval(beat, 5000);
+    return () => { alive = false; window.clearInterval(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proctored, attemptId]);
 
   useEffect(() => {
     if (timerStarted && seconds === 0) setShowReview(true);
   }, [seconds, timerStarted]);
+
+  // Leaving a paused exam must flush answers the moment it resumes.
+  useEffect(() => {
+    if (!paused && proctored && saveState === "error") saveAnswers().catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paused]);
 
   useEffect(() => {
     if (!test) return;
@@ -908,6 +952,17 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
   const answered = scoredQuestions.filter((question) => hasAnswer(answers[question.id])).length;
   const exerciseAnswered = exerciseQuestions.filter((question) => hasAnswer(answers[question.id])).length;
   const time = `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  const proctorOverlay = proctored && (paused || removed) && <div className="fixed inset-0 z-[60] grid place-items-center bg-[#0b1020]/80 p-4 backdrop-blur-sm">
+    <div className="w-full max-w-md rounded-3xl border border-line bg-canvas p-8 text-center shadow-lift">
+      {removed ? <ShieldAlert className="mx-auto h-14 w-14 text-red-500" /> : <PauseCircle className="mx-auto h-14 w-14 animate-pulse text-violet-500" />}
+      <h2 className="mt-5 text-2xl font-extrabold text-ink">{removed ? t("Siz imtihondan chiqarildingiz", "You were removed from this exam") : t("Imtihon to'xtatildi", "Exam paused")}</h2>
+      <p className="mt-2 text-sm leading-6 text-muted">{removed
+        ? t("Examiner sizni bu imtihondan chiqardi. Savollar bo'lsa, examinerga murojaat qiling.", "The examiner removed you from this exam. Talk to them if you have questions.")
+        : t("Examiner imtihonni to'xtatdi. Vaqtingiz ketmayapti — examiner davom ettirishi bilan shu joydan davom etasiz.", "The examiner paused your exam. Your time is not running — you'll continue from here as soon as they resume.")}</p>
+      {!removed && <p className="mt-5 inline-flex items-center gap-2 rounded-xl bg-surface px-4 py-2 font-mono text-lg font-extrabold text-ink"><Clock3 className="h-4 w-4 text-brand" />{time}</p>}
+      {removed && <Button className="mt-6" onClick={() => router.replace("/dashboard")}>{t("Bosh sahifa", "Dashboard")}</Button>}
+    </div>
+  </div>;
   // gap_match draws its own two banks (words + replies) — keep the generic
   // right-hand bank for the other interactive kinds only.
   const isGapMatch = exercise.interaction?.kind === "gap_match";
@@ -920,6 +975,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
   ]);
 
   if (showReview) return <>
+    {proctorOverlay}
     {dialog}
     <div className="min-h-screen bg-surface p-4 sm:p-8"><div className="mx-auto max-w-5xl rounded-3xl border border-line bg-canvas p-6 shadow-soft sm:p-9">
     <span className="grid h-12 w-12 place-items-center rounded-2xl bg-orange-500/10 text-orange-500"><Check /></span>
@@ -936,7 +992,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     })}</div>
     {error && <p className="mt-5 text-sm font-semibold text-red-600">{error}</p>}
     <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-      <Button variant="danger" onClick={restartAttempt} className="sm:mr-auto"><RotateCcw className="h-4 w-4" /> {t("Boshidan boshlash", "Restart Test")}</Button>
+      {!proctored && <Button variant="danger" onClick={restartAttempt} className="sm:mr-auto"><RotateCcw className="h-4 w-4" /> {t("Boshidan boshlash", "Restart Test")}</Button>}
       <Button variant="secondary" onClick={() => setShowReview(false)}>{t("Testga qaytish", "Return to Test")}</Button>
       <Button onClick={submit}><Send className="h-4 w-4" /> {t("Testni topshirish", "Submit Test")}</Button>
     </div>
@@ -945,12 +1001,15 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
 
   return <>
     {dialog}
+    {proctorOverlay}
     <div className="min-h-[100dvh] bg-surface xl:flex xl:h-[100dvh] xl:flex-col xl:overflow-hidden">
     <header className="sticky top-0 z-30 border-b border-line bg-canvas/95 backdrop-blur">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5 xl:px-6">
         <div className="flex min-w-0 max-w-full items-center gap-3">
           <button
-            onClick={() => (window.history.length > 1 ? router.back() : router.push("/dashboard"))}
+            // A proctored attempt's history entry is the waiting room, which
+            // would bounce straight back here — go to the dashboard instead.
+            onClick={() => (proctored || window.history.length <= 1 ? router.push("/dashboard") : router.back())}
             aria-label={t("Orqaga", "Go back")}
             title={t("Orqaga", "Back")}
             className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line text-muted transition hover:bg-surface hover:text-ink"
@@ -967,12 +1026,14 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
           <span className="hidden shrink-0 rounded-xl bg-surface px-2.5 py-2 text-xs font-bold text-muted sm:block">{exerciseAnswered}/{exerciseQuestions.length}</span>
           <span className={cn("hidden shrink-0 text-xs font-semibold xl:block", saveState === "error" ? "text-red-500" : "text-muted")}>{saveState === "saving" ? t("Saqlanmoqda…", "Saving…") : saveState === "saved" ? t("Barcha javoblar saqlandi", "All answers saved") : saveState === "error" ? t("⚠ Saqlanmadi — qayta urinilmoqda…", "⚠ Not saved — retrying…") : t("Avtosaqlash yoqilgan", "Autosave enabled")}</span>
           <span className={cn("flex shrink-0 items-center gap-2 rounded-xl bg-surface px-3 py-2 font-mono text-sm font-bold", seconds < 300 ? "text-red-500" : "text-ink")}><Clock3 className="h-4 w-4 text-brand" />{time}</span>
-          <button
+          {proctored
+            ? <span title={t("Examiner nazoratidagi imtihon", "Examiner-proctored exam")} className="flex shrink-0 items-center gap-1.5 rounded-xl bg-teal-500/10 px-3 py-2 text-xs font-bold text-teal-700 dark:text-teal-300"><ShieldAlert className="h-4 w-4" /><span className="hidden md:inline">{t("Nazoratdagi imtihon", "Proctored")}</span></span>
+            : <button
             type="button"
             onClick={saveAndExit}
             title={t("Hammasini saqlab, keyin davom ettirish", "Save everything and continue later")}
             className="flex shrink-0 items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-xs font-bold text-ink transition hover:border-brand hover:text-brand"
-          ><LogOut className="h-4 w-4" /><span className="hidden md:inline">{t("Saqlab chiqish", "Save & exit")}</span></button>
+          ><LogOut className="h-4 w-4" /><span className="hidden md:inline">{t("Saqlab chiqish", "Save & exit")}</span></button>}
         </div>
       </div>
       <div className="h-1 bg-surface"><div className="h-full bg-brand transition-all" style={{ width: `${scoredQuestions.length ? (answered / scoredQuestions.length) * 100 : 0}%` }} /></div>

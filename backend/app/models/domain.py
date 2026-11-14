@@ -23,6 +23,10 @@ class Role(str, enum.Enum):
     TEACHER = "TEACHER"
     ADMIN = "ADMIN"
     SUPER_ADMIN = "SUPER_ADMIN"
+    # Runs proctored exam sessions: generates a session password, approves
+    # students who enter it, watches their clocks and can pause them. Also
+    # manages student usernames and standing exam access grants.
+    EXAMINER = "EXAMINER"
 
 
 class ContentStatus(str, enum.Enum):
@@ -53,6 +57,9 @@ class User(Base):
     first_name: Mapped[str] = mapped_column(String(80))
     last_name: Mapped[str] = mapped_column(String(80))
     phone_number: Mapped[str] = mapped_column(String(16), unique=True, index=True)
+    # Optional sign-in name an examiner assigns to a student (stored
+    # lower-case); login accepts it in place of the phone number.
+    username: Mapped[str | None] = mapped_column(String(40), unique=True, index=True, nullable=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[Role] = mapped_column(Enum(Role), default=Role.STUDENT)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -195,6 +202,17 @@ class Attempt(Base):
     # primary variant contributing 100% of its own tasks. Null means "use all
     # of the primary variant's tasks" (every other attempt kind).
     primary_task_ids: Mapped[list[str] | None] = mapped_column(JSONB)
+    # Set when the attempt was started through a proctored exam session (the
+    # student entered an examiner's session password and was approved).
+    # Those attempts run on the examiner's clock: only the examiner can pause
+    # them, and the student's own "save & exit" no longer freezes the timer.
+    exam_session_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("exam_sessions.id", ondelete="SET NULL"), nullable=True, index=True,
+    )
+    # Examiner pause: while set, the clock is frozen at paused_at and the
+    # student cannot save answers. Resuming shifts started_at forward by the
+    # paused duration, so elapsed time = (paused_at or now) - started_at.
+    paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     answers: Mapped[list["AttemptAnswer"]] = relationship(cascade="all, delete-orphan")
 
 
@@ -240,4 +258,82 @@ class AdminAuditLog(Base):
     entity_id: Mapped[str | None] = mapped_column(String(80))
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     ip_address: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class SessionStatus(str, enum.Enum):
+    ACTIVE = "ACTIVE"
+    CLOSED = "CLOSED"
+
+
+class ParticipantStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    REMOVED = "REMOVED"
+
+
+class GrantScope(str, enum.Enum):
+    ALL = "ALL"
+    LEVEL = "LEVEL"
+    EXAM_TYPE = "EXAM_TYPE"
+    VARIANT = "VARIANT"
+
+
+class ExamSession(Base):
+    """One sitting of one published test, run by an examiner. Students who
+    enter `code` on that exact test wait as PENDING participants until the
+    examiner approves them; only then can they start their attempt."""
+    __tablename__ = "exam_sessions"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    examiner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    test_variant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("test_variants.id", ondelete="CASCADE"), index=True,
+    )
+    title: Mapped[str] = mapped_column(String(180), default="")
+    code: Mapped[str] = mapped_column(String(12), index=True)
+    status: Mapped[str] = mapped_column(String(16), default=SessionStatus.ACTIVE.value)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ExamSessionParticipant(Base):
+    __tablename__ = "exam_session_participants"
+    __table_args__ = (UniqueConstraint("session_id", "user_id"),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("exam_sessions.id", ondelete="CASCADE"), index=True,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(16), default=ParticipantStatus.PENDING.value)
+    attempt_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("attempts.id", ondelete="SET NULL"), nullable=True, index=True,
+    )
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Heartbeat from the student's exam screen — the examiner panel shows
+    # anyone not seen for a short while as "left the exam".
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ExamAccessGrant(Base):
+    """Standing permission for a student to open tests without a session
+    password: every test (ALL), one level (LEVEL), one exam type within a
+    level (EXAM_TYPE), or one specific test variant (VARIANT)."""
+    __tablename__ = "exam_access_grants"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    scope: Mapped[str] = mapped_column(String(16))
+    level_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("levels.id", ondelete="CASCADE"), nullable=True, index=True,
+    )
+    exam_type_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("exam_types.id", ondelete="CASCADE"), nullable=True, index=True,
+    )
+    test_variant_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("test_variants.id", ondelete="CASCADE"), nullable=True, index=True,
+    )
+    granted_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

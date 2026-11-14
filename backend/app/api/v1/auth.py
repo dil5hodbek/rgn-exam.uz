@@ -18,7 +18,7 @@ from app.core.database import SessionLocal, get_db
 from app.core.deps import current_user
 from app.core.security import (
     create_token, decode_token, hash_otp, hash_password, hash_value, new_otp, normalize_phone,
-    verify_password,
+    normalize_username, verify_password,
 )
 from app.models import Attempt, Role, TelegramLink, User
 from app.services.admin_media import save_avatar_upload
@@ -69,6 +69,7 @@ def user_output(user: User) -> UserOut:
         first_name=user.first_name,
         last_name=user.last_name,
         phone_number=user.phone_number,
+        username=user.username,
         role=user.role,
         theme=user.theme,
         avatar_url=user.avatar_url,
@@ -114,23 +115,33 @@ async def register(payload: RegisterRequest, response: Response, db: AsyncSessio
 
 @router.post("/login", response_model=AuthResponse)
 async def login(payload: LoginRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    # The one sign-in field takes either a phone number or a username an
+    # examiner assigned (anything that doesn't parse as a phone number).
+    identifier = payload.phone_number.strip()
+    username = ""
     try:
-        phone = normalize_phone(payload.phone_number)
+        phone = normalize_phone(identifier)
     except ValueError:
         phone = ""
-    # Brute-force guard: 10 failed tries per phone+IP within 15 minutes.
+        username = normalize_username(identifier) or ""
+    # Brute-force guard: 10 failed tries per phone/username+IP within 15 minutes.
     client_ip = request.client.host if request.client else "unknown"
-    fails_key = f"login-fails:{phone or 'invalid'}:{client_ip}"
+    fails_key = f"login-fails:{phone or (('u:' + username) if username else 'invalid')}:{client_ip}"
     async with redis_client() as redis:
         if int(await redis.get(fails_key) or 0) >= 10:
             raise HTTPException(429, "Too many failed attempts. Try again in 15 minutes.")
-    user = await db.scalar(select(User).where(User.phone_number == phone))
+    if phone:
+        user = await db.scalar(select(User).where(User.phone_number == phone))
+    elif username:
+        user = await db.scalar(select(User).where(User.username == username))
+    else:
+        user = None
     if not user or not verify_password(payload.password, user.password_hash) or not user.is_active:
         async with redis_client() as redis:
             fails = await redis.incr(fails_key)
             if fails == 1:
                 await redis.expire(fails_key, 900)
-        raise HTTPException(401, "Incorrect phone number or password.")
+        raise HTTPException(401, "Incorrect phone number, username or password.")
     async with redis_client() as redis:
         await redis.delete(fails_key)
     set_session(response, str(user.id))

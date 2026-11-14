@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, Award, Clock3, Target } from "lucide-react";
+import { ArrowRight, Award, Clock3, Hourglass, KeyRound, ShieldCheck, Target } from "lucide-react";
 import Link from "next/link";
+import { ExamPasswordDialog } from "@/components/exam/exam-password-dialog";
 import { Button } from "@/components/ui/button";
 import { LevelCard } from "@/components/dashboard/level-card";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { api } from "@/lib/api";
+import type { MySession } from "@/lib/examiner";
 import { useLang } from "@/lib/i18n";
 import { levelVisuals, type LevelCardData } from "@/lib/levels";
 import { formatDuration } from "@/lib/utils";
@@ -25,11 +27,14 @@ export default function Dashboard() {
   const [catalog, setCatalog] = useState<LevelApi[]>([]);
   const [attempts, setAttempts] = useState<Attempt[]>([]);
   const [error, setError] = useState("");
+  const [sessions, setSessions] = useState<MySession[]>([]);
+  const [askPassword, setAskPassword] = useState(false);
 
   useEffect(() => {
     Promise.all([api<Me>("/auth/me"), api<LevelApi[]>("/levels"), api<Attempt[]>("/me/attempts")])
       .then(([user, rows, history]) => { setMe(user); setCatalog(rows); setAttempts(history); })
       .catch((reason) => setError(reason instanceof Error ? reason.message : t("Bosh sahifani yuklab bo'lmadi.", "Unable to load dashboard.")));
+    api<MySession[]>("/exam-sessions/mine").then(setSessions).catch(() => setSessions([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -48,7 +53,9 @@ export default function Dashboard() {
   const average = solvedTests.length ? Math.round(solvedTests.reduce((sum, item) => sum + item.percentage, 0) / solvedTests.length) : 0;
   const totalTests = catalog.reduce((sum, item) => sum + item.published_tests, 0);
   const totalTime = attempts.reduce((sum, item) => sum + item.time_spent_seconds, 0);
-  const inProgress = attempts.find((item) => item.status === "IN_PROGRESS");
+  // Proctored attempts get their own "continue your exam" banner below.
+  const sessionAttemptIds = new Set(sessions.map((row) => row.attempt_id).filter(Boolean));
+  const inProgress = attempts.find((item) => item.status === "IN_PROGRESS" && !sessionAttemptIds.has(item.id));
   const completedByLevel = useMemo(() => solvedTests.reduce<Record<string, number>>((result, item) => {
     result[item.level_slug] = (result[item.level_slug] ?? 0) + 1;
     return result;
@@ -65,6 +72,15 @@ export default function Dashboard() {
 
   return <div className="student-dashboard mx-auto max-w-7xl px-4 py-7 sm:px-8 sm:py-9">
     <div><p className="text-sm font-bold text-brand">{t("Xush kelibsiz", "Welcome")}, {me?.first_name ?? t("o'quvchi", "Student")}</p><h1 className="mt-2 text-3xl font-extrabold tracking-tight text-ink sm:text-4xl">{t("Road Map testlaringiz tayyor", "Your Road Map tests are ready")}</h1><p className="mt-2 text-sm text-muted">{t("Darajangizni tanlang va o'qishni davom ettiring.", "Choose your level and continue learning.")}</p></div>
+    <div className="mt-5 flex flex-col items-start justify-between gap-4 rounded-3xl border border-line bg-canvas p-5 sm:flex-row sm:items-center">
+      <div className="flex items-center gap-4"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-brand/10 text-brand"><KeyRound className="h-5 w-5" /></span><div><p className="text-sm font-extrabold text-ink">{t("Imtihonga kirish", "Join an exam")}</p><p className="text-xs text-muted">{t("Examiner bergan parolni kiriting — imtihon o'zi ochiladi.", "Enter the password from your examiner — the right exam opens by itself.")}</p></div></div>
+      <Button className="w-full sm:w-auto" onClick={() => setAskPassword(true)}><KeyRound className="h-4 w-4" /> {t("Parolni kiritish", "Enter password")}</Button>
+    </div>
+    {sessions.map((row) => <Link key={row.session_id} href={`/exam-session/${row.session_id}`} className="mt-4 flex flex-col items-start justify-between gap-4 rounded-3xl border-2 border-teal-500/40 bg-teal-500/5 p-5 transition hover:bg-teal-500/10 sm:flex-row sm:items-center">
+      <div className="flex items-center gap-4"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-teal-500/15 text-teal-600">{row.status === "PENDING" ? <Hourglass className="h-5 w-5" /> : <ShieldCheck className="h-5 w-5" />}</span><div><p className="text-xs font-bold uppercase tracking-wider text-teal-700 dark:text-teal-300">{row.status === "PENDING" ? t("Examiner tasdiqlashi kutilmoqda", "Waiting for the examiner") : row.paused ? t("Examiner to'xtatgan", "Paused by the examiner") : t("Davom etayotgan imtihon", "Exam in progress")}</p><p className="mt-1 text-base font-extrabold text-ink">{row.title}</p><p className="text-xs text-muted">{row.level_name} · {row.exam_type_name}</p></div></div>
+      <span className="inline-flex items-center gap-2 text-sm font-bold text-teal-700 dark:text-teal-300">{row.status === "PENDING" ? t("Ochish", "Open") : t("Imtihonga qaytish", "Back to the exam")} <ArrowRight className="h-4 w-4" /></span>
+    </Link>)}
+    {askPassword && <ExamPasswordDialog onClose={() => setAskPassword(false)} />}
     {error && <p className="mt-5 rounded-xl bg-red-500/10 p-4 text-sm font-semibold text-red-600">{error}</p>}
     <section className="dashboard-stats mt-8 grid gap-4 sm:grid-cols-3">
       <StatCard label={t("Yechilgan testlar", "Tests solved")} value={String(solvedTests.length)} hint={t(`${totalTests} ta test mavjud`, `${totalTests} tests available`)} icon={Target} tone="bg-orange-500/10 text-orange-500" />

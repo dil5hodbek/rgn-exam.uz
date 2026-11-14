@@ -21,6 +21,14 @@ class TeacherCreate(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+class ExaminerCreate(BaseModel):
+    first_name: str = Field(min_length=1, max_length=80)
+    last_name: str = Field(min_length=1, max_length=80)
+    phone_number: str
+    username: str | None = Field(default=None, max_length=40)
+    password: str = Field(min_length=4, max_length=128)
+
+
 class QuestionInput(BaseModel):
     prompt: str = Field(min_length=1)
     options: list[Any] = Field(default_factory=list)

@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, Clock3, Play, Sparkles } from "lucide-react";
+import { ArrowLeft, Clock3, KeyRound, Lock, Play, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ExamPasswordDialog } from "@/components/exam/exam-password-dialog";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { useLang } from "@/lib/i18n";
@@ -15,6 +16,7 @@ type Variant = {
   time_limit_minutes: number;
   passing_percentage: number;
   retake_allowed: boolean;
+  locked: boolean;
 };
 
 export default function VariantsPage({ params }: { params: { level: string; examType: string } }) {
@@ -22,6 +24,8 @@ export default function VariantsPage({ params }: { params: { level: string; exam
   const [variants, setVariants] = useState<Variant[]>([]);
   const [error, setError] = useState("");
   const [startingRandom, setStartingRandom] = useState(false);
+  const [randomUnlocked, setRandomUnlocked] = useState(false);
+  const [passwordFor, setPasswordFor] = useState<Variant | null>(null);
   const router = useRouter();
   const pretty = (value: string) => value.split("-").map((part) => part[0].toUpperCase() + part.slice(1)).join(" ");
 
@@ -29,6 +33,9 @@ export default function VariantsPage({ params }: { params: { level: string; exam
     api<Variant[]>(`/levels/${params.level}/exam-types/${params.examType}/variants`)
       .then(setVariants)
       .catch((reason) => setError(reason instanceof Error ? reason.message : t("Testlarni yuklab bo'lmadi.", "Unable to load tests.")));
+    api<{ exam_types: Record<string, boolean> }>(`/levels/${params.level}/access`)
+      .then((access) => setRandomUnlocked(Boolean(access.exam_types[params.examType])))
+      .catch(() => setRandomUnlocked(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.level, params.examType]);
 
@@ -48,8 +55,8 @@ export default function VariantsPage({ params }: { params: { level: string; exam
 
   return <div className="dashboard-detail mx-auto max-w-6xl px-4 py-8 sm:px-8">
     <Link href={`/dashboard/${params.level}`} className="inline-flex items-center gap-2 text-sm font-bold text-muted hover:text-ink"><ArrowLeft className="h-4 w-4" /> {t(`${pretty(params.level)} ga qaytish`, `Back to ${pretty(params.level)}`)}</Link>
-    <div className="mt-7"><p className="text-xs font-bold uppercase tracking-[.08em] text-brand">{pretty(params.level)}</p><h1 className="mt-2 text-4xl font-extrabold tracking-tight text-ink">{pretty(params.examType)}</h1><p className="mt-3 text-muted">{t("Road Map testlaridan birini tanlang. Javoblar avtomatik saqlanadi.", "Choose a test from the Road Map package. Answers save automatically.")}</p></div>
-    {variants.length > 0 && <div className="relative mt-7 overflow-hidden rounded-3xl bg-gradient-to-br from-[#3a2a7a] via-[#5b3aa8] to-[#a445c9] p-6 text-white shadow-lift sm:p-8">
+    <div className="mt-7"><p className="text-xs font-bold uppercase tracking-[.08em] text-brand">{pretty(params.level)}</p><h1 className="mt-2 text-4xl font-extrabold tracking-tight text-ink">{pretty(params.examType)}</h1><p className="mt-3 text-muted">{t("Road Map testlaridan birini tanlang. Javoblar avtomatik saqlanadi.", "Choose a test from the Road Map package. Answers save automatically.")}</p>{variants.some((variant) => variant.locked) && <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-surface px-3 py-1 text-xs font-bold text-muted"><Lock className="h-3.5 w-3.5" /> {t("Qulflangan testlarga examiner bergan parol bilan kiriladi.", "Locked tests open with the password your examiner gives you.")}</p>}</div>
+    {variants.length > 0 && randomUnlocked && <div className="relative mt-7 overflow-hidden rounded-3xl bg-gradient-to-br from-[#3a2a7a] via-[#5b3aa8] to-[#a445c9] p-6 text-white shadow-lift sm:p-8">
       <div className="pointer-events-none absolute -right-10 -top-16 h-56 w-56 rounded-full bg-white/10 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-16 left-10 h-44 w-44 rounded-full bg-fuchsia-400/20 blur-3xl" />
       <div className="relative flex flex-col items-start justify-between gap-5 sm:flex-row sm:items-center">
@@ -65,11 +72,16 @@ export default function VariantsPage({ params }: { params: { level: string; exam
     {!variants.length && !error && <div className="mt-9 grid gap-4 sm:grid-cols-2">{[1, 2].map((item) => <div key={item} className="h-52 animate-pulse rounded-3xl bg-canvas" />)}</div>}
     <div className="mt-9 grid gap-4 sm:grid-cols-2">{variants.map((variant) =>
       <article key={variant.id} className="rounded-3xl border border-line bg-canvas p-6 shadow-sm">
-        <div className="flex items-center justify-between"><span className="text-xs font-bold uppercase tracking-wider text-muted">{t("Variant", "Variant")} {variant.variant_number}</span><span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-bold text-emerald-600">{t("Mavjud", "Available")}</span></div>
+        <div className="flex items-center justify-between"><span className="text-xs font-bold uppercase tracking-wider text-muted">{t("Variant", "Variant")} {variant.variant_number}</span>{variant.locked
+          ? <span className="inline-flex items-center gap-1 rounded-full bg-slate-500/10 px-2.5 py-1 text-xs font-bold text-slate-600"><Lock className="h-3.5 w-3.5" /> {t("Yopiq", "Locked")}</span>
+          : <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-bold text-emerald-600">{t("Mavjud", "Available")}</span>}</div>
         <h2 className="mt-5 text-xl font-extrabold text-ink">{variant.title}</h2>
         <div className="mt-3 flex items-center gap-4 text-xs font-semibold text-muted"><span className="flex items-center gap-1"><Clock3 className="h-4 w-4" /> {variant.time_limit_minutes} {t("daqiqa", "minutes")}</span><span>{t("O'tish bali", "Pass at")} {variant.passing_percentage}%</span></div>
-        <div className="mt-6 border-t border-line pt-5"><Link href={`/dashboard/${params.level}/${params.examType}/${variant.id}/attempt`}><Button className="w-full"><Play className="h-4 w-4" /> {t("Testni boshlash", "Start Test")}</Button></Link></div>
+        <div className="mt-6 border-t border-line pt-5">{variant.locked
+          ? <Button variant="secondary" className="w-full" onClick={() => setPasswordFor(variant)}><KeyRound className="h-4 w-4" /> {t("Parol bilan kirish", "Enter with password")}</Button>
+          : <Link href={`/dashboard/${params.level}/${params.examType}/${variant.id}/attempt`}><Button className="w-full"><Play className="h-4 w-4" /> {t("Testni boshlash", "Start Test")}</Button></Link>}</div>
       </article>
     )}</div>
+    {passwordFor && <ExamPasswordDialog testVariantId={passwordFor.id} testTitle={passwordFor.title} onClose={() => setPasswordFor(null)} />}
   </div>;
 }
