@@ -1073,7 +1073,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     {proctorOverlay}
     {lockdownOverlay}
     {dialog}
-    <div className="min-h-screen bg-surface p-4 sm:p-8"><div className="mx-auto max-w-5xl rounded-3xl border border-line bg-canvas p-6 shadow-soft sm:p-9">
+    <div className="exam-screen min-h-screen bg-surface p-4 sm:p-8"><div className="mx-auto max-w-5xl rounded-3xl border border-line bg-canvas p-6 shadow-soft sm:p-9">
     <div className="flex items-center justify-between gap-3">
       <span className="grid h-12 w-12 place-items-center rounded-2xl bg-orange-500/10 text-orange-500"><Check /></span>
       {/* Time keeps running on the review screen — show it here too. */}
@@ -1105,7 +1105,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     {dialog}
     {proctorOverlay}
     {lockdownOverlay}
-    <div className="min-h-[100dvh] bg-surface xl:flex xl:h-[100dvh] xl:flex-col xl:overflow-hidden">
+    <div className="exam-screen min-h-[100dvh] bg-surface xl:flex xl:h-[100dvh] xl:flex-col xl:overflow-hidden">
     <header className="sticky top-0 z-30 border-b border-line bg-canvas/95 backdrop-blur">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5 xl:px-6">
         <div className="flex min-w-0 max-w-full flex-1 items-center gap-2 sm:flex-none sm:gap-3">
@@ -1323,9 +1323,9 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
                     : hasAnswer(answers[question.id]) ? "border-orange-200 bg-orange-500/[.025]"
                     : "border-line bg-canvas hover:border-orange-200/70 hover:shadow-sm",
               )}>
-              <div className="flex items-start gap-3.5">
+              <div className="flex items-start gap-2.5 sm:gap-3.5">
                 <span className={cn(
-                  "grid h-9 w-9 shrink-0 place-items-center rounded-xl text-sm font-extrabold transition-colors",
+                  "grid h-8 w-8 shrink-0 place-items-center rounded-lg text-sm font-extrabold transition-colors sm:h-9 sm:w-9 sm:rounded-xl",
                   result === true ? "bg-emerald-500 text-white" : result === false ? "bg-red-500 text-white"
                     : checked ? "bg-amber-500 text-white"
                     : hasAnswer(answers[question.id]) ? "bg-brand text-white"
@@ -1335,7 +1335,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
                   "shrink-0 rounded-lg p-2 transition",
                   flagged.includes(question.id)
                     ? "bg-orange-500/10 text-orange-500"
-                    : "text-muted/50 hover:bg-orange-500/10 hover:text-orange-500 sm:opacity-0 sm:group-hover/card:opacity-100",
+                    : "text-muted/50 hover:bg-orange-500/10 hover:text-orange-500 sm:[@media(hover:hover)]:opacity-0 sm:group-hover/card:opacity-100",
                 )}><Bookmark className={cn("h-4 w-4", flagged.includes(question.id) && "fill-current")} /></button>}</div>{question.is_example && <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-sky-500/10 px-3 py-1 text-xs font-bold text-sky-600"><CheckCircle2 className="h-3.5 w-3.5" /> {t("Namuna — baholanmaydi", "Example — not scored")}</p>}{renderAnswer(exercise, question)}{checked && result === null && <p className="mt-3 text-xs font-bold text-brand">🤖 {t("Testni topshirganingizdan keyin AI buni baholaydi.", "The AI will grade this after you submit the test.")}</p>}</div>
               </div>
             </article>;
