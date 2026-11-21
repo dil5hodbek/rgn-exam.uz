@@ -92,6 +92,33 @@ export default function SessionMonitor({ params }: { params: { sessionId: string
     ? new Date(value).toLocaleTimeString(lang === "uz" ? "uz-UZ" : "en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
     : "—";
 
+  // Shared by the desktop table and the phone cards.
+  const connectionInfo = (row: Participant, running: boolean) => <>
+    {running ? (row.online
+      ? <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600"><Wifi className="h-3.5 w-3.5" /> {t("Imtihonda", "On exam")}</span>
+      : <span className="inline-flex items-center gap-1.5 text-xs font-bold text-red-600" title={lastSeen(row.last_seen_at)}><WifiOff className="h-3.5 w-3.5" /> {t("Chiqib ketgan", "Left")} · {lastSeen(row.last_seen_at)}</span>)
+      : <span className="text-xs text-muted">—</span>}
+    {row.attempt_id && row.exam_mode !== false && <span
+      title={t("Imtihon rejimidan chiqishlar (to'liq ekrandan chiqish yoki boshqa oynaga o'tish). Limitga yetganda imtihon avtomatik topshiriladi.", "Times the student left exam mode (fullscreen or switched window). Reaching the limit submits the exam automatically.")}
+      className={cn("mt-1 flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold", (row.violations ?? 0) > 0 ? "bg-red-500/10 text-red-600 dark:text-red-400" : "bg-surface text-muted")}
+    ><AlertTriangle className="h-3 w-3" /> {t("Chiqishlar", "Leaves")} {row.violations ?? 0}/{row.max_violations ?? 3}</span>}
+  </>;
+  const rowActions = (row: Participant, running: boolean) => <>
+
+                {row.state === "IN_PROGRESS" && <Button size="sm" variant="secondary" disabled={busy === `${row.id}:pause`} onClick={() => participantAct(row, "pause")}><Pause className="h-4 w-4" /> {t("To'xtatish", "Pause")}</Button>}
+                {row.state === "PAUSED" && <Button size="sm" className="!bg-emerald-600 hover:!bg-emerald-700" disabled={busy === `${row.id}:resume`} onClick={() => participantAct(row, "resume")}><Play className="h-4 w-4" /> {t("Davom ettirish", "Resume")}</Button>}
+                {running && <Button size="sm" variant="secondary" title={t("Hozirgi javoblar bilan topshirish", "Submit with current answers")} onClick={() => confirm({
+                  title: t(`${row.first_name}ning imtihoni topshirilsinmi?`, `Submit ${row.first_name}'s exam?`),
+                  description: t("Hozirgacha saqlangan javoblar bilan baholanadi.", "It is graded with the answers saved so far."),
+                  confirmLabel: t("Topshirish", "Submit"), onConfirm: () => participantAct(row, "submit"),
+                })}><Send className="h-4 w-4" /></Button>}
+                {row.state !== "SUBMITTED" && <Button size="sm" variant="ghost" title={t("Imtihondan chiqarish", "Remove from exam")} onClick={() => confirm({
+                  title: t(`${row.first_name} imtihondan chiqarilsinmi?`, `Remove ${row.first_name}?`),
+                  description: t("O'quvchi bu imtihonga boshqa kira olmaydi.", "The student can't come back into this exam."),
+                  confirmLabel: t("Chiqarish", "Remove"), variant: "danger", onConfirm: () => participantAct(row, "remove"),
+                })}><UserX className="h-4 w-4" /></Button>}
+  </>;
+
   const cardRow = studentCard ? session.participants.find((row) => row.id === studentCard) : undefined;
   return <div className="mx-auto max-w-6xl p-4 sm:p-8">
     {dialog}
@@ -167,7 +194,32 @@ export default function SessionMonitor({ params }: { params: { sessionId: string
 
     <section className="mt-7">
       <h2 className="text-base font-extrabold text-ink">{t("O'quvchilar", "Students")} <span className="text-muted">({seated.length})</span></h2>
-      <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-canvas">
+      {/* Phones: one card per student, every action within thumb reach. */}
+      <div className="mt-3 space-y-3 md:hidden">{seated.length ? seated.map((row) => {
+        const remaining = liveRemaining(row);
+        const share = session.total_questions ? Math.min(100, Math.round(row.answered_count / session.total_questions * 100)) : 0;
+        const running = ["IN_PROGRESS", "PAUSED", "TIME_UP"].includes(row.state);
+        return <article key={row.id} className={cn("rounded-2xl border bg-canvas p-4", running && !row.online ? "border-red-500/40 bg-red-500/5" : "border-line")}>
+          <div className="flex items-start justify-between gap-3">
+            <button type="button" onClick={() => setStudentCard(row.id)} className="min-w-0 text-left">
+              <p className="truncate font-extrabold text-ink">{row.first_name} {row.last_name}</p>
+              <p className="truncate text-xs text-muted">{row.username ? `@${row.username}` : row.phone_number}</p>
+              {row.exam_mode === false && <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300"><ShieldOff className="h-3 w-3" /> {t("Imtihon rejimi o'chiq", "Exam mode off")}</span>}
+            </button>
+            <div className="shrink-0 text-right">
+              <span className={cn("rounded-full px-2.5 py-1 text-xs font-bold", STATE_STYLES[row.state])}>{stateLabel(row.state, t)}</span>
+              {row.attempt_id && row.state !== "SUBMITTED" && <p className={cn("mt-2 font-mono text-lg font-extrabold", remaining <= 300 ? "text-red-600" : "text-ink")}>{clock(remaining)}</p>}
+              {row.state === "SUBMITTED" && row.percentage !== null && <p className="mt-2 text-lg font-extrabold text-ink">{Math.round(row.percentage)}%</p>}
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap items-end justify-between gap-2">
+            <div>{connectionInfo(row, running)}</div>
+            {row.attempt_id && <div className="flex items-center gap-2"><div className="h-2 w-20 overflow-hidden rounded-full bg-surface"><div className="h-full rounded-full bg-teal-500" style={{ width: `${share}%` }} /></div><span className="text-xs font-bold text-muted">{row.answered_count}/{session.total_questions}</span></div>}
+          </div>
+          {row.state !== "SUBMITTED" && <div className="mt-3 flex flex-wrap gap-2 border-t border-line pt-3 [&>button]:min-h-[40px]">{rowActions(row, running)}</div>}
+        </article>;
+      }) : <p className="rounded-2xl border border-line bg-canvas p-8 text-center text-sm text-muted">{active ? t("Hali hech kim kirmadi. O'quvchilar testni ochib, yuqoridagi parolni kiritadi.", "Nobody yet. Students open the test and enter the password above.") : t("Hech kim qatnashmadi.", "Nobody took part.")}</p>}</div>
+      <div className="mt-3 hidden overflow-x-auto rounded-2xl border border-line bg-canvas md:block">
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="bg-surface text-[11px] font-bold uppercase tracking-wider text-muted"><tr>
             <th className="px-4 py-3">{t("O'quvchi", "Student")}</th><th className="px-4 py-3">{t("Holat", "Status")}</th><th className="px-4 py-3">{t("Aloqa", "Connection")}</th><th className="px-4 py-3">{t("Qolgan vaqt", "Time left")}</th><th className="px-4 py-3">{t("Javoblar", "Answers")}</th><th className="px-4 py-3 text-right">{t("Amallar", "Actions")}</th>
@@ -183,30 +235,10 @@ export default function SessionMonitor({ params }: { params: { sessionId: string
                 {row.exam_mode === false && <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300"><ShieldOff className="h-3 w-3" /> {t("Imtihon rejimi o'chiq", "Exam mode off")}</span>}
               </button></td>
               <td className="px-4 py-3"><span className={cn("rounded-full px-2.5 py-1 text-xs font-bold", STATE_STYLES[row.state])}>{stateLabel(row.state, t)}</span>{row.state === "SUBMITTED" && row.percentage !== null && <span className="ml-2 text-xs font-bold text-ink">{Math.round(row.percentage)}%</span>}</td>
-              <td className="px-4 py-3">{running ? (row.online
-                ? <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600"><Wifi className="h-3.5 w-3.5" /> {t("Imtihonda", "On exam")}</span>
-                : <span className="inline-flex items-center gap-1.5 text-xs font-bold text-red-600" title={lastSeen(row.last_seen_at)}><WifiOff className="h-3.5 w-3.5" /> {t("Chiqib ketgan", "Left")} · {lastSeen(row.last_seen_at)}</span>)
-                : <span className="text-xs text-muted">—</span>}
-                {row.attempt_id && row.exam_mode !== false && <span
-                  title={t("Imtihon rejimidan chiqishlar (to'liq ekrandan chiqish yoki boshqa oynaga o'tish). Limitga yetganda imtihon avtomatik topshiriladi.", "Times the student left exam mode (fullscreen or switched window). Reaching the limit submits the exam automatically.")}
-                  className={cn("mt-1 flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold", (row.violations ?? 0) > 0 ? "bg-red-500/10 text-red-600 dark:text-red-400" : "bg-surface text-muted")}
-                ><AlertTriangle className="h-3 w-3" /> {t("Chiqishlar", "Leaves")} {row.violations ?? 0}/{row.max_violations ?? 3}</span>}</td>
+              <td className="px-4 py-3">{connectionInfo(row, running)}</td>
               <td className="px-4 py-3">{row.attempt_id ? <span className={cn("font-mono text-base font-extrabold", remaining <= 300 && row.state !== "SUBMITTED" ? "text-red-600" : "text-ink")}>{row.state === "SUBMITTED" ? "—" : clock(remaining)}</span> : <span className="text-xs text-muted">{t("Boshlamagan", "Not started")}</span>}</td>
               <td className="px-4 py-3"><div className="flex items-center gap-2"><div className="h-2 w-24 overflow-hidden rounded-full bg-surface"><div className="h-full rounded-full bg-teal-500" style={{ width: `${share}%` }} /></div><span className="text-xs font-bold text-muted">{row.answered_count}/{session.total_questions}</span></div></td>
-              <td className="px-4 py-3"><div className="flex justify-end gap-1.5">
-                {row.state === "IN_PROGRESS" && <Button size="sm" variant="secondary" disabled={busy === `${row.id}:pause`} onClick={() => participantAct(row, "pause")}><Pause className="h-4 w-4" /> {t("To'xtatish", "Pause")}</Button>}
-                {row.state === "PAUSED" && <Button size="sm" className="!bg-emerald-600 hover:!bg-emerald-700" disabled={busy === `${row.id}:resume`} onClick={() => participantAct(row, "resume")}><Play className="h-4 w-4" /> {t("Davom ettirish", "Resume")}</Button>}
-                {running && <Button size="sm" variant="secondary" title={t("Hozirgi javoblar bilan topshirish", "Submit with current answers")} onClick={() => confirm({
-                  title: t(`${row.first_name}ning imtihoni topshirilsinmi?`, `Submit ${row.first_name}'s exam?`),
-                  description: t("Hozirgacha saqlangan javoblar bilan baholanadi.", "It is graded with the answers saved so far."),
-                  confirmLabel: t("Topshirish", "Submit"), onConfirm: () => participantAct(row, "submit"),
-                })}><Send className="h-4 w-4" /></Button>}
-                {row.state !== "SUBMITTED" && <Button size="sm" variant="ghost" title={t("Imtihondan chiqarish", "Remove from exam")} onClick={() => confirm({
-                  title: t(`${row.first_name} imtihondan chiqarilsinmi?`, `Remove ${row.first_name}?`),
-                  description: t("O'quvchi bu imtihonga boshqa kira olmaydi.", "The student can't come back into this exam."),
-                  confirmLabel: t("Chiqarish", "Remove"), variant: "danger", onConfirm: () => participantAct(row, "remove"),
-                })}><UserX className="h-4 w-4" /></Button>}
-              </div></td>
+              <td className="px-4 py-3"><div className="flex justify-end gap-1.5">{rowActions(row, running)}</div></td>
             </tr>;
           }) : <tr><td colSpan={6} className="p-10 text-center text-sm text-muted">{active ? t("Hali hech kim kirmadi. O'quvchilar testni ochib, yuqoridagi parolni kiritadi.", "Nobody yet. Students open the test and enter the password above.") : t("Hech kim qatnashmadi.", "Nobody took part.")}</td></tr>}</tbody>
         </table>

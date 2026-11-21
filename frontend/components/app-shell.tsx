@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./student-responsive.css";
 import { Logo } from "./logo";
 import { LangToggle } from "./lang-toggle";
@@ -13,6 +13,15 @@ import { ThemeToggle } from "./theme-toggle";
 import { useLang } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { api, ApiError, mediaUrl } from "@/lib/api";
+
+const UZ_DAYS = ["Yakshanba", "Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba"];
+const UZ_MONTHS = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"];
+// Browsers render the uz-UZ locale as "M11 15, Sun" — spell the date out instead.
+function formatToday(lang: string, date = new Date()) {
+  return lang === "uz"
+    ? `${UZ_DAYS[date.getDay()]}, ${date.getDate()}-${UZ_MONTHS[date.getMonth()]}`
+    : date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+}
 
 const studentNav = [
   { href: "/dashboard", label: ["Bosh sahifa", "Dashboard"], icon: LayoutDashboard },
@@ -26,6 +35,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [initials, setInitials] = useState("ME");
+  const [fullName, setFullName] = useState("");
+  // Account menu behind the avatar — on phones the only one-tap way to sign out.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (event: Event) => { if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false); };
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setMenuOpen(false); };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", onKey); };
+  }, [menuOpen]);
+  useEffect(() => { setMenuOpen(false); }, [pathname]);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isExaminer, setIsExaminer] = useState(false);
@@ -33,10 +55,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [signingOut, setSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState("");
   useEffect(() => {
-    setToday(new Date().toLocaleDateString(lang === "uz" ? "uz-UZ" : "en-US", { weekday: "long", month: "long", day: "numeric" }));
+    setToday(formatToday(lang));
     api<{ first_name: string; last_name: string; role: string; avatar_url: string | null }>("/auth/me")
       .then((user) => {
         setInitials(`${user.first_name[0] ?? ""}${user.last_name[0] ?? ""}`.toUpperCase());
+        setFullName(`${user.first_name} ${user.last_name}`.trim());
         setAvatarUrl(user.avatar_url);
         setIsAdmin(["ADMIN", "SUPER_ADMIN"].includes(user.role));
         setIsExaminer(user.role === "EXAMINER");
@@ -97,12 +120,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Link href="/saved-questions" title={t("Saqlangan savollar", "Saved questions")} aria-label={t("Saqlangan savollar", "Saved questions")} className={cn("grid h-10 w-10 place-items-center rounded-xl transition", pathname.startsWith("/saved-questions") ? "bg-orange-500/10 text-brand" : "text-muted hover:bg-surface")}><Bookmark className="h-4 w-4" /></Link>
           <LangToggle />
           <ThemeToggle />
-          <div className="ml-1 h-9 w-9 rounded-full bg-gradient-to-br from-amber-300 to-orange-500 p-0.5">
-            {avatarUrl ? (
-              <Image src={mediaUrl(avatarUrl)} alt="" width={36} height={36} className="h-full w-full rounded-full object-cover" unoptimized />
-            ) : (
-              <div className="grid h-full w-full place-items-center rounded-full bg-canvas text-xs font-bold text-ink">{initials}</div>
-            )}
+          <div ref={menuRef} className="relative ml-1">
+            <button type="button" onClick={() => setMenuOpen((open) => !open)} aria-haspopup="menu" aria-expanded={menuOpen}
+              aria-label={t("Hisob menyusi", "Account menu")} className="block h-9 w-9 rounded-full bg-gradient-to-br from-amber-300 to-orange-500 p-0.5 transition active:scale-95">
+              {avatarUrl ? (
+                <Image src={mediaUrl(avatarUrl)} alt="" width={36} height={36} className="h-full w-full rounded-full object-cover" unoptimized />
+              ) : (
+                <span className="grid h-full w-full place-items-center rounded-full bg-canvas text-xs font-bold text-ink">{initials}</span>
+              )}
+            </button>
+            {menuOpen && <div role="menu" className="absolute right-0 top-12 z-50 w-56 overflow-hidden rounded-2xl border border-line bg-canvas p-1.5 shadow-lift">
+              {fullName && <p className="truncate px-3 pb-2 pt-1.5 text-sm font-extrabold text-ink">{fullName}</p>}
+              <Link role="menuitem" href="/settings" className="flex min-h-[44px] items-center gap-3 rounded-xl px-3 text-sm font-semibold text-ink hover:bg-surface"><Settings className="h-4 w-4 text-muted" />{t("Sozlamalar", "Settings")}</Link>
+              <button role="menuitem" type="button" onClick={signOut} disabled={signingOut} className="flex min-h-[44px] w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-semibold text-red-600 hover:bg-red-500/10 disabled:opacity-60">
+                <LogOut className="h-4 w-4" />{signingOut ? t("Chiqilmoqda…", "Signing out…") : t("Hisobdan chiqish", "Sign out")}
+              </button>
+              {signOutError && <p role="alert" className="px-3 pb-2 text-xs text-red-600">{signOutError}</p>}
+            </div>}
           </div>
         </div>
       </header>

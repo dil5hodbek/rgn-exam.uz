@@ -120,6 +120,34 @@ export function useExamLockdown({ active, initialViolations, onViolation }: {
     };
   }, [active, mark]);
 
+  // Phones: keep the screen awake during the exam. Without this a phone that
+  // auto-locks while the student reads a long passage hides the page, which
+  // would count as leaving the exam. Re-acquired whenever the page is shown
+  // again (the browser drops the lock when the page is hidden).
+  useEffect(() => {
+    if (!active) return;
+    type Sentinel = { release: () => Promise<void> };
+    const wakeLock = (navigator as Navigator & { wakeLock?: { request: (type: "screen") => Promise<Sentinel> } }).wakeLock;
+    if (!wakeLock) return;
+    let sentinel: Sentinel | null = null;
+    let stopped = false;
+    const acquire = () => {
+      if (stopped || document.hidden) return;
+      wakeLock.request("screen").then((lock) => {
+        if (stopped) { lock.release().catch(() => {}); return; }
+        sentinel = lock;
+      }).catch(() => { /* battery saver or unsupported — fine */ });
+    };
+    const onVisible = () => { if (!document.hidden) acquire(); };
+    acquire();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      stopped = true;
+      document.removeEventListener("visibilitychange", onVisible);
+      sentinel?.release().catch(() => {});
+    };
+  }, [active]);
+
   /** "Back to the exam" — browsers only allow fullscreen from a click. */
   const resume = useCallback(async () => {
     // If the browser refuses fullscreen, don't trap the student: carry on

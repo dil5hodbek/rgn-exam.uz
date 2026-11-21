@@ -442,6 +442,12 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     router.push("/dashboard");
   }
 
+  function leaveExam() {
+    if (!proctored) { saveAndExit(); return; }
+    setLeaving(true);
+    saveAnswers().catch(() => {}).finally(() => router.push("/dashboard"));
+  }
+
   // Wipe everything and start the test from scratch: answers, exercise locks,
   // results and the timer all reset.
   function restartAttempt() {
@@ -1042,7 +1048,10 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
           ? (lockdown.away === "start" ? t("To'liq ekranda davom etish", "Continue in fullscreen") : t("To'liq ekranga qaytish", "Back to fullscreen"))
           : t("Imtihonga qaytish", "Back to the exam")}
       </Button>
-      <p className="mt-4 text-xs text-muted">{t("Qolgan vaqt", "Time left")}: <b className="font-mono text-ink">{time}</b> — {t("vaqt to'xtamaydi", "the clock keeps running")}</p>
+      <button type="button" onClick={leaveExam} className="mt-3 inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl px-4 text-sm font-bold text-muted transition hover:text-ink">
+        <LogOut className="h-4 w-4" />{proctored ? t("Imtihondan chiqish", "Leave the exam") : t("Saqlab chiqish", "Save & exit")}
+      </button>
+      <p className="mt-2 text-xs text-muted">{t("Qolgan vaqt", "Time left")}: <b className="font-mono text-ink">{time}</b> — {t("vaqt to'xtamaydi", "the clock keeps running")}</p>
     </div>
   </div>;
   const lockdownPill = <span
@@ -1065,7 +1074,13 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     {lockdownOverlay}
     {dialog}
     <div className="min-h-screen bg-surface p-4 sm:p-8"><div className="mx-auto max-w-5xl rounded-3xl border border-line bg-canvas p-6 shadow-soft sm:p-9">
-    <span className="grid h-12 w-12 place-items-center rounded-2xl bg-orange-500/10 text-orange-500"><Check /></span>
+    <div className="flex items-center justify-between gap-3">
+      <span className="grid h-12 w-12 place-items-center rounded-2xl bg-orange-500/10 text-orange-500"><Check /></span>
+      {/* Time keeps running on the review screen — show it here too. */}
+      <ExamCountdown base={clockBase} paused={paused}>{(left, text) =>
+        <span className={cn("flex items-center gap-2 rounded-xl bg-surface px-3 py-2 font-mono text-sm font-bold", left < 300 ? "text-red-500" : "text-ink")}><Clock3 className="h-4 w-4 text-brand" />{text}</span>}
+      </ExamCountdown>
+    </div>
     <h1 className="mt-6 text-3xl font-extrabold text-ink">{t("Topshirishga tayyormisiz?", "Ready to submit?")}</h1>
     <p className="mt-3 text-muted">{t(`${scoredQuestions.length} ta savoldan ${answered} tasiga javob berildi. Ko'rib chiqish uchun mashqni oching.`, `${answered} of ${scoredQuestions.length} questions answered. Open an exercise to review it.`)}</p>
     <div className="mt-7 space-y-5">{test.sections.map((section) => {
@@ -1074,7 +1089,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
         const itemQuestions = scorableQuestions(item.questions);
         const done = itemQuestions.filter((question) => hasAnswer(answers[question.id])).length;
         const unlocked = exerciseUnlocked(index);
-        return <button key={item.id} disabled={!unlocked} onClick={() => { goToExercise(index); setShowReview(false); }} className={cn("rounded-xl border p-4 text-left disabled:cursor-not-allowed disabled:opacity-45", done === itemQuestions.length ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10" : "border-orange-300 bg-orange-50 text-orange-700 dark:bg-orange-500/10")}><span className="flex items-center gap-2 text-sm font-extrabold">{!unlocked && <Lock className="h-3.5 w-3.5" />}{item.title}</span><span className="mt-1 block text-xs">{done}/{itemQuestions.length} answered</span></button>;
+        return <button key={item.id} disabled={!unlocked} onClick={() => { goToExercise(index); setShowReview(false); }} className={cn("rounded-xl border p-4 text-left disabled:cursor-not-allowed disabled:opacity-45", done === itemQuestions.length ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10" : "border-orange-300 bg-orange-50 text-orange-700 dark:bg-orange-500/10")}><span className="flex items-center gap-2 text-sm font-extrabold">{!unlocked && <Lock className="h-3.5 w-3.5" />}{item.title}</span><span className="mt-1 block text-xs">{t(`${done}/${itemQuestions.length} ta javob berildi`, `${done}/${itemQuestions.length} answered`)}</span></button>;
       })}</div></section>;
     })}</div>
     {error && <p className="mt-5 text-sm font-semibold text-red-600">{error}</p>}
@@ -1093,7 +1108,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     <div className="min-h-[100dvh] bg-surface xl:flex xl:h-[100dvh] xl:flex-col xl:overflow-hidden">
     <header className="sticky top-0 z-30 border-b border-line bg-canvas/95 backdrop-blur">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5 xl:px-6">
-        <div className="flex min-w-0 max-w-full items-center gap-3">
+        <div className="flex min-w-0 max-w-full flex-1 items-center gap-2 sm:flex-none sm:gap-3">
           <button
             // A proctored attempt's history entry is the waiting room, which
             // would bounce straight back here — go to the dashboard instead.
@@ -1102,28 +1117,39 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
             title={t("Orqaga", "Back")}
             className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line text-muted transition hover:bg-surface hover:text-ink"
           ><ArrowLeft className="h-4 w-4" /></button>
-          <div className="min-w-0">
-            <p className="max-w-[240px] truncate text-base font-extrabold text-ink sm:max-w-none sm:text-lg">{test.title}</p>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[15px] font-extrabold text-ink sm:text-lg">{test.title}</p>
+          </div>
+          {/* Phones: timer, exam-mode badge and exit sit on the title row so the
+              sticky header stays short and the questions get the screen. */}
+          <div className="flex shrink-0 items-center gap-1.5 sm:hidden">
+            <ExamCountdown base={clockBase} paused={paused} onExpire={() => { if (timerStarted) setShowReview(true); }}>{(left, text) =>
+              <span className={cn("flex items-center gap-1 rounded-lg bg-surface px-2 py-1.5 font-mono text-[13px] font-bold", left < 300 ? "text-red-500" : "text-ink")}><Clock3 className="h-3.5 w-3.5 text-brand" />{text}</span>}
+            </ExamCountdown>
+            {examMode && <span title={t("Imtihon rejimi", "Exam mode")} className={cn("flex items-center gap-1 rounded-lg px-1.5 py-1.5 text-[11px] font-bold", lockdown.violations ? "bg-red-500/10 text-red-600 dark:text-red-400" : "bg-surface text-muted")}><Lock className="h-3.5 w-3.5" />{lockdown.violations ? `${lockdown.violations}/${maxViolations}` : null}</span>}
+            {proctored
+              ? <span title={t("Examiner nazoratidagi imtihon", "Examiner-proctored exam")} className="grid h-8 w-8 place-items-center rounded-lg bg-teal-500/10 text-teal-700 dark:text-teal-300"><ShieldAlert className="h-4 w-4" /></span>
+              : <button type="button" onClick={saveAndExit} aria-label={t("Saqlab chiqish", "Save & exit")} title={t("Saqlab chiqish", "Save & exit")} className="grid h-8 w-8 place-items-center rounded-lg border border-line bg-surface text-ink active:scale-95"><LogOut className="h-4 w-4" /></button>}
           </div>
         </div>
-        <div className="flex w-full min-w-0 flex-wrap items-center justify-end gap-2.5 xl:w-auto">
+        <div className={cn("w-full min-w-0 flex-wrap items-center justify-end gap-2.5 xl:w-auto", exercise.media?.mime_type.startsWith("audio/") ? "flex" : "hidden sm:flex")}>
           {exercise.media?.mime_type.startsWith("audio/") && <>
-            <AudioPlayer className="w-full min-w-0 sm:w-[22rem] sm:shrink-0" src={mediaUrl(exercise.media.url)} autoStartDelay={5000} onPlay={(media) => guardMediaPlay(exercise, media)} onEnded={() => recordMediaPlay(exercise)} />
-            {exercise.audio_replay_limit && <span className="hidden shrink-0 rounded-lg bg-surface px-2 py-2 text-[10px] font-bold text-muted xl:block">{Math.max(0, exercise.audio_replay_limit - (mediaPlays[exercise.id] ?? 0))} {t("ta qoldi", "left")}</span>}
+            <AudioPlayer className="min-w-0 flex-1 sm:w-[22rem] sm:flex-none sm:shrink-0" src={mediaUrl(exercise.media.url)} autoStartDelay={5000} onPlay={(media) => guardMediaPlay(exercise, media)} onEnded={() => recordMediaPlay(exercise)} />
+            {exercise.audio_replay_limit && <span title={t("Qolgan tinglashlar", "Plays left")} className="shrink-0 rounded-lg bg-surface px-2 py-2 text-[10px] font-bold text-muted">{Math.max(0, exercise.audio_replay_limit - (mediaPlays[exercise.id] ?? 0))} {t("ta qoldi", "left")}</span>}
           </>}
           <span className="hidden shrink-0 rounded-xl bg-surface px-2.5 py-2 text-xs font-bold text-muted sm:block">{exerciseAnswered}/{exerciseQuestions.length}</span>
           <span className={cn("hidden shrink-0 text-xs font-semibold xl:block", saveState === "error" ? "text-red-500" : "text-muted")}>{saveState === "saving" ? t("Saqlanmoqda…", "Saving…") : saveState === "saved" ? t("Barcha javoblar saqlandi", "All answers saved") : saveState === "error" ? t("⚠ Saqlanmadi — qayta urinilmoqda…", "⚠ Not saved — retrying…") : t("Avtosaqlash yoqilgan", "Autosave enabled")}</span>
           <ExamCountdown base={clockBase} paused={paused} onExpire={() => { if (timerStarted) setShowReview(true); }}>{(left, text) =>
-            <span className={cn("flex shrink-0 items-center gap-2 rounded-xl bg-surface px-3 py-2 font-mono text-sm font-bold", left < 300 ? "text-red-500" : "text-ink")}><Clock3 className="h-4 w-4 text-brand" />{text}</span>}
+            <span className={cn("hidden shrink-0 items-center gap-2 rounded-xl bg-surface px-3 py-2 font-mono text-sm font-bold sm:flex", left < 300 ? "text-red-500" : "text-ink")}><Clock3 className="h-4 w-4 text-brand" />{text}</span>}
           </ExamCountdown>
-          {examMode && lockdownPill}
+          {examMode && <span className="hidden sm:contents">{lockdownPill}</span>}
           {proctored
-            ? <span title={t("Examiner nazoratidagi imtihon", "Examiner-proctored exam")} className="flex shrink-0 items-center gap-1.5 rounded-xl bg-teal-500/10 px-3 py-2 text-xs font-bold text-teal-700 dark:text-teal-300"><ShieldAlert className="h-4 w-4" /><span className="hidden md:inline">{t("Nazoratdagi imtihon", "Proctored")}</span></span>
+            ? <span title={t("Examiner nazoratidagi imtihon", "Examiner-proctored exam")} className="hidden shrink-0 sm:flex items-center gap-1.5 rounded-xl bg-teal-500/10 px-3 py-2 text-xs font-bold text-teal-700 dark:text-teal-300"><ShieldAlert className="h-4 w-4" /><span className="hidden md:inline">{t("Nazoratdagi imtihon", "Proctored")}</span></span>
             : <button
             type="button"
             onClick={saveAndExit}
             title={t("Hammasini saqlab, keyin davom ettirish", "Save everything and continue later")}
-            className="flex shrink-0 items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-xs font-bold text-ink transition hover:border-brand hover:text-brand"
+            className="hidden shrink-0 items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-xs font-bold text-ink transition hover:border-brand hover:text-brand sm:flex"
           ><LogOut className="h-4 w-4" /><span className="hidden md:inline">{t("Saqlab chiqish", "Save & exit")}</span></button>}
         </div>
       </div>
