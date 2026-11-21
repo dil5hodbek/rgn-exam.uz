@@ -91,7 +91,7 @@ export function AudioPlayer({
   const VolumeIcon = muted || volume === 0 ? VolumeX : volume <= 0.55 ? Volume1 : Volume2;
 
   return (
-    <div className={cn("flex items-center gap-2.5 rounded-xl border border-line bg-surface px-2.5 py-1.5 shadow-sm", className)}>
+    <div className={cn("flex min-w-0 items-center gap-2.5 rounded-xl border border-line bg-surface py-1.5 pl-2 pr-3 shadow-sm", className)}>
       <audio
         ref={audioRef}
         src={src}
@@ -128,13 +128,15 @@ export function AudioPlayer({
         step={0.1}
         value={currentTime}
         onChange={seek}
-        className="player-seek h-1.5 min-w-[48px] flex-1"
+        // w-0 + flex-1: the track takes exactly the room left over, instead of
+        // the browser's default ~130px range width pushing the card wider.
+        className="player-seek h-1.5 w-0 min-w-[56px] flex-1"
         style={{ background: `linear-gradient(to right, var(--accent) ${progress}%, var(--border) ${progress}%)` }}
         aria-label={t("Vaqtni tanlash", "Seek")}
       />
 
       {/* Volume: icon toggles mute, slider sets the level */}
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="flex shrink-0 items-center gap-1">
         <button
           type="button"
           onClick={toggleMute}
@@ -150,7 +152,7 @@ export function AudioPlayer({
           step={0.05}
           value={muted ? 0 : volume}
           onChange={changeVolume}
-          className="player-seek hidden h-1 w-14 sm:block"
+          className="player-seek hidden h-1 w-14 shrink-0 sm:block"
           style={{ background: `linear-gradient(to right, var(--accent) ${volumePercent}%, var(--border) ${volumePercent}%)` }}
           aria-label={t("Ovoz balandligi", "Volume")}
         />
