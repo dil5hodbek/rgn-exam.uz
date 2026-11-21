@@ -254,6 +254,48 @@
   font-size: .875rem;
 }
 
+/* Forgot password: step hint, 5-digit code box, text buttons, links as buttons. */
+.rgn-auth .entry-hint {
+  margin: -6px 0 4px;
+  color: #6c5145;
+  font-size: .9375rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.rgn-auth .entry-hint b { color: var(--ink); white-space: nowrap; }
+
+.rgn-auth .code-input input {
+  text-align: center;
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: .5em;
+  padding-left: .5em;
+  font-variant-numeric: tabular-nums;
+}
+
+.rgn-auth a.phone-submit,
+.rgn-auth a.telegram-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.rgn-auth .link-button {
+  padding: 5px;
+  border: 0;
+  background: transparent;
+  color: var(--orange-dark);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: .22em;
+  cursor: pointer;
+}
+
+.rgn-auth .link-button:disabled { color: #9a8379; text-decoration: none; cursor: default; }
+.rgn-auth .link-button:focus-visible { outline: 2px solid var(--orange-dark); outline-offset: 4px; }
+
 /* --- Logo intro (first visit in a browser session) ----------------------- */
 .rgn-auth .intro { display: none; }
 
