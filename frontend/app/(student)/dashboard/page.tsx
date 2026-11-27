@@ -60,12 +60,18 @@ export default function Dashboard() {
     result[item.level_slug] = (result[item.level_slug] ?? 0) + 1;
     return result;
   }, {}), [solvedTests]);
+  const bestByLevel = useMemo(() => solvedTests.reduce<Record<string, number>>((result, item) => {
+    result[item.level_slug] = Math.max(result[item.level_slug] ?? 0, item.percentage);
+    return result;
+  }, {}), [solvedTests]);
+  const startedLevels = new Set(attempts.map((item) => item.level_slug));
   const displayedLevels: LevelCardData[] = catalog.map((row) => {
     // Never show more solved than exist (guards against stale/duplicate data).
     const done = Math.min(completedByLevel[row.slug] ?? 0, row.published_tests);
     const visual = levelVisuals[row.slug] ?? levelVisuals.beginner;
     return {
       ...row, ...visual, total: row.published_tests, completed: done,
+      best: bestByLevel[row.slug] ?? null, started: startedLevels.has(row.slug),
       progress: row.published_tests ? Math.min(100, Math.round(done / row.published_tests * 100)) : 0,
     };
   });

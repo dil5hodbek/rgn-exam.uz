@@ -7,6 +7,9 @@ export type LevelCardData = {
   progress: number;
   completed: number;
   total: number;
+  // Best score among finished tests of this level, and whether any test was opened.
+  best?: number | null;
+  started?: boolean;
   color: "coral" | "violet" | "blue" | "mint";
   icon: LucideIcon;
 };
