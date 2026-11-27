@@ -13,6 +13,7 @@ Flow:
 Examiners also manage the student base: usernames, passwords and standing
 access grants that let a student open tests without any password.
 """
+import math
 import re
 import uuid
 from datetime import datetime, timezone
@@ -35,8 +36,8 @@ from app.models import (
 from app.services.audit import write_audit
 from app.services.exercise_registry import MANUAL_TASK_TYPES
 from app.services.exam_access import (
-    MAX_EXAM_VIOLATIONS, generate_session_code, pause_attempt_clock, remaining_seconds, resume_attempt_clock,
-    attempt_elapsed_seconds,
+    DEFAULT_SESSION_MINUTES, MAX_EXAM_VIOLATIONS, MAX_SESSION_MINUTES, MIN_SESSION_MINUTES, generate_session_code,
+    pause_attempt_clock, remaining_seconds, resume_attempt_clock, attempt_elapsed_seconds,
 )
 
 router = APIRouter(tags=["Exam sessions"])
@@ -75,6 +76,11 @@ class JoinRequest(BaseModel):
 class SessionCreate(BaseModel):
     test_variant_id: uuid.UUID
     title: str = Field(default="", max_length=180)
+    time_limit_minutes: int = Field(default=DEFAULT_SESSION_MINUTES, ge=MIN_SESSION_MINUTES, le=MAX_SESSION_MINUTES)
+
+
+class SessionUpdate(BaseModel):
+    time_limit_minutes: int = Field(ge=MIN_SESSION_MINUTES, le=MAX_SESSION_MINUTES)
 
 
 class SessionClose(BaseModel):
@@ -145,7 +151,7 @@ def participant_state(participant: ExamSessionParticipant, attempt: Attempt | No
 async def student_view(db: AsyncSession, session: ExamSession, participant: ExamSessionParticipant) -> dict:
     meta = (await variant_meta(db, {session.test_variant_id})).get(session.test_variant_id, {})
     attempt = await db.get(Attempt, participant.attempt_id) if participant.attempt_id else None
-    time_limit = meta.get("time_limit_minutes", 0)
+    time_limit = session.time_limit_minutes
     return {
         "session_id": session.id,
         "participant_id": participant.id,
@@ -158,6 +164,7 @@ async def student_view(db: AsyncSession, session: ExamSession, participant: Exam
         "paused": bool(attempt and attempt.paused_at is not None),
         "remaining_seconds": remaining_seconds(attempt, time_limit) if attempt else time_limit * 60,
         **meta,
+        "time_limit_minutes": time_limit,
     }
 
 
@@ -356,7 +363,8 @@ async def list_sessions(user: User = Depends(require_examiner), db: AsyncSession
         "id": session.id, "title": session.title or meta.get(session.test_variant_id, {}).get("test_title", ""),
         "code": session.code, "status": session.status, "created_at": session.created_at,
         "closed_at": session.closed_at, "examiner_name": examiners.get(session.examiner_id),
-        **meta.get(session.test_variant_id, {}), **counts[session.id],
+        **meta.get(session.test_variant_id, {}), "time_limit_minutes": session.time_limit_minutes,
+        **counts[session.id],
         **writing.get(session.id, {"writing_total": 0, "writing_awaiting": 0}),
     } for session in sessions]
 
@@ -373,19 +381,20 @@ async def create_session(
         raise HTTPException(404, "Nashr qilingan test topilmadi.")
     session = ExamSession(
         examiner_id=user.id, test_variant_id=variant.id, title=payload.title.strip(),
-        code=await generate_session_code(db),
+        code=await generate_session_code(db), time_limit_minutes=payload.time_limit_minutes,
     )
     db.add(session)
     await db.flush()
     await write_audit(db, user.id, "exam_session.create", "ExamSession", str(session.id),
-                      {"test_variant_id": str(variant.id)}, _ip(request))
+                      {"test_variant_id": str(variant.id), "time_limit_minutes": payload.time_limit_minutes},
+                      _ip(request))
     await db.commit()
     return await session_detail_payload(db, session)
 
 
 async def session_detail_payload(db: AsyncSession, session: ExamSession) -> dict:
     meta = (await variant_meta(db, {session.test_variant_id})).get(session.test_variant_id, {})
-    time_limit = meta.get("time_limit_minutes", 0)
+    time_limit = session.time_limit_minutes
     total_questions = (await question_counts(db, {session.test_variant_id})).get(session.test_variant_id, 0)
     rows = (await db.execute(
         select(ExamSessionParticipant, User, Attempt)
@@ -433,17 +442,53 @@ async def session_detail_payload(db: AsyncSession, session: ExamSession) -> dict
             "max_violations": MAX_EXAM_VIOLATIONS,
             "percentage": float(attempt.percentage) if attempt and attempt.percentage is not None else None,
         })
+    running = [attempt for _, _, attempt in rows if attempt is not None and attempt.status == AttemptStatus.IN_PROGRESS]
     return {
         "id": session.id, "title": session.title or meta.get("test_title", ""), "code": session.code,
         "status": session.status, "created_at": session.created_at, "closed_at": session.closed_at,
         "total_questions": total_questions, **meta, "participants": participants,
+        "time_limit_minutes": time_limit,
+        # The test's own length, shown as a reference next to the session's.
+        "test_time_limit_minutes": meta.get("time_limit_minutes"),
+        # The shortest length that still leaves every working student a minute.
+        "min_time_limit_minutes": min_time_limit(running, now),
+        "running_count": len(running),
         "server_time": now,
     }
+
+
+def min_time_limit(running: list[Attempt], now: datetime) -> int:
+    longest = max((attempt_elapsed_seconds(attempt, now) for attempt in running), default=0.0)
+    return max(MIN_SESSION_MINUTES, math.ceil(longest / 60) + 1)
 
 
 @router.get("/examiner/sessions/{session_id}")
 async def session_detail(session_id: uuid.UUID, user: User = Depends(require_examiner), db: AsyncSession = Depends(get_db)):
     return await session_detail_payload(db, await owned_session(db, user, session_id))
+
+
+@router.patch("/examiner/sessions/{session_id}")
+async def update_session(
+    session_id: uuid.UUID, payload: SessionUpdate, request: Request,
+    user: User = Depends(require_examiner), db: AsyncSession = Depends(get_db),
+):
+    """Change the exam length. Applies at once to everyone: each student's
+    time left becomes the new length minus the time they have already used."""
+    session = await owned_session(db, user, session_id)
+    running = (await db.execute(
+        select(Attempt).where(Attempt.exam_session_id == session.id, Attempt.status == AttemptStatus.IN_PROGRESS)
+    )).scalars().all()
+    if session.status != SessionStatus.ACTIVE.value and not running:
+        raise HTTPException(409, "Imtihon yakunlangan.")
+    minimum = min_time_limit(list(running), _now())
+    if payload.time_limit_minutes < minimum:
+        raise HTTPException(409, f"Kamida {minimum} daqiqa bo'lishi kerak: ba'zi o'quvchilar shuncha vaqt ishlagan.")
+    previous = session.time_limit_minutes
+    session.time_limit_minutes = payload.time_limit_minutes
+    await write_audit(db, user.id, "exam_session.time_limit", "ExamSession", str(session.id),
+                      {"from": previous, "to": payload.time_limit_minutes}, _ip(request))
+    await db.commit()
+    return await session_detail_payload(db, session)
 
 
 @router.post("/examiner/sessions/{session_id}/regenerate-code")

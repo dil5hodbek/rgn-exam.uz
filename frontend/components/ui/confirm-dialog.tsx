@@ -12,6 +12,8 @@ export type ConfirmDialogState = {
   cancelLabel?: string;
   variant?: "default" | "danger";
   onConfirm: () => void;
+  /** Runs when the cancel button (only) is pressed, e.g. "show me the question". */
+  onCancel?: () => void;
 };
 
 export function ConfirmDialog({ state, onClose }: { state: ConfirmDialogState | null; onClose: () => void }) {
@@ -47,11 +49,11 @@ export function ConfirmDialog({ state, onClose }: { state: ConfirmDialogState | 
           </span>
           <div className="min-w-0">
             <h2 id="confirm-dialog-title" className="text-lg font-extrabold text-ink">{state.title}</h2>
-            <p id="confirm-dialog-description" className="mt-1.5 text-sm text-muted">{state.description}</p>
+            {state.description && <p id="confirm-dialog-description" className="mt-1.5 text-sm text-muted">{state.description}</p>}
           </div>
         </div>
         <div className="mt-6 flex flex-wrap justify-end gap-3">
-          <Button variant="secondary" onClick={onClose}>{state.cancelLabel ?? t("Bekor qilish", "Cancel")}</Button>
+          <Button variant="secondary" onClick={() => { state.onCancel?.(); onClose(); }}>{state.cancelLabel ?? t("Bekor qilish", "Cancel")}</Button>
           <Button
             ref={confirmRef}
             variant={danger ? "danger" : "primary"}

@@ -28,6 +28,8 @@ class AttemptStateOut(BaseModel):
     violations: int = 0
     max_violations: int = 3
     exam_mode: bool = True
+    awaiting_start: bool = False
+    time_limit_minutes: int | None = None
 
 
 class ExamSessionOut(BaseModel):
@@ -46,6 +48,9 @@ class CheckResultItemOut(BaseModel):
     # Exercise" only auto-grades objective types, so there is no verdict yet.
     is_correct: bool | None
     is_example: bool
+    # Practice only (never in an examiner exam), when the test allows review
+    # and the answer was wrong: the expected answer, ready to display.
+    correct_answer: str | None = None
 
 
 class CheckExerciseOut(BaseModel):

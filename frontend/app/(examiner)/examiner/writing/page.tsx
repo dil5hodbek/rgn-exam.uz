@@ -38,7 +38,7 @@ export default function ExaminerWriting() {
     {rows && !shown.length && <div className="mt-6 rounded-3xl border border-dashed border-line bg-canvas p-10 text-center">
       <FileText className="mx-auto h-10 w-10 text-muted" />
       <p className="mt-3 font-extrabold text-ink">{t("Hali natija yo'q", "No results yet")}</p>
-      <p className="mt-1 text-sm text-muted">{t("O'quvchilar siz o'tkazgan imtihonni boshlagach shu yerda chiqadi.", "Exams appear here once students start one you ran.")}</p>
+      <p className="mt-1 text-sm text-muted">{t("Imtihon boshlangach shu yerda chiqadi.", "Shows up once your exam starts.")}</p>
     </div>}
     <div className="mt-6 grid gap-3">{shown.map((row) => <Link key={row.id} href={`/examiner/writing/${row.id}`} className="group flex flex-col gap-4 rounded-3xl border border-line bg-canvas p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lift sm:flex-row sm:items-center">
       <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-teal-500/10 text-teal-600"><FileText className="h-5 w-5" /></span>

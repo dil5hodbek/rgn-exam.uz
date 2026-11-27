@@ -19,7 +19,7 @@ export default function SignIn() {
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!phoneComplete(phone)) {
-      setError(t("Telefon raqamini to‘liq kiriting (90 000 00 00) yoki username yozing.", "Enter the full phone number (90 000 00 00) or your username."));
+      setError(t("Raqamni to‘liq kiriting yoki username yozing.", "Enter the full number or a username."));
       return;
     }
     setError("");

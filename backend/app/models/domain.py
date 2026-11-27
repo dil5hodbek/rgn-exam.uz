@@ -219,6 +219,9 @@ class Attempt(Base):
     # Exam mode: times the student left fullscreen or switched to another
     # window/app. Reaching MAX_EXAM_VIOLATIONS auto-submits the attempt.
     violation_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # True while a new attempt sits on the pre-exam briefing: its clock has not
+    # started yet. POST /attempts/{id}/begin (or the first saved answer) starts it.
+    awaiting_start: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     answers: Mapped[list["AttemptAnswer"]] = relationship(cascade="all, delete-orphan")
 
 
@@ -299,6 +302,9 @@ class ExamSession(Base):
     title: Mapped[str] = mapped_column(String(180), default="")
     code: Mapped[str] = mapped_column(String(12), index=True)
     status: Mapped[str] = mapped_column(String(16), default=SessionStatus.ACTIVE.value)
+    # The examiner's own clock for this sitting (not the test's default), and
+    # it can be changed while students are working.
+    time_limit_minutes: Mapped[int] = mapped_column(Integer, default=60, server_default="60")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

@@ -11,7 +11,7 @@ import { cn, formatDuration } from "@/lib/utils";
 
 /** One exam's results: every student, their score, leaves and writing grades. */
 export default function SessionResultsPage({ params }: { params: { sessionId: string } }) {
-  const { t } = useLang();
+  const { lang, t } = useLang();
   const router = useRouter();
   const [data, setData] = useState<SessionResults | null>(null);
   const [error, setError] = useState("");
@@ -61,7 +61,7 @@ export default function SessionResultsPage({ params }: { params: { sessionId: st
               <td className="px-4 py-3"><p className="font-extrabold text-ink">{row.first_name} {row.last_name}</p><p className="text-xs text-muted">{row.username ? `@${row.username}` : row.phone_number}</p>{row.removed && <span className="mt-1 inline-block rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-bold text-red-600">{t("chiqarilgan", "removed")}</span>}</td>
               <td className="px-4 py-3">{inProgress
                 ? <span className="rounded-full bg-sky-500/10 px-2.5 py-1 text-xs font-bold text-sky-700 dark:text-sky-300">{t("Yozmoqda", "Sitting")}</span>
-                : <><p className={cn("text-lg font-extrabold", (row.percentage ?? 0) >= 60 ? "text-emerald-600" : "text-ink")}>{row.percentage === null ? "—" : `${Math.round(row.percentage)}%`}</p><p className="text-xs text-muted">{row.score} / {row.max_score} · {formatDuration(row.time_spent_seconds)}</p></>}</td>
+                : <><p className={cn("text-lg font-extrabold", (row.percentage ?? 0) >= 60 ? "text-emerald-600" : "text-ink")}>{row.percentage === null ? "—" : `${Math.round(row.percentage)}%`}</p><p className="text-xs text-muted">{row.score} / {row.max_score} · {formatDuration(row.time_spent_seconds, lang)}</p></>}</td>
               <td className="px-4 py-3 text-xs font-bold"><span className="text-emerald-600">✓ {row.correct}</span> <span className="ml-2 text-red-500">✗ {row.incorrect}</span>{row.pending > 0 && <span className="ml-2 text-amber-600">? {row.pending}</span>}</td>
               <td className="px-4 py-3">{row.writing_total ? <div className="space-y-1">
                 <p className="text-sm font-extrabold text-ink">{row.writing_points} / {row.writing_max}</p>

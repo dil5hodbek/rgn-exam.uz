@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Bookmark, Check, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { useLang } from "@/lib/i18n";
+import { CorrectAnswerPill, PromptWithAnswer, reviewCardTone } from "@/lib/answer-review";
 
 type Saved = {
   id: string;
@@ -45,7 +46,6 @@ export default function SavedQuestions() {
         <h1 className="text-2xl font-extrabold text-ink">{t("Saqlangan savollar", "Saved questions")}</h1>
       </div>
     </div>
-    <p className="mt-2 text-sm text-muted">{t("Test paytida belgilagan savollaringiz. Test vaqtida istalgan savoldagi bayroqchani bossangiz, u shu yerga saqlanadi.", "Questions you bookmarked (flagged) while taking tests. Tap the flag on any question during a test to save it here.")}</p>
 
     {error && <p className="mt-6 rounded-xl bg-red-500/10 p-3 text-sm font-semibold text-red-600">{error}</p>}
 
@@ -54,31 +54,36 @@ export default function SavedQuestions() {
     {rows !== null && rows.length === 0 && <div className="mt-8 rounded-3xl border border-dashed border-line bg-canvas p-10 text-center">
       <Bookmark className="mx-auto h-8 w-8 text-muted" />
       <p className="mt-3 text-sm font-semibold text-ink">{t("Hali saqlangan savol yo'q", "No saved questions yet")}</p>
-      <p className="mt-1 text-sm text-muted">{t("Test yechayotganda savolni keyin takrorlash uchun bayroqcha belgisini bosing.", "While taking a test, tap the flag icon on a question to save it for review.")}</p>
+      <p className="mt-1 text-sm text-muted">{t("Test paytida bayroqchani bosing.", "Tap the flag during a test.")}</p>
     </div>}
 
     {rows !== null && rows.length > 0 && <div className="mt-6 space-y-3">
-      {rows.map((row) => <article key={row.id} className="rounded-2xl border border-line bg-canvas p-5">
-        <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold">
-          <span className="rounded-full bg-orange-500/10 px-2.5 py-1 text-brand">{row.level} · {row.exam_type}</span>
-          <span className="rounded-full bg-surface px-2.5 py-1 text-muted">{row.test_title}</span>
-          <span className="rounded-full bg-surface px-2.5 py-1 text-muted">{row.exercise_type}</span>
-          {row.is_correct === true && <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-emerald-600"><Check className="h-3 w-3" /> {t("To'g'ri", "Correct")}</span>}
-          {row.is_correct === false && <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2.5 py-1 text-red-600"><X className="h-3 w-3" /> {t("Noto'g'ri", "Incorrect")}</span>}
-        </div>
-        <p className="mt-3 font-bold leading-7 text-ink">{row.prompt || <span className="italic text-muted">{t("(savol matni yo'q)", "(no prompt)")}</span>}</p>
-        {Array.isArray(row.options) && row.options.length > 0 && <div className="mt-3 flex flex-wrap gap-2">
-          {row.options.map((option, index) => {
-            const value = typeof option === "string" ? option : String(option);
-            const isCorrect = row.correct_answer != null && (Array.isArray(row.correct_answer) ? row.correct_answer.map(String).includes(value) : String(row.correct_answer) === value);
-            return <span key={index} className={`rounded-lg border px-3 py-1.5 text-sm font-semibold ${isCorrect ? "border-emerald-500 bg-emerald-500/10 text-emerald-600" : "border-line bg-surface text-ink"}`}>{value}</span>;
-          })}
-        </div>}
-        <div className="mt-3 grid gap-1.5 text-sm sm:grid-cols-2">
-          <p className="text-muted">{t("Sizning javobingiz", "Your answer")}: <span className="font-semibold text-ink">{answerText(row.student_answer)}</span></p>
-          {row.correct_answer != null && <p className="text-muted">{t("To'g'ri javob", "Correct answer")}: <span className="font-semibold text-emerald-600">{answerText(row.correct_answer)}</span></p>}
-        </div>
-      </article>)}
+      {rows.map((row) => {
+        const wrong = row.is_correct === false;
+        const right = row.is_correct === true;
+        const inline = row.prompt ? PromptWithAnswer({ prompt: row.prompt, answer: row.student_answer, tone: wrong ? "wrong" : right ? "right" : "neutral", empty: t("javob yo'q", "no answer") }) : null;
+        const picked = (value: string) => row.student_answer != null && (Array.isArray(row.student_answer) ? row.student_answer.map(String).includes(value) : String(row.student_answer) === value);
+        return <article key={row.id} className={`saved-question rounded-2xl border p-4 sm:p-5 ${reviewCardTone(row.is_correct)}`}>
+          <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold">
+            <span className="rounded-full bg-orange-500/10 px-2.5 py-1 text-brand">{row.level} · {row.exam_type}</span>
+            <span className="rounded-full bg-white/70 px-2.5 py-1 text-muted dark:bg-white/5">{row.test_title}</span>
+          </div>
+          <p className="mt-3 whitespace-pre-wrap font-bold leading-8 text-ink">{inline ?? (row.prompt || <span className="italic text-muted">{t("(savol matni yo'q)", "(no prompt)")}</span>)}</p>
+          {Array.isArray(row.options) && row.options.length > 0 && <div className="mt-3 flex flex-wrap gap-2">
+            {row.options.map((option, index) => {
+              const value = typeof option === "string" ? option : String(option);
+              const isCorrect = row.correct_answer != null && (Array.isArray(row.correct_answer) ? row.correct_answer.map(String).includes(value) : String(row.correct_answer) === value);
+              const wrongPick = wrong && !isCorrect && picked(value);
+              return <span key={index} className={`rounded-lg border px-3 py-1.5 text-sm font-semibold ${isCorrect ? "border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : wrongPick ? "border-rose-400 bg-rose-500/10 text-rose-700 dark:text-rose-300" : "border-line bg-white/70 text-ink dark:bg-white/5"}`}>{value}</span>;
+            })}
+          </div>}
+          {!inline && !(Array.isArray(row.options) && row.options.length > 0) && <p className={`mt-1.5 flex items-start gap-1.5 whitespace-pre-wrap text-sm font-semibold ${wrong ? "text-rose-600 dark:text-rose-300" : right ? "text-emerald-600 dark:text-emerald-400" : "text-muted"}`}>
+            {wrong ? <X className="mt-0.5 h-4 w-4 shrink-0" /> : right ? <Check className="mt-0.5 h-4 w-4 shrink-0" /> : null}
+            <span>{answerText(row.student_answer)}</span>
+          </p>}
+          {wrong && row.correct_answer != null && !(Array.isArray(row.options) && row.options.length > 0) && <CorrectAnswerPill text={answerText(row.correct_answer)} label={t("To'g'ri javob", "Correct answer")} />}
+        </article>;
+      })}
     </div>}
   </div>;
 }

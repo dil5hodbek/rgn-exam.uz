@@ -26,7 +26,7 @@ from app.services.exercise_registry import MANUAL_TASK_TYPES
 from app.services.certificate import generate_certificate_pdf
 from app.services.exam_access import (
     MAX_EXAM_VIOLATIONS, attempt_elapsed_seconds, can_open_variant, ensure_scope_access, ensure_session_attempt_allowed,
-    ensure_variant_access, remaining_seconds, session_participant_for_attempt,
+    attempt_time_limit, ensure_variant_access, remaining_seconds, session_participant_for_attempt,
 )
 from app.services.grading import grade_answer, scaled_score
 
@@ -62,6 +62,8 @@ async def attempt_state(db: AsyncSession, attempt: Attempt) -> dict:
         "violations": attempt.violation_count or 0,
         "max_violations": MAX_EXAM_VIOLATIONS,
         "exam_mode": await exam_mode_on(db, attempt),
+        "awaiting_start": bool(attempt.awaiting_start),
+        "time_limit_minutes": await attempt_time_limit(db, attempt),
         # When the server copy was last written — the client compares this
         # against its local backup so an older device never overwrites newer work.
         "answers_updated_at": max((row.updated_at for row in rows), default=None),
@@ -194,7 +196,7 @@ async def create_attempt(
         task_order = await shuffled_task_order(db, variant.id, None, None, shuffle)
         attempt = Attempt(
             user_id=user_id, test_variant_id=variant.id, task_order=task_order,
-            exam_session_id=exam_session_id,
+            exam_session_id=exam_session_id, awaiting_start=True,
         )
         db.add(attempt)
         await db.commit()
@@ -222,7 +224,7 @@ async def create_attempt(
     task_order = await shuffled_task_order(db, variant.id, extra_task_ids, primary_task_ids, shuffle)
     attempt = Attempt(
         user_id=user_id, test_variant_id=variant.id, task_order=task_order,
-        extra_task_ids=extra_task_ids, primary_task_ids=primary_task_ids,
+        extra_task_ids=extra_task_ids, primary_task_ids=primary_task_ids, awaiting_start=True,
     )
     db.add(attempt)
     await db.commit()
@@ -278,7 +280,8 @@ async def open_exam(
         "attempt": await attempt_state(db, attempt),
         "test": {
             "id": variant.id, "title": variant.title, "instructions": variant.instructions,
-            "time_limit_minutes": variant.time_limit_minutes,
+            # A proctored sitting runs on the examiner's length, not the test's.
+            "time_limit_minutes": await attempt_time_limit(db, attempt),
             "passing_percentage": variant.passing_percentage, "review_allowed": variant.review_allowed,
             "sections": await serialize_sections(db, sections),
         },
@@ -446,15 +449,42 @@ async def touch_participant(db: AsyncSession, attempt: Attempt) -> None:
 
 
 async def ensure_attempt_time(db: AsyncSession, attempt: Attempt) -> None:
+    # Answering without pressing "Start" (e.g. straight through the API) still
+    # starts the clock, so the briefing can never be used to freeze time.
+    if begin_clock(attempt):
+        await db.commit()
     if attempt.exam_session_id is not None:
         await ensure_session_attempt_allowed(db, attempt)
         if attempt.paused_at is not None:
             raise HTTPException(423, {"code": "EXAM_PAUSED", "message": PAUSED_MESSAGE})
-    limit = await db.scalar(
-        select(TestVariant.time_limit_minutes).where(TestVariant.id == attempt.test_variant_id)
-    )
+    limit = await attempt_time_limit(db, attempt)
     if limit and attempt_elapsed_seconds(attempt) >= limit * 60:
         raise HTTPException(409, "The test time has expired. Submit the saved answers.")
+
+
+def begin_clock(attempt: Attempt) -> bool:
+    """Start the clock of an attempt still on the pre-exam briefing."""
+    if not attempt.awaiting_start:
+        return False
+    now = datetime.now(timezone.utc)
+    attempt.started_at = now
+    if attempt.paused_at is not None:
+        attempt.paused_at = now  # an examiner pause stays, with nothing elapsed
+    attempt.awaiting_start = False
+    return True
+
+
+@router.post("/attempts/{attempt_id}/begin", response_model=AttemptStateOut)
+async def begin_attempt(attempt_id: uuid.UUID, user: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
+    """The student pressed "Start" on the briefing: the full time limit starts now."""
+    attempt = await owned_attempt(db, attempt_id, user.id)
+    if attempt.status != AttemptStatus.IN_PROGRESS:
+        raise HTTPException(409, "This attempt has already been submitted.")
+    if attempt.exam_session_id is not None:
+        await ensure_session_attempt_allowed(db, attempt)
+    if begin_clock(attempt):
+        await db.commit()
+    return await attempt_state(db, attempt)
 
 
 @router.post("/attempts/{attempt_id}/pause", status_code=204)
@@ -469,6 +499,8 @@ async def pause_attempt(attempt_id: uuid.UUID, user: User = Depends(current_user
         # a student freeze time at will). The examiner sees them go offline
         # through the missing heartbeat and decides whether to pause.
         return
+    if attempt.awaiting_start:
+        return  # still on the briefing — no clock to freeze
     started_at = attempt.started_at
     if started_at.tzinfo is None:
         started_at = started_at.replace(tzinfo=timezone.utc)
@@ -486,9 +518,7 @@ async def heartbeat(attempt_id: uuid.UUID, user: User = Depends(current_user), d
     marks the student as present for the examiner, and tells the screen
     whether the examiner paused/resumed it (and the authoritative time left)."""
     attempt = await owned_attempt(db, attempt_id, user.id)
-    limit = await db.scalar(
-        select(TestVariant.time_limit_minutes).where(TestVariant.id == attempt.test_variant_id)
-    ) or 0
+    limit = await attempt_time_limit(db, attempt)
     participant = await session_participant_for_attempt(db, attempt)
     removed = attempt.exam_session_id is not None and (
         participant is None or participant.status != "APPROVED"
@@ -502,6 +532,8 @@ async def heartbeat(attempt_id: uuid.UUID, user: User = Depends(current_user), d
         "removed": removed,
         "elapsed_seconds": int(attempt_elapsed_seconds(attempt)),
         "remaining_seconds": remaining_seconds(attempt, limit),
+        # The examiner may lengthen or shorten the exam while it runs.
+        "time_limit_minutes": limit,
         # An examiner may switch exam mode off for this student mid-exam.
         "exam_mode": await exam_mode_on(db, attempt),
     }
@@ -610,20 +642,29 @@ async def save_answers(attempt_id: uuid.UUID, payload: AnswerBatch, user: User =
     if attempt.status != AttemptStatus.IN_PROGRESS:
         raise HTTPException(409, "This attempt has already been submitted.")
     await ensure_attempt_time(db, attempt)
-    allowed_question_ids = set((await db.execute(
-        select(Question.id)
+    question_tasks = dict((await db.execute(
+        select(Question.id, Question.task_id)
         .join(Task, Task.id == Question.task_id)
         .join(Section, Section.id == Task.section_id)
         .where(
             (Section.test_variant_id == attempt.test_variant_id)
             | (Task.id.in_(attempt.extra_task_ids or []))
         )
-    )).scalars())
+    )).all())
     submitted = {item.question_id: item for item in payload.answers}
-    invalid_ids = set(submitted) - allowed_question_ids
+    invalid_ids = set(submitted) - set(question_tasks)
     if invalid_ids:
         raise HTTPException(422, "One or more answers do not belong to this test.")
+    # A finished exercise ("Finish exercise") is locked: its answers no longer
+    # change. The screen keeps sending every answer, so these are skipped.
+    redis = redis_client()
+    try:
+        finished = await redis.smembers(f"attempt-checked:{attempt.id}")
+    finally:
+        await redis.aclose()
     for item in submitted.values():
+        if str(question_tasks[item.question_id]) in finished:
+            continue
         answer = await db.scalar(select(AttemptAnswer).where(
             AttemptAnswer.attempt_id == attempt.id, AttemptAnswer.question_id == item.question_id
         ))
@@ -633,6 +674,17 @@ async def save_answers(attempt_id: uuid.UUID, payload: AnswerBatch, user: User =
             db.add(AttemptAnswer(attempt_id=attempt.id, question_id=item.question_id, student_answer=item.answer, flagged=item.flagged))
     await db.commit()
     return {"saved": len(submitted), "saved_at": datetime.now(timezone.utc)}
+
+
+def display_answer(value) -> str | None:
+    """The stored correct answer as text for the screen (lists joined)."""
+    if value is None or isinstance(value, dict):
+        return None
+    if isinstance(value, list):
+        parts = [str(item) for item in value if item not in (None, "")]
+        return ", ".join(parts) or None
+    text = str(value).strip()
+    return text or None
 
 
 @router.post("/attempts/{attempt_id}/tasks/{task_id}/check", response_model=CheckExerciseOut)
@@ -670,6 +722,12 @@ async def check_exercise(
         )
     )).scalars().all()
     answer_map = {row.question_id: row.student_answer for row in saved}
+    # Examiner exams never reveal right/wrong before the end. Practice shows
+    # the verdict, plus the expected answer when the test allows review.
+    proctored = attempt.exam_session_id is not None
+    review_allowed = not proctored and bool(await db.scalar(
+        select(TestVariant.review_allowed).where(TestVariant.id == attempt.test_variant_id)
+    ))
     results = []
     for question in active_questions:
         if question.is_example:
@@ -686,8 +744,10 @@ async def check_exercise(
             is_correct = grade.is_correct
         results.append({
             "question_id": question.id,
-            "is_correct": is_correct,
+            "is_correct": None if proctored else is_correct,
             "is_example": False,
+            "correct_answer": display_answer(question.correct_answer)
+            if review_allowed and is_correct is False else None,
         })
     redis = redis_client()
     checked_key = f"attempt-checked:{attempt.id}"
@@ -819,7 +879,7 @@ async def finalize_attempt(db: AsyncSession, attempt: Attempt) -> dict:
     attempt.paused_at = None
     # Cap at the test's time limit so an attempt left open for hours (then submitted
     # or auto-submitted) doesn't record runaway practice time.
-    attempt.time_spent_seconds = max(0, min(elapsed, variant.time_limit_minutes * 60))
+    attempt.time_spent_seconds = max(0, min(elapsed, (await attempt_time_limit(db, attempt)) * 60))
     attempt.status = AttemptStatus.PENDING_REVIEW if pending else AttemptStatus.GRADED
     await db.commit()
     return {

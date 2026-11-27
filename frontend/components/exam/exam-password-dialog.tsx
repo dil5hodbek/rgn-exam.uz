@@ -45,11 +45,11 @@ export function ExamPasswordDialog({ testVariantId, testTitle, onClose }: {
       <h2 className="mt-4 text-xl font-extrabold text-ink">{t("Imtihon paroli", "Exam password")}</h2>
       <p className="mt-2 text-sm text-muted">{testTitle
         ? t(`"${testTitle}" yopiq. Examiner bergan 6 xonali parolni kiriting.`, `"${testTitle}" is locked. Enter the 6-digit password from your examiner.`)
-        : t("Examiner bergan 6 xonali parolni kiriting.", "Enter the 6-digit password from your examiner.")}</p>
+        : t("Examiner bergan 6 xonali parol.", "The 6-digit password from your examiner.")}</p>
       <Input ref={input} className="mt-5 text-center font-mono text-2xl font-extrabold tracking-[.4em]" inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="••••••" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} required />
       {error && <p role="alert" className="mt-3 rounded-xl bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-600">{error}</p>}
       <Button className="mt-5 w-full" size="lg" disabled={busy || code.length < 6}><KeyRound className="h-4 w-4" /> {busy ? t("Tekshirilmoqda…", "Checking…") : t("Kirish", "Enter")}</Button>
-      <p className="mt-3 text-xs text-muted">{t("Parol to'g'ri bo'lsa, examiner tasdiqlagach imtihon boshlanadi.", "If the password is right, the exam starts once the examiner approves you.")}</p>
+      <p className="mt-3 text-xs text-muted">{t("Examiner tasdiqlagach boshlanadi.", "Starts once the examiner approves.")}</p>
     </form>
   </div>;
 }

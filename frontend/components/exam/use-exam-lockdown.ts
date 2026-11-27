@@ -57,10 +57,12 @@ function blockedCombo(event: KeyboardEvent) {
   return false;
 }
 
-export function useExamLockdown({ active, initialViolations, onViolation }: {
+export function useExamLockdown({ active, initialViolations, onViolation, fullscreenRefused = false }: {
   active: boolean;
   initialViolations: number;
   onViolation: (kind: ViolationKind, localCount: number) => void;
+  /** The browser already refused fullscreen on "Start" — don't ask again. */
+  fullscreenRefused?: boolean;
 }) {
   const [away, setAway] = useState<LockdownAway>(null);
   const [violations, setViolations] = useState(initialViolations);
@@ -88,7 +90,7 @@ export function useExamLockdown({ active, initialViolations, onViolation }: {
 
   useEffect(() => {
     if (!active) return;
-    fullscreenOk.current = fullscreenSupported();
+    fullscreenOk.current = fullscreenSupported() && !fullscreenRefused;
     // A fresh page load is never fullscreen — coming back needs a click (not a violation).
     if (fullscreenOk.current && !isFullscreen()) { awayRef.current = "start"; setAway("start"); }
 
@@ -118,7 +120,7 @@ export function useExamLockdown({ active, initialViolations, onViolation }: {
       awayRef.current = null;
       setAway(null);
     };
-  }, [active, mark]);
+  }, [active, mark, fullscreenRefused]);
 
   // Phones: keep the screen awake during the exam. Without this a phone that
   // auto-locks while the student reads a long passage hides the page, which

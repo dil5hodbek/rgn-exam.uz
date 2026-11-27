@@ -30,6 +30,7 @@ export type Participant = {
 export type SessionDetail = Omit<SessionSummary, "pending" | "in_progress" | "submitted" | "total" | "examiner_name"> & {
   total_questions: number; level_slug: string; exam_type_slug: string; test_variant_id: string;
   participants: Participant[]; server_time: string;
+  test_time_limit_minutes?: number; min_time_limit_minutes?: number; running_count?: number;
 };
 
 export type Grant = {

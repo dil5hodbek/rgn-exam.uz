@@ -23,7 +23,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             <span className="h-2 w-2 rounded-full bg-orange-500" /> {t("Natija uchun yaratilgan", "Purpose-built for progress")}
           </div>
           <h2 className="mt-7 max-w-xl text-6xl font-extrabold leading-[1.15] tracking-[-.02em] text-ink">{t("Aniq o'rganing.", "Learn clearly.")}<br /><span className="text-brand">{t("Ishonch bilan o'sing.", "Grow confidently.")}</span></h2>
-          <p className="mt-6 max-w-lg text-lg leading-8 text-muted">{t("Ingliz tili imtihonlari qaysi darajada ekaningizni, qancha yo'l bosib o'tganingizni va keyingi qadamni aniq ko'rsatadi.", "Structured English assessments that show where you are, celebrate how far you’ve come, and make the next step obvious.")}</p>
+          <p className="mt-6 max-w-lg text-lg leading-8 text-muted">{t("Darajangizni bilib oling.", "Know your level.")}</p>
           <div className="mt-10 grid max-w-lg grid-cols-3 gap-3">
             {[t("Aniq imtihonlar", "Focused exams"), t("Tezkor natija", "Instant insight"), t("Haqiqiy o'sish", "Real progress")].map((item) => <div key={item} className="rounded-2xl border border-line bg-canvas/70 p-4 text-sm font-bold text-ink backdrop-blur"><span className="mb-3 block h-1.5 w-8 rounded-full bg-brand" />{item}</div>)}
           </div>

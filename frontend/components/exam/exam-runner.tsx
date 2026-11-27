@@ -3,20 +3,20 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent as ReactDragEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   AlertTriangle, ArrowLeft, BookOpen, Bookmark, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock3, GripVertical,
-  Headphones, Lock, LogOut, Maximize, PauseCircle, PenLine, Pin, PinOff, RotateCcw, Send, ShieldAlert, X, XCircle,
+  Headphones, Lock, LogOut, Maximize, PauseCircle, PenLine, Pin, PinOff, Play, RotateCcw, Send, ShieldAlert, X, XCircle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { AudioPlayer } from "@/components/exam/audio-player";
 import { ExamCountdown, timeLeft, type ClockBase } from "@/components/exam/exam-countdown";
 import { GapMatch } from "@/components/exam/gap-match";
-import { useExamLockdown, type ViolationKind } from "@/components/exam/use-exam-lockdown";
+import { enterFullscreen, exitFullscreen, fullscreenSupported, useExamLockdown, type ViolationKind } from "@/components/exam/use-exam-lockdown";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/use-confirm";
 import { useLang } from "@/lib/i18n";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { Input } from "@/components/ui/input";
 import { api, mediaUrl } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn, formatDuration } from "@/lib/utils";
 import {
   answerChoices, choiceGridClass, exampleAnswerText, hasAnswer, inlineAlternative,
   interactionOptions, orderingTokens, renderInstructionBlocks, renumberExerciseTitle, scorableQuestions, textAnswer,
@@ -25,7 +25,7 @@ import {
 } from "@/lib/exam-helpers";
 
 export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testId: string; resultBasePath: string; initialAttemptId?: string }) {
-  const { t } = useLang();
+  const { lang, t } = useLang();
   const [test, setTest] = useState<TestDetail | null>(null);
   const [attemptId, setAttemptId] = useState("");
   const [taskOrder, setTaskOrder] = useState<string[] | null>(null);
@@ -38,11 +38,27 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
   const clockRef = useRef(clockBase);
   clockRef.current = clockBase;
   const [timerStarted, setTimerStarted] = useState(false);
+  // New attempt: the briefing shows first and the clock waits for "Start".
+  const [awaitingStart, setAwaitingStart] = useState(false);
+  const awaitingRef = useRef(awaitingStart);
+  awaitingRef.current = awaitingStart;
+  const [beginning, setBeginning] = useState(false);
+  const [fullscreenRefused, setFullscreenRefused] = useState(false);
+  // Practice only: the expected answer of a question answered wrong.
+  const [correctAnswers, setCorrectAnswers] = useState<Record<string, string>>({});
   // Examiner-proctored attempt: the examiner can pause the clock or remove
   // the student; a heartbeat keeps both sides in sync.
   const [proctored, setProctored] = useState(false);
   const [paused, setPaused] = useState(false);
   const [removed, setRemoved] = useState(false);
+  // The examiner changed the exam length mid-exam: a short notice says by how much.
+  const [timeNotice, setTimeNotice] = useState<{ minutes: number; delta: number } | null>(null);
+  const limitRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!timeNotice) return;
+    const timer = window.setTimeout(() => setTimeNotice(null), 10000);
+    return () => window.clearTimeout(timer);
+  }, [timeNotice]);
   // Exam mode: fullscreen lock + a count of trips away from the exam. The
   // server keeps the count; reaching maxViolations submits the attempt.
   const [violationBase, setViolationBase] = useState(0);
@@ -191,6 +207,9 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     () => exercises.flatMap((exercise) => exercise.questions),
     [exercises],
   );
+  const lockedQuestions = useMemo(() => new Set(
+    exercises.filter((item) => checkedTaskIds.includes(item.id)).flatMap((item) => item.questions.map((question) => question.id)),
+  ), [exercises, checkedTaskIds]);
   // Per-exercise panel defaults: writing/speaking briefs are short, so their
   // panel starts at the minimum width with larger text (140%); reading
   // passages get the roomier split and normal text.
@@ -219,6 +238,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
       .then(({ test: detail, attempt }) => {
       if (!active) return;
       setTest(detail);
+      limitRef.current = detail.time_limit_minutes;
       setAttemptId(attempt.id);
       setTaskOrder(attempt.task_order ?? null);
       const serverAnswers = Object.fromEntries((attempt.answers ?? []).map((row) => [row.question_id, row.answer]));
@@ -247,13 +267,15 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
         const total = detail.sections.flatMap((section) => section.tasks).length;
         if (Number.isFinite(position) && position > 0 && position < total) setCurrentExercise(position);
       } catch { /* start from the first exercise */ }
-      setClockBase({ remaining: Math.max(0, detail.time_limit_minutes * 60 - (attempt.elapsed_seconds ?? 0)), at: Date.now() });
+      const waiting = Boolean(attempt.awaiting_start);
+      setClockBase({ remaining: Math.max(0, detail.time_limit_minutes * 60 - (attempt.elapsed_seconds ?? 0)), at: waiting ? 0 : Date.now() });
+      setAwaitingStart(waiting);
       setProctored(Boolean(attempt.exam_session_id));
       setPaused(Boolean(attempt.paused));
       setViolationBase(attempt.violations ?? 0);
       setMaxViolations(attempt.max_violations ?? 3);
       setExamMode(attempt.exam_mode !== false);
-      setTimerStarted(true);
+      setTimerStarted(!waiting);
     }).catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : t("Testni yuklab bo'lmadi.", "Unable to load this test.")); });
     return () => { active = false; };
     // Switching language must not reload the test; t only shapes the error text.
@@ -271,10 +293,18 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     let alive = true;
     const beat = async () => {
       try {
-        const state = await api<{ status: string; paused: boolean; removed: boolean; remaining_seconds: number; exam_mode?: boolean }>(
+        const state = await api<{ status: string; paused: boolean; removed: boolean; remaining_seconds: number; exam_mode?: boolean; time_limit_minutes?: number }>(
           `/attempts/${attemptId}/heartbeat`, { method: "POST" },
         );
         if (!alive) return;
+        const limit = state.time_limit_minutes;
+        if (limit && limitRef.current && limit !== limitRef.current) {
+          const delta = limit - limitRef.current;
+          limitRef.current = limit;
+          setTest((current) => current && { ...current, time_limit_minutes: limit });
+          if (!awaitingRef.current) setClockBase({ remaining: state.remaining_seconds, at: Date.now() });
+          setTimeNotice({ minutes: limit, delta });
+        }
         if (state.status !== "IN_PROGRESS") {
           try {
             localStorage.removeItem(`exam-progress:${attemptId}`);
@@ -284,7 +314,9 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
           router.replace(`${resultBasePath}/${attemptId}`);
           return;
         }
-        // Re-anchor the clock on pause/resume or when it drifted from the server.
+        // Re-anchor the clock on pause/resume or when it drifted from the server
+        // (not while the briefing is up — the clock has not started).
+        if (awaitingRef.current) { setRemoved(state.removed); setPaused(state.paused); return; }
         const local = timeLeft(clockRef.current, pausedRef.current);
         if (pausedRef.current !== state.paused || Math.abs(local - state.remaining_seconds) > 2) {
           setClockBase({ remaining: state.remaining_seconds, at: Date.now() });
@@ -317,6 +349,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
   const lockdown = useExamLockdown({
     active: examMode && timerStarted && Boolean(attemptId) && !paused && !removed && !leaving,
     initialViolations: violationBase,
+    fullscreenRefused,
     onViolation: (kind, localCount) => { reportViolation(kind, localCount).catch(() => {}); },
   });
 
@@ -342,6 +375,27 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     } catch {
       // Offline: still enforce the limit with a normal submit.
       if (localCount >= maxViolations) submit();
+    }
+  }
+
+  // "Start" on the briefing: fullscreen is requested inside the click (browsers
+  // allow it only there), then the server starts the clock.
+  async function beginExam() {
+    if (!attemptId || beginning) return;
+    setBeginning(true);
+    setError("");
+    const fullscreen = examMode && fullscreenSupported() ? enterFullscreen() : Promise.resolve(true);
+    try {
+      const state = await api<AttemptState>(`/attempts/${attemptId}/begin`, { method: "POST" });
+      if (!(await fullscreen)) setFullscreenRefused(true);
+      if (test) setClockBase({ remaining: Math.max(0, test.time_limit_minutes * 60 - (state.elapsed_seconds ?? 0)), at: Date.now() });
+      setAwaitingStart(false);
+      setTimerStarted(true);
+    } catch (reason) {
+      exitFullscreen();
+      setError(reason instanceof Error ? reason.message : t("Boshlab bo‘lmadi.", "Unable to start."));
+    } finally {
+      setBeginning(false);
     }
   }
 
@@ -525,6 +579,8 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
   }
 
   function setAnswer(questionId: string, answer: AnswerValue) {
+    // A finished exercise is locked (the server ignores changes too).
+    if (lockedQuestions.has(questionId)) return;
     setAnswers((current) => ({ ...current, [questionId]: answer }));
     setExerciseResults((current) => {
       if (!(questionId in current)) return current;
@@ -562,19 +618,23 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
       : [...current, questionId]);
   }
 
+  function scrollToQuestion(questionId: string) {
+    document.getElementById(`q-${questionId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
   function checkExercise(exercise: Exercise) {
     if (!attemptId) return;
     const unanswered = scorableQuestions(exercise.questions).filter((question) => !hasAnswer(answers[question.id]));
-    if (unanswered.length) {
-      confirm({
-        title: t(`${unanswered.length} ta savolga javob berilmagan`, `${unanswered.length} unanswered question${unanswered.length === 1 ? "" : "s"}`),
-        description: t("Mashqni yakunlashni xohlaysizmi?", "Are you sure you want to finish this exercise?"),
-        confirmLabel: t("Mashqni yakunlash", "Finish exercise"),
-        onConfirm: () => doCheckExercise(exercise),
-      });
-      return;
-    }
-    doCheckExercise(exercise);
+    confirm({
+      title: unanswered.length
+        ? t(`${unanswered.length} ta savol javobsiz`, `${unanswered.length} unanswered`)
+        : t("Mashqni yakunlaysizmi?", "Finish this exercise?"),
+      description: t("Keyin javoblarni o‘zgartirib bo‘lmaydi.", "Answers can’t be changed afterwards."),
+      confirmLabel: t("Yakunlash", "Finish"),
+      cancelLabel: unanswered.length ? t("Javob berish", "Answer it") : undefined,
+      onCancel: unanswered.length ? () => scrollToQuestion(unanswered[0].id) : undefined,
+      onConfirm: () => doCheckExercise(exercise),
+    });
   }
 
   async function doCheckExercise(exercise: Exercise) {
@@ -583,15 +643,22 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     setError("");
     try {
       await saveAnswers();
-      const result = await api<{ results: { question_id: string; is_correct: boolean | null; is_example?: boolean }[] }>(
+      const result = await api<{ results: { question_id: string; is_correct: boolean | null; is_example?: boolean; correct_answer?: string | null }[] }>(
         `/attempts/${attemptId}/tasks/${exercise.id}/check`,
         { method: "POST" },
       );
-      // Examples are reference items — checking never marks them right/wrong.
-      setExerciseResults((current) => ({
-        ...current,
-        ...Object.fromEntries(result.results.filter((item) => !item.is_example).map((item) => [item.question_id, item.is_correct])),
-      }));
+      // An examiner exam shows no right/wrong until the end. In practice,
+      // examples are reference items — never marked right/wrong.
+      if (!proctored) {
+        setExerciseResults((current) => ({
+          ...current,
+          ...Object.fromEntries(result.results.filter((item) => !item.is_example).map((item) => [item.question_id, item.is_correct])),
+        }));
+        setCorrectAnswers((current) => ({
+          ...current,
+          ...Object.fromEntries(result.results.filter((item) => item.correct_answer).map((item) => [item.question_id, item.correct_answer as string])),
+        }));
+      }
       setCheckedTaskIds((current) => current.includes(exercise.id) ? current : [...current, exercise.id]);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t("Mashqni tekshirib bo'lmadi.", "Unable to check this exercise."));
@@ -812,7 +879,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
       });
       return <div className="mt-5 space-y-3">
         <div className="flex min-h-14 flex-wrap items-center gap-2 rounded-xl border-2 border-dashed border-orange-200 bg-orange-500/[.025] p-3">
-          {selected.length ? selected.map((token, index) => <button type="button" key={`${token}-${index}`} onClick={() => setAnswer(question.id, selected.filter((_, itemIndex) => itemIndex !== index))} className="rounded-lg bg-brand px-3 py-2 text-sm font-bold text-white">{index + 1}. {token}</button>) : <span className="text-xs font-semibold text-muted">{t("Javobni tuzish uchun pastdagi so'zlarni bosing.", "Click words below to build the answer.")}</span>}
+          {selected.length ? selected.map((token, index) => <button type="button" key={`${token}-${index}`} onClick={() => setAnswer(question.id, selected.filter((_, itemIndex) => itemIndex !== index))} className="rounded-lg bg-brand px-3 py-2 text-sm font-bold text-white">{index + 1}. {token}</button>) : <span className="text-xs font-semibold text-muted">{t("So‘zlarni tartib bilan bosing.", "Tap the words in order.")}</span>}
         </div>
         <div className="flex flex-wrap gap-2">{remaining.map((token, index) => <button type="button" key={`${token}-${index}`} onClick={() => setAnswer(question.id, [...selected, token])} className="rounded-lg border border-line bg-canvas px-3 py-2 text-sm font-bold text-ink hover:border-brand hover:text-brand">{token}</button>)}</div>
         {selected.length > 0 && <button type="button" onClick={() => setAnswer(question.id, [])} className="flex items-center gap-1 text-xs font-bold text-muted hover:text-ink"><RotateCcw className="h-3 w-3" /> {t("Tartibni tiklash", "Reset order")}</button>}
@@ -1009,14 +1076,26 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
   const exerciseQuestions = scorableQuestions(exercise.questions);
   const answered = scoredQuestions.filter((question) => hasAnswer(answers[question.id])).length;
   const exerciseAnswered = exerciseQuestions.filter((question) => hasAnswer(answers[question.id])).length;
+  const exerciseChecked = checkedTaskIds.includes(exercise.id);
+  const firstUnanswered = exerciseQuestions.find((question) => !hasAnswer(answers[question.id]));
   const time = <ExamCountdown base={clockBase} paused={paused} />;
+  const timeBanner = timeNotice && <div role="status" className="pointer-events-none fixed inset-x-0 top-3 z-[90] flex justify-center px-4">
+    <div className="pointer-events-auto flex max-w-md items-center gap-3 rounded-2xl border border-teal-500/30 bg-canvas px-4 py-3 shadow-lift">
+      <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-xl", timeNotice.delta > 0 ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600")}><Clock3 className="h-4 w-4" /></span>
+      <p className="text-sm font-bold text-ink">{timeNotice.delta > 0
+        ? t(`+${timeNotice.delta} daqiqa qo‘shildi`, `+${timeNotice.delta} minutes added`)
+        : t(`${-timeNotice.delta} daqiqa kamaytirildi`, `${-timeNotice.delta} minutes taken off`)}
+        <span className="block text-xs font-semibold text-muted">{t(`Jami: ${formatDuration(timeNotice.minutes * 60, lang)}`, `Total: ${formatDuration(timeNotice.minutes * 60, lang)}`)}</span></p>
+      <button type="button" aria-label={t("Yopish", "Close")} onClick={() => setTimeNotice(null)} className="rounded-lg p-1 text-muted hover:text-ink"><X className="h-4 w-4" /></button>
+    </div>
+  </div>;
   const proctorOverlay = proctored && (paused || removed) && <div className="fixed inset-0 z-[60] grid place-items-center bg-[#0b1020]/80 p-4 backdrop-blur-sm">
     <div className="w-full max-w-md rounded-3xl border border-line bg-canvas p-8 text-center shadow-lift">
       {removed ? <ShieldAlert className="mx-auto h-14 w-14 text-red-500" /> : <PauseCircle className="mx-auto h-14 w-14 animate-pulse text-violet-500" />}
       <h2 className="mt-5 text-2xl font-extrabold text-ink">{removed ? t("Siz imtihondan chiqarildingiz", "You were removed from this exam") : t("Imtihon to'xtatildi", "Exam paused")}</h2>
       <p className="mt-2 text-sm leading-6 text-muted">{removed
-        ? t("Examiner sizni bu imtihondan chiqardi. Savollar bo'lsa, examinerga murojaat qiling.", "The examiner removed you from this exam. Talk to them if you have questions.")
-        : t("Examiner imtihonni to'xtatdi. Vaqtingiz ketmayapti — examiner davom ettirishi bilan shu joydan davom etasiz.", "The examiner paused your exam. Your time is not running — you'll continue from here as soon as they resume.")}</p>
+        ? t("Examiner sizni imtihondan chiqardi.", "The examiner removed you from this exam.")
+        : t("Vaqtingiz to‘xtagan. Examiner davom ettirishini kuting.", "Your time is stopped. Wait for the examiner.")}</p>
       {!removed && <p className="mt-5 inline-flex items-center gap-2 rounded-xl bg-surface px-4 py-2 font-mono text-lg font-extrabold text-ink"><Clock3 className="h-4 w-4 text-brand" />{time}</p>}
       {removed && <Button className="mt-6" onClick={() => router.replace("/dashboard")}>{t("Bosh sahifa", "Dashboard")}</Button>}
     </div>
@@ -1029,33 +1108,30 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
       </span>
       <h2 id="lockdown-title" className="mt-5 text-2xl font-extrabold text-ink">{lockdown.away === "start"
         ? t("Imtihon rejimi", "Exam mode")
-        : t("Imtihon rejimidan chiqdingiz", "You left exam mode")}</h2>
+        : t("Ogohlantirish", "Warning")}</h2>
       <p className="mt-2 text-sm leading-6 text-muted">{lockdown.away === "start"
-        ? t(`Imtihon to'liq ekranda o'tadi. Boshqa oyna, tab yoki ilovaga o'tish yoki to'liq ekrandan chiqish qoidabuzarlik hisoblanadi — ${maxViolations} marta chiqilsa, imtihon avtomatik yakunlanadi va javoblaringiz topshiriladi. Nusxalash va qo'yish o'chirilgan.`,
-          `The exam runs in fullscreen. Switching to another window, tab or app, or leaving fullscreen, counts as a violation — after ${maxViolations} the exam ends automatically and your answers are submitted. Copy and paste are disabled.`)
+        ? t("To‘liq ekranda davom eting.", "Continue in fullscreen.")
         : lockdown.away === "fullscreen"
-          ? t("To'liq ekrandan chiqish qoidabuzarlik sifatida qayd etildi.", "Leaving fullscreen was recorded as a violation.")
-          : t("Boshqa oyna yoki ilovaga o'tish qoidabuzarlik sifatida qayd etildi.", "Switching to another window or app was recorded as a violation.")}</p>
+          ? t("To‘liq ekrandan chiqdingiz.", "You left fullscreen.")
+          : t("Boshqa oynaga o‘tdingiz.", "You switched to another window.")}</p>
       {lockdown.violations > 0 && <div className="mt-5" aria-label={`${lockdown.violations} / ${maxViolations}`}>
         <div className="flex justify-center gap-2">{Array.from({ length: maxViolations }, (_, index) => <i key={index} className={cn("h-2.5 w-10 rounded-full", index < lockdown.violations ? "bg-red-500" : "bg-surface ring-1 ring-line")} />)}</div>
-        <p className="mt-2 text-xs font-bold text-red-500">{lockdown.violations} / {maxViolations} — {violationsLeft > 0
-          ? t(`yana ${violationsLeft} marta chiqilsa, imtihon avtomatik yakunlanadi`, `${violationsLeft} more and the exam ends automatically`)
-          : t("imtihon yakunlanmoqda…", "ending the exam…")}</p>
+        <p className="mt-2 text-xs font-bold text-red-500">{violationsLeft > 0
+          ? t(`${lockdown.violations}/${maxViolations} ogohlantirish`, `${lockdown.violations}/${maxViolations} warnings`)
+          : t("Imtihon yakunlanmoqda…", "Ending the exam…")}</p>
       </div>}
       <Button className="mt-6 w-full" disabled={violationsLeft === 0} onClick={() => { lockdown.resume().catch(() => {}); }}>
         <Maximize className="h-4 w-4" />
-        {lockdown.fullscreen.current
-          ? (lockdown.away === "start" ? t("To'liq ekranda davom etish", "Continue in fullscreen") : t("To'liq ekranga qaytish", "Back to fullscreen"))
-          : t("Imtihonga qaytish", "Back to the exam")}
+        {t("Davom etish", "Continue")}
       </Button>
       <button type="button" onClick={leaveExam} className="mt-3 inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl px-4 text-sm font-bold text-muted transition hover:text-ink">
-        <LogOut className="h-4 w-4" />{proctored ? t("Imtihondan chiqish", "Leave the exam") : t("Saqlab chiqish", "Save & exit")}
+        <LogOut className="h-4 w-4" />{proctored ? t("Chiqish", "Leave") : t("Saqlab chiqish", "Save & exit")}
       </button>
-      <p className="mt-2 text-xs text-muted">{t("Qolgan vaqt", "Time left")}: <b className="font-mono text-ink">{time}</b> — {t("vaqt to'xtamaydi", "the clock keeps running")}</p>
+      <p className="mt-2 text-xs text-muted">{t("Qolgan vaqt", "Time left")}: <b className="font-mono text-ink">{time}</b></p>
     </div>
   </div>;
   const lockdownPill = <span
-    title={t(`Imtihon rejimi: ${maxViolations} marta chiqilsa imtihon avtomatik yakunlanadi`, `Exam mode: leaving ${maxViolations} times ends the exam`)}
+    title={t("Imtihon rejimi", "Exam mode")}
     className={cn("flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold", lockdown.violations ? "bg-red-500/10 text-red-600 dark:text-red-400" : "bg-surface text-muted")}
   ><Lock className="h-3.5 w-3.5" /><span className={cn(!lockdown.violations && "hidden md:inline")}>{lockdown.violations ? `${lockdown.violations}/${maxViolations}` : t("Imtihon rejimi", "Exam mode")}</span></span>;
   // gap_match draws its own two banks (words + replies) — keep the generic
@@ -1069,8 +1145,37 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     ...bankOptions.filter((option) => exampleText.includes(option.label.toLocaleLowerCase())).map((option) => option.value),
   ]);
 
+  if (awaitingStart) {
+    const total = scorableQuestions(questions).length;
+    const fact = (value: number, label: string) => <div className="rounded-2xl bg-surface px-2 py-3"><p className="text-2xl font-extrabold text-ink">{value}</p><p className="text-xs font-bold text-muted">{label}</p></div>;
+    return <>
+      {proctorOverlay}
+      {timeBanner}
+      <div className="exam-screen grid min-h-[100dvh] place-items-center bg-surface p-4">
+        <div className="w-full max-w-md rounded-3xl border border-line bg-canvas p-7 text-center shadow-lift sm:p-9">
+          <h1 className="text-2xl font-extrabold leading-tight text-ink">{test.title}</h1>
+          <div className="mt-6 grid grid-cols-3 gap-2">
+            {fact(test.time_limit_minutes, t("daqiqa", "minutes"))}
+            {fact(total, t("savol", "questions"))}
+            {fact(exercises.length, t("mashq", "exercises"))}
+          </div>
+          <ul className="mt-6 space-y-3 text-left text-sm font-semibold text-ink">
+            {examMode && <li className="flex items-center gap-3"><Maximize className="h-4 w-4 shrink-0 text-brand" />{t("To‘liq ekranda o‘tadi.", "Runs in fullscreen.")}</li>}
+            {examMode && <li className="flex items-center gap-3"><ShieldAlert className="h-4 w-4 shrink-0 text-brand" />{t(`Boshqa oynaga o‘tish — ogohlantirish. ${maxViolations} tasida imtihon yakunlanadi.`, `Leaving the exam is a warning. ${maxViolations} end it.`)}</li>}
+            <li className="flex items-center gap-3"><Check className="h-4 w-4 shrink-0 text-brand" />{t("Javoblar o‘zi saqlanadi.", "Answers save automatically.")}</li>
+          </ul>
+          {error && <p className="mt-5 rounded-xl bg-red-500/10 p-3 text-sm font-semibold text-red-600">{error}</p>}
+          <Button className="mt-7 w-full" onClick={beginExam} disabled={beginning}><Play className="h-4 w-4" /> {beginning ? t("Tayyorlanmoqda…", "Preparing…") : t("Boshlash", "Start")}</Button>
+          <p className="mt-3 text-xs text-muted">{t("Vaqt shu tugmadan keyin boshlanadi.", "The clock starts when you press it.")}</p>
+          <button type="button" onClick={() => { setLeaving(true); router.push("/dashboard"); }} className="mt-4 inline-flex min-h-[44px] items-center gap-1.5 px-4 text-sm font-bold text-muted transition hover:text-ink"><ArrowLeft className="h-4 w-4" /> {t("Orqaga", "Back")}</button>
+        </div>
+      </div>
+    </>;
+  }
+
   if (showReview) return <>
     {proctorOverlay}
+    {timeBanner}
     {lockdownOverlay}
     {dialog}
     <div className="exam-screen min-h-screen bg-surface p-4 sm:p-8"><div className="mx-auto max-w-5xl rounded-3xl border border-line bg-canvas p-6 shadow-soft sm:p-9">
@@ -1082,7 +1187,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
       </ExamCountdown>
     </div>
     <h1 className="mt-6 text-3xl font-extrabold text-ink">{t("Topshirishga tayyormisiz?", "Ready to submit?")}</h1>
-    <p className="mt-3 text-muted">{t(`${scoredQuestions.length} ta savoldan ${answered} tasiga javob berildi. Ko'rib chiqish uchun mashqni oching.`, `${answered} of ${scoredQuestions.length} questions answered. Open an exercise to review it.`)}</p>
+    <p className="mt-3 text-muted">{t(`${answered}/${scoredQuestions.length} ta savolga javob berildi.`, `${answered} of ${scoredQuestions.length} answered.`)}</p>
     <div className="mt-7 space-y-5">{test.sections.map((section) => {
       const sectionExercises = exercises.map((item, index) => ({ item, index })).filter(({ item }) => item.section.id === section.id);
       return <section key={section.id}><h2 className="text-sm font-extrabold text-ink">{section.title}</h2><div className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{sectionExercises.map(({ item, index }) => {
@@ -1094,9 +1199,9 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     })}</div>
     {error && <p className="mt-5 text-sm font-semibold text-red-600">{error}</p>}
     <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-      {!proctored && <Button variant="danger" onClick={restartAttempt} className="sm:mr-auto"><RotateCcw className="h-4 w-4" /> {t("Boshidan boshlash", "Restart Test")}</Button>}
-      <Button variant="secondary" onClick={() => setShowReview(false)}>{t("Testga qaytish", "Return to Test")}</Button>
-      <Button onClick={submit}><Send className="h-4 w-4" /> {t("Testni topshirish", "Submit Test")}</Button>
+      {!proctored && <Button variant="danger" onClick={restartAttempt} className="sm:mr-auto"><RotateCcw className="h-4 w-4" /> {t("Boshidan boshlash", "Start over")}</Button>}
+      <Button variant="secondary" onClick={() => setShowReview(false)}>{t("Testga qaytish", "Back to test")}</Button>
+      <Button onClick={submit}><Send className="h-4 w-4" /> {t("Topshirish", "Submit")}</Button>
     </div>
   </div></div>
   </>;
@@ -1104,6 +1209,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
   return <>
     {dialog}
     {proctorOverlay}
+    {timeBanner}
     {lockdownOverlay}
     <div className="exam-screen min-h-[100dvh] bg-surface xl:flex xl:h-[100dvh] xl:flex-col xl:overflow-hidden">
     <header className="sticky top-0 z-30 border-b border-line bg-canvas/95 backdrop-blur">
@@ -1288,7 +1394,10 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
             {/* Exercise heading lives with the questions: number + full rubric
                 in a readable size (the sticky header only keeps the test title). */}
             <div className="pb-2">
-              <p className="text-xs font-extrabold uppercase tracking-wider text-brand">Exercise {currentExercise + 1} <span className="font-bold text-muted">of {exercises.length}</span></p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-extrabold uppercase tracking-wider text-brand">{t(`${currentExercise + 1}-mashq`, `Exercise ${currentExercise + 1}`)} <span className="font-bold text-muted">/ {exercises.length}</span></p>
+                <span className="shrink-0 rounded-full bg-surface px-2.5 py-1 text-[11px] font-bold text-muted">{t(`Jami ${answered}/${scoredQuestions.length}`, `${answered}/${scoredQuestions.length} total`)}</span>
+              </div>
               {headerInstructions && (
                 /^[^\n]*\n\s*[-•*]\s+/.test(headerInstructions)
                   ? <div className="mt-1.5">{renderInstructionBlocks(headerInstructions, true)}</div>
@@ -1304,6 +1413,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
                 >{word}</span>)}
               </div>
             </div>}
+            <fieldset disabled={exerciseChecked} className="m-0 min-w-0 space-y-3 border-0 p-0">
             {exercise.interaction?.kind === "cloze_passage" ? renderClozePassage(exercise)
               : isGapMatch ? (
                 <GapMatch
@@ -1336,32 +1446,37 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
                   flagged.includes(question.id)
                     ? "bg-orange-500/10 text-orange-500"
                     : "text-muted/50 hover:bg-orange-500/10 hover:text-orange-500 sm:[@media(hover:hover)]:opacity-0 sm:group-hover/card:opacity-100",
-                )}><Bookmark className={cn("h-4 w-4", flagged.includes(question.id) && "fill-current")} /></button>}</div>{question.is_example && <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-sky-500/10 px-3 py-1 text-xs font-bold text-sky-600"><CheckCircle2 className="h-3.5 w-3.5" /> {t("Namuna — baholanmaydi", "Example — not scored")}</p>}{renderAnswer(exercise, question)}{checked && result === null && <p className="mt-3 text-xs font-bold text-brand">🤖 {t("Testni topshirganingizdan keyin AI buni baholaydi.", "The AI will grade this after you submit the test.")}</p>}</div>
+                )}><Bookmark className={cn("h-4 w-4", flagged.includes(question.id) && "fill-current")} /></button>}</div>{question.is_example && <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-sky-500/10 px-3 py-1 text-xs font-bold text-sky-600"><CheckCircle2 className="h-3.5 w-3.5" /> {t("Namuna — baholanmaydi", "Example — not scored")}</p>}{renderAnswer(exercise, question)}{result === false && correctAnswers[question.id] && <p className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300"><Check className="h-3.5 w-3.5" /> {t("To‘g‘ri javob", "Correct answer")}: {interactionOptions(exercise).find((option) => option.value === correctAnswers[question.id])?.label ?? correctAnswers[question.id]}</p>}{checked && result === null && <p className="mt-3 text-xs font-bold text-brand">🤖 {t("Topshirgach AI baholaydi.", "AI grades this after you submit.")}</p>}</div>
               </div>
             </article>;
           })}
+            </fieldset>
               {error && <p className="rounded-xl bg-red-500/10 p-3 text-sm font-semibold text-red-600">{error}</p>}
               <div className="mt-2 flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
                 <Button variant="ghost" disabled={currentExercise === 0} onClick={() => goToExercise(currentExercise - 1)}><ChevronLeft className="h-4 w-4" /> {t("Oldingi", "Previous")}</Button>
-                <span className="order-first text-center text-xs font-bold text-muted sm:order-none">{t(`Bu mashqda ${exerciseAnswered}/${exerciseQuestions.length} ta javob berildi`, `${exerciseAnswered}/${exerciseQuestions.length} answered in this exercise`)}</span>
+                {exerciseChecked
+                  ? <span className="order-first inline-flex items-center justify-center gap-1.5 text-xs font-bold text-emerald-600 sm:order-none"><CheckCircle2 className="h-4 w-4" /> {t("Mashq yakunlandi", "Exercise finished")}</span>
+                  : firstUnanswered
+                    ? <button type="button" onClick={() => scrollToQuestion(firstUnanswered.id)} className="order-first text-center text-xs font-bold text-brand underline-offset-4 hover:underline sm:order-none">{t(`${exerciseQuestions.length - exerciseAnswered} ta javobsiz — ko‘rsatish`, `${exerciseQuestions.length - exerciseAnswered} unanswered — show`)}</button>
+                    : <span className="order-first text-center text-xs font-bold text-muted sm:order-none">{t(`${exerciseAnswered}/${exerciseQuestions.length} ta javob`, `${exerciseAnswered}/${exerciseQuestions.length} answered`)}</span>}
                 {!checkedTaskIds.includes(exercise.id)
-                  ? <Button variant="secondary" onClick={() => checkExercise(exercise)} disabled={checkingExercise}><Check className="h-4 w-4" /> {checkingExercise ? t("Tekshirilmoqda…", "Checking…") : t("Mashqni yakunlash", "Finish Exercise")}</Button>
+                  ? <Button variant="secondary" onClick={() => checkExercise(exercise)} disabled={checkingExercise}><Check className="h-4 w-4" /> {checkingExercise ? t("Saqlanmoqda…", "Saving…") : t("Mashqni yakunlash", "Finish exercise")}</Button>
                   : currentExercise < exercises.length - 1
-                    ? <Button onClick={() => goToExercise(currentExercise + 1)}>{t("Keyingi mashq", "Next Exercise")} <ChevronRight className="h-4 w-4" /></Button>
-                    : <Button onClick={() => setShowReview(true)}>{t("Ko'rib chiqish va topshirish", "Review & Submit")} <ChevronRight className="h-4 w-4" /></Button>}
+                    ? <Button onClick={() => goToExercise(currentExercise + 1)}>{t("Keyingi mashq", "Next exercise")} <ChevronRight className="h-4 w-4" /></Button>
+                    : <Button onClick={() => setShowReview(true)}>{t("Topshirishga o‘tish", "Review & submit")} <ChevronRight className="h-4 w-4" /></Button>}
               </div>
             </div>
 
             {bankOptions.length > 0 && <aside className="exam-word-bank order-first mb-5 rounded-2xl border border-orange-200 bg-orange-500/[.035] p-4">
-              <div className="flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-wider text-brand">{exercise.interaction?.kind === "matching" ? t("Gapiruvchilar", "Speakers") : t("So'zlar banki", "Word bank")}</p><p className="mt-1 text-[11px] leading-4 text-muted">{reusableOptions ? t("Javoblarni qayta ishlatish mumkin.", "Answers can be reused.") : t("Har bir so'z bir marta ishlatiladi.", "Each word can be used once.")}</p></div><GripVertical className="h-5 w-5 text-orange-300" /></div>
+              <div className="flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-wider text-brand">{exercise.interaction?.kind === "matching" ? t("Gapiruvchilar", "Speakers") : t("So'zlar banki", "Word bank")}</p><p className="mt-1 text-[11px] leading-4 text-muted">{reusableOptions ? t("Qayta ishlatsa bo‘ladi.", "Reusable.") : t("Har biri bir marta.", "Use each once.")}</p></div><GripVertical className="h-5 w-5 text-orange-300" /></div>
               <div className="exam-bank-options mt-4 flex flex-wrap gap-2">{bankOptions.map((option) => {
                 const used = !reusableOptions && usedOptions.has(option.value);
                 const selected = selectedToken === option.value;
                 return <button
                   type="button"
                   key={option.value}
-                  draggable={!used}
-                  disabled={used}
+                  draggable={!used && !exerciseChecked}
+                  disabled={used || exerciseChecked}
                   onDragStart={(event) => {
                     event.dataTransfer.setData("text/plain", option.value);
                     setSelectedToken(option.value);
@@ -1374,8 +1489,8 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
                   )}
                 ><GripVertical className="h-3.5 w-3.5 shrink-0 text-muted" /><span>{option.label}</span></button>;
               })}</div>
-              {selectedToken && <p className="mt-3 rounded-lg bg-brand px-3 py-2 text-[11px] font-bold text-white">Selected: {bankOptions.find((option) => option.value === selectedToken)?.label}. Now click an answer box.</p>}
-              <button type="button" onClick={() => {
+              {selectedToken && <p className="mt-3 rounded-lg bg-brand px-3 py-2 text-[11px] font-bold text-white">{t("Tanlandi", "Selected")}: {bankOptions.find((option) => option.value === selectedToken)?.label}</p>}
+              {!exerciseChecked && <button type="button" onClick={() => {
                 setAnswers((current) => ({
                   ...current,
                   ...Object.fromEntries(exerciseQuestions.map((question) => [question.id, ""])),
@@ -1386,7 +1501,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
                   return updated;
                 });
                 setSelectedToken(null);
-              }} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-bold text-muted hover:bg-canvas hover:text-ink"><RotateCcw className="h-3.5 w-3.5" /> {t("Mashqni tozalash", "Clear exercise")}</button>
+              }} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-bold text-muted hover:bg-canvas hover:text-ink"><RotateCcw className="h-3.5 w-3.5" /> {t("Mashqni tozalash", "Clear exercise")}</button>}
             </aside>}
           </div>
         </section>

@@ -93,6 +93,9 @@ video { height: auto; }
   input:not([type="range"]):not([type="checkbox"]):not([type="radio"]), select, textarea { font-size: 16px; }
 }
 ::selection { background: rgba(242, 101, 34, .22); }
+/* The sign-in password field has its own eye toggle; hide Edge's built-in one
+   so two eye icons don't appear side by side. */
+.demo-input input::-ms-reveal, .demo-input input::-ms-clear { display: none; }
 .noise {
   background-image: radial-gradient(circle at 20% 15%, rgba(128, 113, 255, .16), transparent 30%),
     radial-gradient(circle at 85% 80%, rgba(255, 148, 112, .12), transparent 32%);

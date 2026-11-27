@@ -99,6 +99,8 @@ def attempt_elapsed_seconds(attempt: Attempt, now: datetime | None = None) -> fl
     """Elapsed exam time. While an examiner pause is active the clock stands
     still at paused_at; resume_attempt() shifts started_at forward by the
     paused span, so time spent paused is never counted."""
+    if getattr(attempt, "awaiting_start", False):
+        return 0.0  # still on the pre-exam briefing — the clock has not started
     now = now or datetime.now(timezone.utc)
     end = _aware(attempt.paused_at) if attempt.paused_at else now
     return max(0.0, (end - _aware(attempt.started_at)).total_seconds())
@@ -106,6 +108,26 @@ def attempt_elapsed_seconds(attempt: Attempt, now: datetime | None = None) -> fl
 
 def remaining_seconds(attempt: Attempt, time_limit_minutes: int, now: datetime | None = None) -> int:
     return max(0, int(time_limit_minutes * 60 - attempt_elapsed_seconds(attempt, now)))
+
+
+# Exam length an examiner may set for a session, in minutes.
+DEFAULT_SESSION_MINUTES = 60
+MIN_SESSION_MINUTES = 5
+MAX_SESSION_MINUTES = 300
+
+
+async def attempt_time_limit(db: AsyncSession, attempt: Attempt) -> int:
+    """Minutes this attempt may run: the examiner's session length for a
+    proctored sitting, otherwise the test's own time limit."""
+    if attempt.exam_session_id is not None:
+        minutes = await db.scalar(
+            select(ExamSession.time_limit_minutes).where(ExamSession.id == attempt.exam_session_id)
+        )
+        if minutes:
+            return int(minutes)
+    return int(await db.scalar(
+        select(TestVariant.time_limit_minutes).where(TestVariant.id == attempt.test_variant_id)
+    ) or 0)
 
 
 def pause_attempt_clock(attempt: Attempt) -> bool:

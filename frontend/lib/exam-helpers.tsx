@@ -47,6 +47,8 @@ export type AttemptState = {
   max_violations?: number;
   // An examiner can switch exam mode off for one student.
   exam_mode?: boolean;
+  // A new attempt waits on the briefing; its clock starts on "Start".
+  awaiting_start?: boolean;
 };
 export type ExerciseResult = Record<string, boolean | null>;
 

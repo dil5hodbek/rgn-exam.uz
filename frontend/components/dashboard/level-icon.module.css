@@ -17,4 +17,11 @@ a:hover .badge { transform: translateY(-4px) rotate(0deg); }
 :global(.dark) .art::before { border-color: #ff8a4640; background: #ff792512; }
 a:hover .badge { transform: none; } }
 
-@media(max-width:639px) { .compact { width: 64px; height: 70px; }.compact .badge { width: 50px; height: 50px; border-radius: 16px; }.compact .inset { inset: 4px; border-radius: 12px; }.compact .symbol { width: 27px; height: 27px; }.compact::before { width: 60px; height: 60px; border-radius: 20px; }.compact .pedestal { width: 44px; bottom: 3px; } }
+/* Dashboard level cards: a small, straight badge — no tilted frame behind it. */
+.compact { width: 52px; height: 52px; }
+.compact::before, .compact .pedestal { display: none; }
+.compact .badge { width: 48px; height: 48px; border-radius: 15px; box-shadow: inset 0 2px 1px var(--shine), 0 3px 0 var(--under), 0 8px 16px #ed5b1922; }
+.compact .inset { inset: 4px; border-radius: 11px; }
+.compact .badge .symbol { width: 24px; height: 24px; }
+a:hover .compact .badge { transform: translateY(-2px); }
+@media (max-width: 639px) { .compact { width: 42px; height: 42px; } .compact .badge { width: 40px; height: 40px; border-radius: 12px; } .compact .inset { inset: 3px; border-radius: 9px; } .compact .badge .symbol { width: 20px; height: 20px; } }

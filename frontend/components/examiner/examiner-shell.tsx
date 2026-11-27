@@ -46,7 +46,7 @@ export function ExaminerShell({ children }: { children: React.ReactNode }) {
       </div>
     </aside>
     <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-line bg-canvas/90 px-4 backdrop-blur lg:ml-64 lg:px-8">
-      <div className="flex items-center gap-3"><MobileNavigation items={items.map(({ href, label }) => ({ href, label }))} pathname={pathname} onSignOut={signOut} /><div><p className="text-sm font-extrabold text-ink">{t("Examiner paneli", "Examiner Panel")}</p><p className="hidden text-[11px] text-muted sm:block">{t("Imtihon o'tkazish va o'quvchilarni nazorat qilish", "Run exams and supervise students")}</p></div></div>
+      <div className="flex items-center gap-3"><MobileNavigation items={items.map(({ href, label }) => ({ href, label }))} pathname={pathname} onSignOut={signOut} /><div><p className="text-sm font-extrabold text-ink">{t("Examiner paneli", "Examiner Panel")}</p><p className="hidden text-[11px] text-muted sm:block">{t("Imtihonlar va nazorat", "Exams and monitoring")}</p></div></div>
       <div className="flex items-center gap-2"><LangToggle /><ThemeToggle /></div>
     </header>
     <main className="min-w-0 lg:ml-64">{children}</main>

@@ -136,7 +136,7 @@ export default function ForgotPassword() {
     <h2>{titles[step]}</h2>
 
     {step === "phone" && <form className="phone-login" onSubmit={requestCode} noValidate>
-      <p className="entry-hint">{t("Hisobingizga bog‘langan telefon raqamini kiriting. Tasdiqlash kodi Registon Telegram botiga keladi.", "Enter the phone number on your account. The code will arrive in the Registon Telegram bot.")}</p>
+      <p className="entry-hint">{t("Kod Registon Telegram botiga keladi.", "The code arrives in the Registon Telegram bot.")}</p>
       <PhoneField value={phone} onChange={setPhone} autoComplete="tel-national"
         label={t("Telefon raqami", "Phone number")} placeholder="90 000 00 00" />
       <button className="phone-submit" type="submit" disabled={loading}>{loading ? t("Yuborilmoqda…", "Sending…") : t("Kodni olish", "Get the code")}</button>
@@ -145,7 +145,7 @@ export default function ForgotPassword() {
 
     {step === "code" && <form className="phone-login" onSubmit={verifyCode} noValidate>
       <p className="entry-hint">
-        {t("Botni oching, Start ni bosing va telefon raqamingizni yuboring. Bot sizga 5 xonali kod yuboradi:", "Open the bot, tap Start and share your phone number. The bot will send you a 5-digit code:")}
+        {t("Botda Start’ni bosing va raqamingizni yuboring. Kod shu raqamga:", "Tap Start in the bot and share your number. The code is for:")}
         {" "}<b>+998 {phone}</b>
       </p>
       <a className="telegram-button" href={botUrl} target="_blank" rel="noreferrer">
@@ -180,7 +180,7 @@ export default function ForgotPassword() {
     </form>}
 
     {step === "done" && <div className="phone-login">
-      <p className="entry-hint">{t("Parolingiz o‘zgartirildi. Endi yangi parol bilan kirishingiz mumkin.", "Your password has been changed. You can now sign in with the new password.")}</p>
+      <p className="entry-hint">{t("Endi yangi parol bilan kiring.", "Sign in with your new password.")}</p>
       <Link className="phone-submit" href="/sign-in">{t("Kirish", "Sign in")}</Link>
     </div>}
 

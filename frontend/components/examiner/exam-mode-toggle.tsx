@@ -60,8 +60,8 @@ export function ExamModeToggle({ studentId, enabled, maxViolations = 3, compact 
     <div className="min-w-0 flex-1">
       <p className="text-sm font-extrabold text-ink">{t("Imtihon rejimi", "Exam mode")} · <span className={enabled ? "text-teal-600 dark:text-teal-300" : "text-amber-600 dark:text-amber-300"}>{enabled ? t("Yoqilgan", "On") : t("O'chirilgan", "Off")}</span></p>
       <p className="mt-0.5 text-xs leading-5 text-muted">{enabled
-        ? t(`To'liq ekran qulfi, chiqishlar sanaladi — ${maxViolations}-chiqishda imtihon avtomatik yakunlanadi.`, `Fullscreen lock, leaves are counted — the ${maxViolations}rd leave ends the exam automatically.`)
-        : t("Bu o'quvchi to'liq ekransiz yozadi, chiqishlar sanalmaydi.", "This student sits exams without the fullscreen lock; leaves are not counted.")}</p>
+        ? t(`To‘liq ekran. ${maxViolations} ta chiqishda imtihon yakunlanadi.`, `Fullscreen. ${maxViolations} exits end the exam.`)
+        : t("To‘liq ekransiz, chiqishlar sanalmaydi.", "No fullscreen, exits not counted.")}</p>
       {error && <p className="mt-1 text-xs font-semibold text-red-600">{error}</p>}
     </div>
     <Switch checked={enabled} disabled={busy} onChange={toggle} label={t("Imtihon rejimi", "Exam mode")} />

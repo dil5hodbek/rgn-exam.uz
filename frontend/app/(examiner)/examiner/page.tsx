@@ -3,10 +3,11 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Clock3, KeyRound, Play, Plus, X } from "lucide-react";
+import { DEFAULT_EXAM_MINUTES, DurationPicker } from "@/components/examiner/duration-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
-import { type ExaminerCatalog, type SessionSummary } from "@/lib/examiner";
+import { formatDateTime, type ExaminerCatalog, type SessionSummary } from "@/lib/examiner";
 import { useLang } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +19,7 @@ function CreateSessionDialog({ onClose }: { onClose: () => void }) {
   const [examTypeId, setExamTypeId] = useState("");
   const [variantId, setVariantId] = useState("");
   const [title, setTitle] = useState("");
+  const [minutes, setMinutes] = useState(DEFAULT_EXAM_MINUTES);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   useEffect(() => {
@@ -37,7 +39,7 @@ function CreateSessionDialog({ onClose }: { onClose: () => void }) {
     setError("");
     try {
       const session = await api<{ id: string }>("/examiner/sessions", {
-        method: "POST", body: JSON.stringify({ test_variant_id: variantId, title }),
+        method: "POST", body: JSON.stringify({ test_variant_id: variantId, title, time_limit_minutes: minutes }),
       });
       router.push(`/examiner/sessions/${session.id}`);
     } catch (reason) {
@@ -48,7 +50,7 @@ function CreateSessionDialog({ onClose }: { onClose: () => void }) {
 
   return <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onClick={onClose}>
     <div className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-3xl border border-line bg-canvas shadow-lift" onClick={(event) => event.stopPropagation()}>
-      <div className="flex items-center justify-between border-b border-line p-5"><div><h2 className="text-lg font-extrabold text-ink">{t("Imtihon yaratish", "Create exam")}</h2><p className="text-xs text-muted">{t("Mavjud testlardan birini tanlang — tizim parol yaratib beradi.", "Pick one of the existing tests — the system generates a password.")}</p></div><button type="button" onClick={onClose} className="rounded-lg p-1.5 text-muted hover:text-ink"><X className="h-4 w-4" /></button></div>
+      <div className="flex items-center justify-between border-b border-line p-5"><div><h2 className="text-lg font-extrabold text-ink">{t("Imtihon yaratish", "Create exam")}</h2><p className="text-xs text-muted">{t("Testni tanlang — parol o‘zi yaratiladi.", "Pick a test — the password is made for you.")}</p></div><button type="button" onClick={onClose} className="rounded-lg p-1.5 text-muted hover:text-ink"><X className="h-4 w-4" /></button></div>
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
         <div>
           <p className="text-xs font-bold uppercase tracking-wider text-muted">{t("Daraja", "Level")}</p>
@@ -67,15 +69,20 @@ function CreateSessionDialog({ onClose }: { onClose: () => void }) {
             {variants.map((variant) => <button key={variant.id} type="button" onClick={() => setVariantId(variant.id)} className={cn("rounded-2xl border p-3 text-left transition", variantId === variant.id ? "border-teal-500 bg-teal-500/10 ring-2 ring-teal-500/30" : "border-line hover:bg-surface")}>
               <p className="text-[11px] font-bold uppercase tracking-wider text-muted">{typeName(variant.exam_type_id)} · {t("Variant", "Variant")} {variant.variant_number}</p>
               <p className="mt-1 text-sm font-extrabold text-ink">{variant.title}</p>
-              <p className="mt-1 flex items-center gap-3 text-xs text-muted"><span className="flex items-center gap-1"><Clock3 className="h-3.5 w-3.5" />{variant.time_limit_minutes} {t("daq", "min")}</span><span>{variant.question_count} {t("savol", "questions")}</span></p>
+              <p className="mt-1 text-xs text-muted">{variant.question_count} {t("savol", "questions")}</p>
             </button>)}
             {catalog && !variants.length && <p className="col-span-full rounded-xl bg-surface p-4 text-sm text-muted">{t("Bu yerda nashr qilingan test yo'q.", "No published tests here.")}</p>}
           </div>
         </div>
+        <div>
+          <label htmlFor="exam-minutes" className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted"><Clock3 className="h-3.5 w-3.5" /> {t("Imtihon vaqti", "Exam length")}</label>
+          <div className="mt-2"><DurationPicker id="exam-minutes" value={minutes} onChange={setMinutes} /></div>
+          <p className="mt-2 text-xs text-muted">{t("Imtihon paytida ham o‘zgartirsa bo‘ladi.", "You can change it during the exam too.")}</p>
+        </div>
         <label className="block space-y-2 text-sm font-semibold text-ink">{t("Imtihon nomi (ixtiyoriy)", "Exam name (optional)")}<Input placeholder={t("Masalan: 3-guruh, Mid-course", "e.g. Group 3, Mid-course")} value={title} onChange={(event) => setTitle(event.target.value)} maxLength={180} /></label>
         {error && <p className="rounded-xl bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-600">{error}</p>}
       </div>
-      <div className="border-t border-line p-5"><Button className="w-full !bg-teal-600 hover:!bg-teal-700" size="lg" disabled={!variantId || saving} onClick={start}><Play className="h-4 w-4" /> {saving ? t("Yaratilmoqda…", "Creating…") : t("Imtihon o'tkazish", "Run exam")}</Button></div>
+      <div className="border-t border-line p-5"><Button className="w-full !bg-teal-600 hover:!bg-teal-700" size="lg" disabled={!variantId || saving} onClick={start}><Play className="h-4 w-4" /> {saving ? t("Yaratilmoqda…", "Creating…") : t(`Imtihon o'tkazish · ${minutes} daq`, `Run exam · ${minutes} min`)}</Button></div>
     </div>
   </div>;
 }
@@ -96,7 +103,7 @@ export default function ExaminerSessions() {
   }, []);
   const active = (rows ?? []).filter((row) => row.status === "ACTIVE");
   const closed = (rows ?? []).filter((row) => row.status !== "ACTIVE");
-  const when = (value: string) => new Date(value).toLocaleString(lang === "uz" ? "uz-UZ" : "en-US", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const when = (value: string) => formatDateTime(value, lang);
 
   const card = (row: SessionSummary) => <Link key={row.id} href={`/examiner/sessions/${row.id}`} className="group flex flex-col gap-4 rounded-3xl border border-line bg-canvas p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lift sm:flex-row sm:items-center">
     <div className="min-w-0 flex-1">
@@ -117,7 +124,7 @@ export default function ExaminerSessions() {
 
   return <div className="mx-auto max-w-6xl p-4 sm:p-8">
     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-      <div><p className="text-xs font-bold uppercase tracking-[.08em] text-teal-600">{t("Imtihon nazorati", "Proctoring")}</p><h1 className="mt-2 text-3xl font-extrabold text-ink">{t("Imtihonlar", "Exam sessions")}</h1><p className="mt-2 max-w-2xl text-sm text-muted">{t("Imtihon yarating, o'quvchilarga parolni bering, kirganlarni tasdiqlang va vaqtini kuzating.", "Create an exam, give students the password, approve who comes in and watch their time.")}</p></div>
+      <div><p className="text-xs font-bold uppercase tracking-[.08em] text-teal-600">{t("Imtihon nazorati", "Proctoring")}</p><h1 className="mt-2 text-3xl font-extrabold text-ink">{t("Imtihonlar", "Exam sessions")}</h1><p className="mt-2 max-w-2xl text-sm text-muted">{t("Imtihon yarating va jonli kuzating.", "Create exams and watch them live.")}</p></div>
       <Button className="!bg-teal-600 hover:!bg-teal-700" onClick={() => setCreating(true)}><Plus className="h-4 w-4" /> {t("Imtihon yaratish", "Create exam")}</Button>
     </div>
     {error && <p className="mt-4 rounded-xl bg-red-500/10 p-3 text-sm font-semibold text-red-600">{error}</p>}

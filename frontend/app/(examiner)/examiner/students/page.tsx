@@ -83,7 +83,7 @@ function StudentDialog({ student, catalog, onClose, onChange }: {
         <ExamModeToggle studentId={student.id} enabled={student.exam_mode !== false} onChange={(_, row) => onChange(row)} />
         <section>
           <h3 className="flex items-center gap-2 text-sm font-extrabold text-ink"><AtSign className="h-4 w-4 text-teal-600" /> {t("Kirish ma'lumotlari", "Sign-in details")}</h3>
-          <p className="mt-1 text-xs text-muted">{t("O'quvchi telefon raqami yoki shu username bilan kira oladi.", "The student can sign in with their phone number or this username.")}</p>
+          <p className="mt-1 text-xs text-muted">{t("Raqam yoki username bilan kiradi.", "Signs in with phone or username.")}</p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="space-y-1.5 text-xs font-bold text-muted">Username<Input autoCapitalize="none" placeholder={t("masalan: ism.familiya", "e.g. first.last")} value={username} onChange={(event) => setUsername(event.target.value)} /></label>
             <label className="space-y-1.5 text-xs font-bold text-muted">{t("Yangi parol (ixtiyoriy)", "New password (optional)")}<Input type="text" autoComplete="off" placeholder={t("o'zgarmaydi", "unchanged")} value={password} onChange={(event) => setPassword(event.target.value)} /></label>
@@ -93,8 +93,8 @@ function StudentDialog({ student, catalog, onClose, onChange }: {
 
         <section>
           <h3 className="flex items-center gap-2 text-sm font-extrabold text-ink"><Unlock className="h-4 w-4 text-teal-600" /> {t("Imtihonlarga ruxsat", "Exam access")}</h3>
-          <p className="mt-1 text-xs text-muted">{t("Ruxsat berilgan testlarga o'quvchi parolsiz kiradi.", "The student opens granted tests without a password.")}</p>
-          <div className="mt-3 flex flex-wrap gap-2">{student.grants.length ? student.grants.map((grant) => <span key={grant.id} className="inline-flex items-center gap-1.5 rounded-full bg-teal-500/10 px-3 py-1.5 text-xs font-bold text-teal-700 dark:text-teal-300">{grantLabel(grant, t)}<button type="button" aria-label={t("Olib tashlash", "Remove")} disabled={busy} onClick={() => removeGrant(grant)} className="rounded-full p-0.5 hover:bg-teal-500/20"><X className="h-3 w-3" /></button></span>) : <span className="text-xs text-muted">{t("Hech qanday ruxsat yo'q — barcha testlar parol bilan.", "No access yet — every test needs a password.")}</span>}</div>
+          <p className="mt-1 text-xs text-muted">{t("Bu testlarga parolsiz kiradi.", "Opens these tests without a password.")}</p>
+          <div className="mt-3 flex flex-wrap gap-2">{student.grants.length ? student.grants.map((grant) => <span key={grant.id} className="inline-flex items-center gap-1.5 rounded-full bg-teal-500/10 px-3 py-1.5 text-xs font-bold text-teal-700 dark:text-teal-300">{grantLabel(grant, t)}<button type="button" aria-label={t("Olib tashlash", "Remove")} disabled={busy} onClick={() => removeGrant(grant)} className="rounded-full p-0.5 hover:bg-teal-500/20"><X className="h-3 w-3" /></button></span>) : <span className="text-xs text-muted">{t("Ruxsat yo‘q.", "No access yet.")}</span>}</div>
           <div className="mt-4 rounded-2xl border border-line bg-surface p-4">
             <div className="flex flex-wrap gap-2">{scopes.map(([value, label]) => <button key={value} type="button" onClick={() => setScope(value)} className={cn("rounded-xl border px-3 py-1.5 text-xs font-bold", scope === value ? "border-teal-500 bg-teal-500/10 text-teal-700 dark:text-teal-300" : "border-line bg-canvas text-ink")}>{label}</button>)}</div>
             {scope !== "ALL" && <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -148,7 +148,7 @@ export default function ExaminerStudents() {
   return <div className="mx-auto max-w-6xl p-4 sm:p-8">
     <p className="text-xs font-bold uppercase tracking-[.08em] text-teal-600">{t("O'quvchilar bazasi", "Student base")}</p>
     <h1 className="mt-2 text-3xl font-extrabold text-ink">{t("O'quvchilar", "Students")}</h1>
-    <p className="mt-2 max-w-2xl text-sm text-muted">{t("O'quvchini toping, unga username bering va kerakli imtihonlarga ruxsat oching — ruxsat berilgan testlarga u parolsiz kiradi.", "Find a student, give them a username and open the exams they need — they enter granted tests without a password.")}</p>
+    <p className="mt-2 max-w-2xl text-sm text-muted">{t("Username bering va testlarga ruxsat oching.", "Give usernames and open tests.")}</p>
     <div className="relative mt-6 max-w-xl"><Search className="pointer-events-none absolute left-3 top-3.5 h-5 w-5 text-muted" /><Input className="pl-10" placeholder={t("Ism, familiya, telefon yoki username", "Name, phone or username")} value={query} onChange={(event) => setQuery(event.target.value)} /></div>
     {error && <p className="mt-4 rounded-xl bg-red-500/10 p-3 text-sm font-semibold text-red-600">{error}</p>}
     <p className="mt-4 text-xs font-bold text-muted">{loading ? t("Qidirilmoqda…", "Searching…") : t(`${total} ta o'quvchi`, `${total} students`)}</p>

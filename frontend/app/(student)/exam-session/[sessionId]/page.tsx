@@ -74,7 +74,7 @@ export default function ExamSessionRoom({ params }: { params: { sessionId: strin
     {session && session.state === "PENDING" && card(
       <span className="relative mx-auto grid h-16 w-16 place-items-center"><span className="absolute inset-0 animate-ping rounded-full bg-amber-400/30" /><Hourglass className="relative h-10 w-10 text-amber-500" /></span>,
       t("Examiner tasdiqlashini kuting", "Waiting for the examiner"),
-      t("Parol to'g'ri. Examiner kirishingizni tasdiqlashi bilan imtihon o'zi boshlanadi — sahifani yopmang.", "The password is right. Your exam starts by itself as soon as the examiner approves you — keep this page open."),
+      t("Parol to‘g‘ri. Examiner tasdiqlashini kuting.", "Password accepted. Waiting for the examiner."),
       <>{info}{error && <p className="mt-4 text-xs font-semibold text-red-600">{error}</p>}</>,
     )}
     {session && session.status === "APPROVED" && session.attempt_status !== "IN_PROGRESS" && session.attempt_id && card(
@@ -93,14 +93,14 @@ export default function ExamSessionRoom({ params }: { params: { sessionId: strin
       <ShieldX className="mx-auto h-14 w-14 text-red-500" />,
       t("Examiner kirishga ruxsat bermadi", "The examiner didn't let you in"),
       session.session_status === "ACTIVE"
-        ? t("Agar bu xato bo'lsa, examinerga ayting va parolni qayta kiriting.", "If this is a mistake, tell the examiner and enter the password again.")
+        ? t("Xato bo‘lsa, examinerga ayting.", "If this is a mistake, tell the examiner.")
         : t("Imtihon yakunlangan.", "The exam has been closed."),
       back,
     )}
     {session && session.status === "REMOVED" && card(
       <ShieldX className="mx-auto h-14 w-14 text-red-500" />,
       t("Siz imtihondan chiqarildingiz", "You were removed from this exam"),
-      t("Savollar bo'lsa, examinerga murojaat qiling.", "Talk to the examiner if you have questions."),
+      t("Savol bo‘lsa, examinerga ayting.", "Questions? Ask the examiner."),
       back,
     )}
     {session && session.remaining_seconds > 0 && session.attempt_status === "IN_PROGRESS" && <p className="mt-4 text-center text-xs text-muted">{t("Qolgan vaqt", "Time left")}: {clock(session.remaining_seconds)}</p>}

@@ -85,7 +85,7 @@ export default function AttemptReviewPage({ params }: { params: { sessionId: str
           </div>
         </div>
         <div className="mt-6 flex flex-wrap gap-2 text-xs font-bold">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5"><Clock3 className="h-3.5 w-3.5" />{formatDuration(data.time_spent_seconds)}</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5"><Clock3 className="h-3.5 w-3.5" />{formatDuration(data.time_spent_seconds, lang)}</span>
           <span className="rounded-full bg-white/10 px-3 py-1.5">{t("Topshirdi", "Submitted")}: {date(data.submitted_at)}</span>
           <span className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1.5", data.violations ? "bg-red-500/30" : "bg-white/10")}><AlertTriangle className="h-3.5 w-3.5" />{t("Imtihon rejimidan chiqishlar", "Exam-mode leaves")}: {data.violations}/{data.max_violations}</span>
           {data.violations >= data.max_violations && <span className="rounded-full bg-red-500/40 px-3 py-1.5">{t("Avtomatik yakunlangan", "Auto-submitted")}</span>}

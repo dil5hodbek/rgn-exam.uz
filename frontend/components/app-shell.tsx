@@ -26,7 +26,7 @@ function formatToday(lang: string, date = new Date()) {
 const studentNav = [
   { href: "/dashboard", label: ["Bosh sahifa", "Dashboard"], icon: LayoutDashboard },
   { href: "/solved-tests", label: ["Natijalar", "Solved Tests"], icon: BarChart3 },
-  { href: "/teacher-review", label: ["Writing baholari", "Writing Feedback"], icon: FilePenLine },
+  { href: "/teacher-review", label: ["Writing", "Writing"], icon: FilePenLine },
   { href: "/settings", label: ["Sozlamalar", "Settings"], icon: Settings },
 ] as const;
 
@@ -106,7 +106,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Image src="/brand/registon-mark.png" alt="" width={96} height={96} className="pointer-events-none absolute -bottom-2 -right-1 h-20 w-20 opacity-15 brightness-0 invert" aria-hidden />
           <Sparkles className="relative h-5 w-5" />
           <p className="relative mt-3 text-sm font-bold">{t("Ritmni yo'qotmang", "Keep your streak alive")}</p>
-          <p className="relative mt-1 text-xs leading-5 text-orange-50">{t("Bugungi bitta mashg'ulot sizni oldinga siljitadi.", "One focused session today moves you forward.")}</p>
         </div>
         <button onClick={signOut} disabled={signingOut} className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold text-muted hover:bg-surface hover:text-ink disabled:opacity-60">
           <LogOut className="h-5 w-5" /> {signingOut ? t("Chiqilmoqda…", "Signing out…") : t("Chiqish", "Sign Out")}
