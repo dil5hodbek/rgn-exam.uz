@@ -95,13 +95,27 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
   // grabs it and drags left/right to give either side more room. Default 56%.
   const splitRef = useRef<HTMLDivElement>(null);
   const draggingSplit = useRef(false);
+  // Desktop splits left/right (x), phones and tablets top/bottom (y).
+  const dragAxis = useRef<"x" | "y">("x");
+  const passageScrollRef = useRef<HTMLElement>(null);
+  const splitHandleRef = useRef<HTMLDivElement>(null);
+  const questionsScrollRef = useRef<HTMLDivElement>(null);
   const [passageWidth, setPassageWidth] = useState(56);
+  // Phones: the passage's share of the screen height, 30–70%, default 50.
+  const [passageHeight, setPassageHeight] = useState(50);
   // Reading passage text size (px) — the +/− zoom buttons step it.
   const [passageZoom, setPassageZoom] = useState(15);
   useEffect(() => {
     function onMove(event: PointerEvent) {
       if (!draggingSplit.current || !splitRef.current) return;
       const rect = splitRef.current.getBoundingClientRect();
+      if (dragAxis.current === "y") {
+        // Share of the height left after the divider bar itself.
+        const bar = splitHandleRef.current?.getBoundingClientRect().height ?? 0;
+        const usable = Math.max(1, rect.height - bar);
+        setPassageHeight(Math.min(70, Math.max(30, ((event.clientY - rect.top - bar / 2) / usable) * 100)));
+        return;
+      }
       const pct = ((event.clientX - rect.left) / rect.width) * 100;
       setPassageWidth(Math.min(75, Math.max(30, pct)));
     }
@@ -113,13 +127,21 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     }
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
-    return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
   }, []);
-  function startSplitDrag(event: ReactPointerEvent) {
+  function startSplitDrag(event: ReactPointerEvent, axis: "x" | "y" = "x") {
     event.preventDefault();
+    // Keep receiving the finger's moves even when it leaves the thin handle.
+    try { (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId); } catch { /* old browsers */ }
+    dragAxis.current = axis;
     draggingSplit.current = true;
     document.body.style.userSelect = "none";
-    document.body.style.cursor = "col-resize";
+    document.body.style.cursor = axis === "y" ? "row-resize" : "col-resize";
   }
 
   function updateSidebarThumb() {
@@ -219,6 +241,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     if (!active) return;
     const manual = ["writing", "rich_text_question", "speaking_prompt_placeholder"].includes(active.type);
     setPassageWidth(manual ? 30 : 56);
+    setPassageHeight(manual ? 40 : 50);
     setPassageZoom(manual ? 21 : 15);
   }, [currentExercise, exercises]);
 
@@ -573,6 +596,9 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     setCurrentExercise(index);
     setSelectedToken(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
+    // Split screen: each half scrolls by itself — start both at the top.
+    passageScrollRef.current?.scrollTo({ top: 0 });
+    questionsScrollRef.current?.scrollTo({ top: 0 });
   }
 
   function exerciseUnlocked(index: number) {
@@ -1077,6 +1103,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
   const passageHtml = exercise.passage_html?.trim() || "";
   const passagePlain = !passageHtml && !isListeningTask && exercise.instructions.trim().length > 160 ? exercise.instructions.trim() : "";
   const passageText = passageHtml || passagePlain;
+  const split = Boolean(passageText);
   // The same split panel serves two jobs: a reading text for reading
   // exercises, and the task brief for writing/speaking exercises — the label
   // and icon follow the exercise type.
@@ -1226,7 +1253,9 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     {proctorOverlay}
     {timeBanner}
     {lockdownOverlay}
-    <div className="exam-screen min-h-[100dvh] bg-surface xl:flex xl:h-[100dvh] xl:flex-col xl:overflow-hidden">
+    {/* split: a reading/writing panel is on screen — the page stops scrolling
+        and the panel and the questions each scroll on their own. */}
+    <div className={cn("exam-screen min-h-[100dvh] bg-surface xl:flex xl:h-[100dvh] xl:flex-col xl:overflow-hidden", split && "flex h-[100dvh] flex-col overflow-hidden")}>
     <header className="sticky top-0 z-30 border-b border-line bg-canvas/95 backdrop-blur">
       {/* Phone sideways (short:): everything on one thin row so the few
           hundred pixels of height go to the questions. */}
@@ -1281,7 +1310,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
       <div className="h-1 bg-surface"><div className="h-full bg-brand transition-[width]" style={{ width: `${scoredQuestions.length ? (answered / scoredQuestions.length) * 100 : 0}%` }} /></div>
     </header>
 
-    <div className="p-3 xl:flex xl:min-h-0 xl:flex-1 xl:gap-4 xl:p-4">
+    <div className={cn("p-3 xl:flex xl:min-h-0 xl:flex-1 xl:gap-4 xl:p-4", split && "flex min-h-0 flex-1 flex-col xl:flex-row")}>
       <div
         className={cn("group/side relative hidden h-full shrink-0 xl:block", !sidebarOpen && "xl:-mr-4")}
         onMouseEnter={holdSidebar}
@@ -1365,8 +1394,8 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
       </button>
       </div>
 
-      <main className="min-w-0 xl:flex xl:h-full xl:flex-1 xl:flex-col xl:overflow-hidden">
-        <div className="mb-3 flex gap-2 overflow-x-auto pb-2 xl:hidden">{exercises.map((item, index) => { const unlocked = exerciseUnlocked(index); return <button key={item.id} disabled={!unlocked} onClick={() => goToExercise(index)} className={cn("flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold disabled:opacity-40", index === currentExercise ? "bg-brand text-white" : "border border-line bg-canvas text-muted")}>{!unlocked && <Lock className="h-3 w-3" />}{item.title}</button>; })}</div>
+      <main className={cn("min-w-0 xl:flex xl:h-full xl:flex-1 xl:flex-col xl:overflow-hidden", split && "flex min-h-0 flex-1 flex-col")}>
+        <div className={cn("mb-3 flex shrink-0 gap-2 overflow-x-auto pb-2 xl:hidden", split && "mb-2 pb-1")}>{exercises.map((item, index) => { const unlocked = exerciseUnlocked(index); return <button key={item.id} disabled={!unlocked} onClick={() => goToExercise(index)} className={cn("flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold disabled:opacity-40", index === currentExercise ? "bg-brand text-white" : "border border-line bg-canvas text-muted")}>{!unlocked && <Lock className="h-3 w-3" />}{item.title}</button>; })}</div>
 
         {exercise.media && !exercise.media.mime_type.startsWith("audio/") && <div className="mb-2.5 shrink-0 rounded-2xl border border-line bg-canvas p-2.5">
           {exercise.media.mime_type.startsWith("image/") ? <img className="max-h-72 w-full rounded-xl object-contain" src={mediaUrl(exercise.media.url)} alt={exercise.media.file_name} /> : <>
@@ -1380,10 +1409,13 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
         </div>}
         {/* When a reading passage is present the screen splits: passage on the
             left (its own scroll), questions on the right. A draggable divider
-            between them lets the student give either side more room. Stacks on mobile. */}
-        <div ref={splitRef} className="min-h-0 xl:flex xl:min-h-0 xl:flex-1 xl:overflow-hidden">
+            between them lets the student give either side more room. On phones
+            and tablets the same split runs top (passage) / bottom (questions). */}
+        <div ref={splitRef} className={cn("min-h-0 xl:flex xl:min-h-0 xl:flex-1 xl:overflow-hidden", split && "flex flex-1 flex-col overflow-hidden xl:flex-row")}>
         {passageText && <>
-        <aside style={{ "--pw": `${passageWidth}%` } as CSSProperties} className="mb-4 min-w-0 max-h-[42dvh] shrink-0 overflow-y-auto rounded-3xl border border-line bg-canvas p-5 shadow-sm xl:mb-0 xl:max-h-none xl:w-[var(--pw)]">
+        {/* Phones: the passage takes passageHeight% of what's left after the
+            32px divider; the questions take the rest — so 30% really is 30%. */}
+        <aside ref={passageScrollRef} style={{ "--pw": `${passageWidth}%`, "--pf": passageHeight / 100 } as CSSProperties} className="passage-panel min-h-0 min-w-0 flex-none basis-[calc((100%-32px)*var(--pf))] overflow-y-auto overscroll-contain rounded-3xl border border-line bg-canvas p-4 shadow-sm sm:p-5 xl:basis-auto xl:w-[var(--pw)]">
           <div className="mb-3 flex items-center gap-2 text-brand">
             <PanelIcon className="h-4 w-4" /><p className="text-xs font-bold uppercase tracking-wider">{panelLabel}</p>
             {/* Text zoom: − / current / + */}
@@ -1402,13 +1434,33 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
             ? <div className="passage-content text-ink" style={{ fontSize: `${passageZoom}px`, lineHeight: 1.85 }} dangerouslySetInnerHTML={{ __html: sanitizeHtml(passageHtml) }} />
             : <div className="text-ink" style={{ fontSize: `${passageZoom}px`, lineHeight: 1.85 }}>{renderInstructionBlocks(passagePlain, false)}</div>}
         </aside>
-        <div onPointerDown={startSplitDrag} title={t("O'lchamni o'zgartirish uchun torting", "Drag to resize")} className="group hidden shrink-0 cursor-col-resize touch-none items-center justify-center px-2 xl:flex">
+        {/* Phones/tablets: grab the bar and drag up/down (30–70%). */}
+        <div
+          ref={splitHandleRef}
+          role="separator" aria-orientation="horizontal" tabIndex={0}
+          aria-label={t("Matn va savollar orasidagi chegara", "Divider between the text and the questions")}
+          aria-valuemin={30} aria-valuemax={70} aria-valuenow={Math.round(passageHeight)}
+          onPointerDown={(event) => startSplitDrag(event, "y")}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+              event.preventDefault();
+              setPassageHeight((value) => Math.min(70, Math.max(30, value + (event.key === "ArrowUp" ? -5 : 5))));
+            }
+          }}
+          title={t("Tortib o'lchamni o'zgartiring", "Drag to resize")}
+          className="group flex h-8 shrink-0 cursor-row-resize touch-none select-none items-center justify-center outline-none xl:hidden"
+        >
+          <div className="flex h-5 w-16 items-center justify-center rounded-full border border-line bg-canvas shadow-sm transition group-active:border-brand group-focus-visible:border-brand">
+            <div className="h-1 w-8 rounded-full bg-muted/50 transition group-active:bg-brand" />
+          </div>
+        </div>
+        <div onPointerDown={(event) => startSplitDrag(event, "x")} title={t("O'lchamni o'zgartirish uchun torting", "Drag to resize")} className="group hidden shrink-0 cursor-col-resize touch-none items-center justify-center px-2 xl:flex">
           <div className="h-16 w-1.5 rounded-full bg-line transition group-hover:bg-brand" />
         </div>
         </>}
 
-        <section className="exam-questions min-h-0 min-w-0 rounded-3xl border border-line bg-canvas p-4 shadow-sm sm:p-5 xl:flex xl:flex-1 xl:flex-col xl:overflow-hidden">
-          <div className={cn("min-h-0 gap-4 xl:flex-1 xl:overflow-y-auto xl:pr-2", bankOptions.length && "exam-with-bank grid")}>
+        <section className={cn("exam-questions min-h-0 min-w-0 rounded-3xl border border-line bg-canvas p-4 shadow-sm sm:p-5 xl:flex xl:flex-1 xl:flex-col xl:overflow-hidden", split && "flex flex-1 flex-col overflow-hidden p-3 sm:p-4 xl:p-5")}>
+          <div ref={questionsScrollRef} className={cn("min-h-0 gap-4 xl:flex-1 xl:overflow-y-auto xl:pr-2", bankOptions.length && "exam-with-bank grid", split && "flex-1 overflow-y-auto overscroll-contain")}>
             <div className={cn("mx-auto w-full space-y-3", isGapMatch ? "max-w-6xl" : "max-w-3xl")}>
             {/* Exercise heading lives with the questions: number + full rubric
                 in a readable size (the sticky header only keeps the test title). */}
