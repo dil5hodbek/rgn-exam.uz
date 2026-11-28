@@ -7,6 +7,7 @@ import { Switch } from "@/components/examiner/exam-mode-toggle";
 import { api } from "@/lib/api";
 import { type ResultRow, type SessionResults, type StudentRow } from "@/lib/examiner";
 import { useLang } from "@/lib/i18n";
+import { variantName, variantTag } from "@/lib/exam-types";
 import { cn, formatDuration } from "@/lib/utils";
 
 /** One exam's results: every student, their score, leaves and writing grades. */
@@ -39,7 +40,7 @@ export default function SessionResultsPage({ params }: { params: { sessionId: st
     {!data && !error && <div className="mt-6 h-64 animate-pulse rounded-3xl bg-canvas" />}
     {data && <>
       <h1 className="mt-4 text-3xl font-extrabold text-ink">{data.title || data.test_title}</h1>
-      <p className="mt-1 text-sm text-muted">{data.level_name} · {data.exam_type_name} · V{data.variant_number} · {t(`${data.students.length} o'quvchi`, `${data.students.length} students`)}</p>
+      <p className="mt-1 text-sm text-muted">{data.level_name} · {data.exam_type_name} · {variantTag(data.exam_type_name, data.variant_number)} · {t(`${data.students.length} o'quvchi`, `${data.students.length} students`)}</p>
       <p className="mt-3 max-w-3xl text-xs leading-5 text-muted">{t(
         "O'quvchini bosing — har bir savolga nima yozgani, qaysilari to'g'ri va AI writing'ni qanday baholagani chiqadi. Writing bahosini teacher monitor panelida istalgan vaqt o'zgartira oladi.",
         "Click a student to see every answer, which were right and how the AI graded the writing. A teacher can change a writing grade at any time from the monitor panel.",

@@ -76,7 +76,16 @@ async def levels(_: User = Depends(current_user), db: AsyncSession = Depends(get
 async def exam_types(level_slug: str, _: User = Depends(current_user), db: AsyncSession = Depends(get_db)):
     level = await db.scalar(select(Level).where(Level.slug == level_slug))
     types = (await db.execute(select(ExamType))).scalars().all()
+    types = sorted(types, key=exam_type_order)
     return [{"id": row.id, "name": row.name, "slug": row.slug, "level_id": level.id if level else None} for row in types]
+
+
+# Course order: units during the course, then mid-course, then end-course.
+EXAM_TYPE_ORDER = {"unit-test": 0, "mid-course": 1, "end-course": 2}
+
+
+def exam_type_order(row: ExamType) -> tuple[int, str]:
+    return EXAM_TYPE_ORDER.get(row.slug, 9), row.name
 
 
 @router.get("/levels/{level_slug}/exam-types/{type_slug}/variants", response_model=list[VariantSummaryOut])

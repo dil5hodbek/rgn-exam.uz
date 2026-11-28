@@ -6,6 +6,7 @@ import { Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
+import { isUnitType } from "@/lib/exam-types";
 
 type Level = { id: string; name: string; slug: string };
 type ExamType = { id: string; name: string; slug: string };
@@ -53,7 +54,11 @@ export function CreateTestDialog({ existing, onClose }: { existing: ExistingTest
 
   useEffect(() => { setVariantNumber(suggestedNumber); }, [suggestedNumber]);
 
-  const suggestedTitle = level && examType ? `${level.name} ${examType.name} — Variant ${variantNumber}` : "";
+  // Unit tests are numbered by unit: "Beginner — Unit 3".
+  const isUnit = isUnitType(examType?.slug);
+  const suggestedTitle = level && examType
+    ? isUnit ? `${level.name} — Unit ${variantNumber}` : `${level.name} ${examType.name} — Variant ${variantNumber}`
+    : "";
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -106,13 +111,15 @@ export function CreateTestDialog({ existing, onClose }: { existing: ExistingTest
             </label>
           </div>
 
+          {isUnit && <p className="rounded-xl bg-brand/10 px-3 py-2 text-xs font-semibold text-brand">One test per unit — set the unit number below. Students see it as “Unit {variantNumber}”.</p>}
+
           <label className="block space-y-2 text-sm font-bold text-ink">Title
             <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder={suggestedTitle || "e.g. Beginner Mid-course Test 4"} />
             <span className="text-[11px] font-normal text-muted">Leave blank to use “{suggestedTitle || "auto-generated title"}”.</span>
           </label>
 
           <div className="grid gap-4 sm:grid-cols-3">
-            <label className="space-y-2 text-sm font-bold text-ink">Variant #
+            <label className="space-y-2 text-sm font-bold text-ink">{isUnit ? "Unit #" : "Variant #"}
               <Input type="number" min={1} value={variantNumber} onChange={(event) => setVariantNumber(Math.max(1, Number(event.target.value) || 1))} />
             </label>
             <label className="space-y-2 text-sm font-bold text-ink">Time (min)

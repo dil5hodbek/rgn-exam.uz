@@ -305,6 +305,8 @@ class ExamSession(Base):
     # The examiner's own clock for this sitting (not the test's default), and
     # it can be changed while students are working.
     time_limit_minutes: Mapped[int] = mapped_column(Integer, default=60, server_default="60")
+    # The examiner's pass mark for this sitting (starts as the test's own).
+    passing_percentage: Mapped[int] = mapped_column(Integer, default=60, server_default="60")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

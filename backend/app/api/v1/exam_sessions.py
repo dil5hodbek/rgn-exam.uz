@@ -13,18 +13,21 @@ Flow:
 Examiners also manage the student base: usernames, passwords and standing
 access grants that let a student open tests without any password.
 """
+import io
 import math
 import re
 import uuid
-from datetime import datetime, timezone
+from urllib.parse import quote
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from redis.asyncio import Redis
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.attempts import attempt_sections, create_attempt, finalize_attempt
+from app.api.v1.catalog import exam_type_order
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import current_user, require_examiner
@@ -77,10 +80,14 @@ class SessionCreate(BaseModel):
     test_variant_id: uuid.UUID
     title: str = Field(default="", max_length=180)
     time_limit_minutes: int = Field(default=DEFAULT_SESSION_MINUTES, ge=MIN_SESSION_MINUTES, le=MAX_SESSION_MINUTES)
+    # None = use the test's own pass mark.
+    passing_percentage: int | None = Field(default=None, ge=0, le=100)
 
 
 class SessionUpdate(BaseModel):
-    time_limit_minutes: int = Field(ge=MIN_SESSION_MINUTES, le=MAX_SESSION_MINUTES)
+    # Either or both; a missing field is left unchanged.
+    time_limit_minutes: int | None = Field(default=None, ge=MIN_SESSION_MINUTES, le=MAX_SESSION_MINUTES)
+    passing_percentage: int | None = Field(default=None, ge=0, le=100)
 
 
 class SessionClose(BaseModel):
@@ -165,6 +172,7 @@ async def student_view(db: AsyncSession, session: ExamSession, participant: Exam
         "remaining_seconds": remaining_seconds(attempt, time_limit) if attempt else time_limit * 60,
         **meta,
         "time_limit_minutes": time_limit,
+        "passing_percentage": session.passing_percentage,
     }
 
 
@@ -285,7 +293,7 @@ async def examiner_tests(_: User = Depends(require_examiner), db: AsyncSession =
     """Everything an examiner can pick from: levels, exam types and every
     published test variant (with its question count)."""
     levels = (await db.execute(select(Level).order_by(Level.order_index))).scalars().all()
-    exam_types = (await db.execute(select(ExamType).order_by(ExamType.name))).scalars().all()
+    exam_types = sorted((await db.execute(select(ExamType))).scalars().all(), key=exam_type_order)
     variants = (await db.execute(
         select(TestVariant).where(TestVariant.status == ContentStatus.PUBLISHED)
         .order_by(TestVariant.variant_number)
@@ -297,7 +305,8 @@ async def examiner_tests(_: User = Depends(require_examiner), db: AsyncSession =
         "variants": [{
             "id": row.id, "title": row.title, "variant_number": row.variant_number,
             "level_id": row.level_id, "exam_type_id": row.exam_type_id,
-            "time_limit_minutes": row.time_limit_minutes, "question_count": counts.get(row.id, 0),
+            "time_limit_minutes": row.time_limit_minutes, "passing_percentage": row.passing_percentage,
+            "question_count": counts.get(row.id, 0),
         } for row in variants],
     }
 
@@ -364,6 +373,7 @@ async def list_sessions(user: User = Depends(require_examiner), db: AsyncSession
         "code": session.code, "status": session.status, "created_at": session.created_at,
         "closed_at": session.closed_at, "examiner_name": examiners.get(session.examiner_id),
         **meta.get(session.test_variant_id, {}), "time_limit_minutes": session.time_limit_minutes,
+        "passing_percentage": session.passing_percentage,
         **counts[session.id],
         **writing.get(session.id, {"writing_total": 0, "writing_awaiting": 0}),
     } for session in sessions]
@@ -382,11 +392,13 @@ async def create_session(
     session = ExamSession(
         examiner_id=user.id, test_variant_id=variant.id, title=payload.title.strip(),
         code=await generate_session_code(db), time_limit_minutes=payload.time_limit_minutes,
+        passing_percentage=variant.passing_percentage if payload.passing_percentage is None else payload.passing_percentage,
     )
     db.add(session)
     await db.flush()
     await write_audit(db, user.id, "exam_session.create", "ExamSession", str(session.id),
-                      {"test_variant_id": str(variant.id), "time_limit_minutes": payload.time_limit_minutes},
+                      {"test_variant_id": str(variant.id), "time_limit_minutes": payload.time_limit_minutes,
+                       "passing_percentage": session.passing_percentage},
                       _ip(request))
     await db.commit()
     return await session_detail_payload(db, session)
@@ -441,6 +453,8 @@ async def session_detail_payload(db: AsyncSession, session: ExamSession) -> dict
             "exam_mode": student.exam_mode_enabled is not False,
             "max_violations": MAX_EXAM_VIOLATIONS,
             "percentage": float(attempt.percentage) if attempt and attempt.percentage is not None else None,
+            "passed": bool(attempt and attempt.percentage is not None
+                           and float(attempt.percentage) >= session.passing_percentage),
         })
     running = [attempt for _, _, attempt in rows if attempt is not None and attempt.status == AttemptStatus.IN_PROGRESS]
     return {
@@ -450,6 +464,8 @@ async def session_detail_payload(db: AsyncSession, session: ExamSession) -> dict
         "time_limit_minutes": time_limit,
         # The test's own length, shown as a reference next to the session's.
         "test_time_limit_minutes": meta.get("time_limit_minutes"),
+        "passing_percentage": session.passing_percentage,
+        "test_passing_percentage": meta.get("passing_percentage"),
         # The shortest length that still leaves every working student a minute.
         "min_time_limit_minutes": min_time_limit(running, now),
         "running_count": len(running),
@@ -472,23 +488,131 @@ async def update_session(
     session_id: uuid.UUID, payload: SessionUpdate, request: Request,
     user: User = Depends(require_examiner), db: AsyncSession = Depends(get_db),
 ):
-    """Change the exam length. Applies at once to everyone: each student's
-    time left becomes the new length minus the time they have already used."""
+    """Change the exam length and/or the pass mark.
+
+    Length applies at once to everyone: each student's time left becomes the
+    new length minus the time they have already used. The pass mark can be
+    changed any time, even after the exam is closed — results (and the Excel
+    export) are judged by the current mark."""
     session = await owned_session(db, user, session_id)
-    running = (await db.execute(
-        select(Attempt).where(Attempt.exam_session_id == session.id, Attempt.status == AttemptStatus.IN_PROGRESS)
-    )).scalars().all()
-    if session.status != SessionStatus.ACTIVE.value and not running:
-        raise HTTPException(409, "Imtihon yakunlangan.")
-    minimum = min_time_limit(list(running), _now())
-    if payload.time_limit_minutes < minimum:
-        raise HTTPException(409, f"Kamida {minimum} daqiqa bo'lishi kerak: ba'zi o'quvchilar shuncha vaqt ishlagan.")
-    previous = session.time_limit_minutes
-    session.time_limit_minutes = payload.time_limit_minutes
-    await write_audit(db, user.id, "exam_session.time_limit", "ExamSession", str(session.id),
-                      {"from": previous, "to": payload.time_limit_minutes}, _ip(request))
-    await db.commit()
+    changes: dict = {}
+    if payload.time_limit_minutes is not None and payload.time_limit_minutes != session.time_limit_minutes:
+        running = (await db.execute(
+            select(Attempt).where(Attempt.exam_session_id == session.id, Attempt.status == AttemptStatus.IN_PROGRESS)
+        )).scalars().all()
+        if session.status != SessionStatus.ACTIVE.value and not running:
+            raise HTTPException(409, "Imtihon yakunlangan.")
+        minimum = min_time_limit(list(running), _now())
+        if payload.time_limit_minutes < minimum:
+            raise HTTPException(409, f"Kamida {minimum} daqiqa bo'lishi kerak: ba'zi o'quvchilar shuncha vaqt ishlagan.")
+        changes["time_limit_minutes"] = {"from": session.time_limit_minutes, "to": payload.time_limit_minutes}
+        session.time_limit_minutes = payload.time_limit_minutes
+    if payload.passing_percentage is not None and payload.passing_percentage != session.passing_percentage:
+        changes["passing_percentage"] = {"from": session.passing_percentage, "to": payload.passing_percentage}
+        session.passing_percentage = payload.passing_percentage
+    if changes:
+        await write_audit(db, user.id, "exam_session.update", "ExamSession", str(session.id), changes, _ip(request))
+        await db.commit()
     return await session_detail_payload(db, session)
+
+
+# Uzbekistan has no daylight saving, so a fixed offset is exact.
+TASHKENT = timezone(timedelta(hours=5))
+
+EXPORT_STATUS = {
+    "PENDING": "Kutmoqda", "REJECTED": "Rad etilgan", "REMOVED": "Chiqarilgan", "APPROVED": "Boshlamagan",
+    "IN_PROGRESS": "Ishlamoqda", "PAUSED": "To'xtatilgan", "TIME_UP": "Vaqt tugagan", "SUBMITTED": "Topshirgan",
+}
+
+
+@router.get("/examiner/sessions/{session_id}/export")
+async def export_session(
+    session_id: uuid.UUID, request: Request,
+    user: User = Depends(require_examiner), db: AsyncSession = Depends(get_db),
+):
+    """The session's results as an Excel sheet: one row per student, with
+    name, phone, exam, level, exam type, score, percentage and pass/fail."""
+    session = await owned_session(db, user, session_id)
+    detail = await session_detail_payload(db, session)
+    attempts = {
+        attempt.id: attempt for attempt in (await db.execute(
+            select(Attempt).where(Attempt.exam_session_id == session.id)
+        )).scalars().all()
+    }
+    await write_audit(db, user.id, "exam_session.export", "ExamSession", str(session.id), {}, _ip(request))
+    await db.commit()
+    content = build_results_workbook(detail, attempts)
+    stamp = _aware(session.created_at).astimezone(TASHKENT).strftime("%Y-%m-%d")
+    name = re.sub(r"\s+", " ", re.sub(r"[^\w .-]+", " ", detail["title"])).strip()[:60] or "imtihon"
+    filename = f"{name} {stamp}.xlsx"
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=\"natijalar-{stamp}.xlsx\"; filename*=UTF-8''{quote(filename)}"},
+    )
+
+
+def build_results_workbook(detail: dict, attempts: dict) -> bytes:
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "Natijalar"
+    pass_mark = detail["passing_percentage"]
+    sheet.append([detail["title"]])
+    sheet.append([f"{detail.get('level_name', '')} · {detail.get('exam_type_name', '')} · "
+                  f"{detail.get('test_title', '')} · O'tish bali {pass_mark}% · "
+                  f"Vaqt {detail['time_limit_minutes']} daqiqa"])
+    sheet.append([])
+    headers = ["№", "Ism", "Familiya", "Telefon", "Username", "Imtihon", "Daraja", "Imtihon turi",
+               "Holat", "Ball", "Maks. ball", "Foiz", "Natija", "Sarflangan vaqt (daq)", "Topshirilgan vaqt"]
+    sheet.append(headers)
+    header_row = sheet.max_row
+    seated = [row for row in detail["participants"] if row["state"] not in ("REJECTED", "REMOVED")]
+    # Highest score first; students without a result go to the end.
+    seated.sort(key=lambda row: (row["percentage"] is None, -(row["percentage"] or 0), row["last_name"], row["first_name"]))
+    for number, row in enumerate(seated, start=1):
+        attempt = attempts.get(row["attempt_id"]) if row["attempt_id"] else None
+        finished = attempt is not None and attempt.status != AttemptStatus.IN_PROGRESS
+        percentage = row["percentage"]
+        if not finished or percentage is None:
+            verdict = "—"
+        elif attempt.status == AttemptStatus.PENDING_REVIEW:
+            verdict = "Tekshirilmoqda"
+        else:
+            verdict = "O'tdi" if percentage >= pass_mark else "O'tmadi"
+        submitted = _aware(attempt.submitted_at).astimezone(TASHKENT).strftime("%Y-%m-%d %H:%M") if finished and attempt.submitted_at else ""
+        sheet.append([
+            number, row["first_name"], row["last_name"], row["phone_number"] or "", row["username"] or "",
+            detail.get("test_title", ""), detail.get("level_name", ""), detail.get("exam_type_name", ""),
+            EXPORT_STATUS.get(row["state"], row["state"]),
+            float(attempt.total_score or 0) if finished else None,
+            float(attempt.max_score or 0) if finished else None,
+            round(percentage, 1) if finished and percentage is not None else None,
+            verdict,
+            round((attempt.time_spent_seconds or 0) / 60) if finished else None,
+            submitted,
+        ])
+        if verdict in ("O'tdi", "O'tmadi"):
+            sheet.cell(row=sheet.max_row, column=13).font = Font(
+                bold=True, color="047857" if verdict == "O'tdi" else "B91C1C")
+    sheet["A1"].font = Font(bold=True, size=14)
+    sheet["A2"].font = Font(color="666666")
+    for cell in sheet[header_row]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="F26522")
+        cell.alignment = Alignment(vertical="center", wrap_text=True)
+    widths = [5, 16, 18, 16, 14, 30, 16, 18, 14, 8, 10, 8, 14, 12, 18]
+    for index, width in enumerate(widths, start=1):
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    sheet.freeze_panes = sheet.cell(row=header_row + 1, column=1)
+    if seated:
+        sheet.auto_filter.ref = f"A{header_row}:{get_column_letter(len(headers))}{sheet.max_row}"
+    buffer = io.BytesIO()
+    book.save(buffer)
+    return buffer.getvalue()
 
 
 @router.post("/examiner/sessions/{session_id}/regenerate-code")
@@ -961,7 +1085,7 @@ async def attempt_review(attempt_id: uuid.UUID, user: User = Depends(require_exa
                     "exam_mode": student.exam_mode_enabled is not False},
         "score": float(attempt.total_score or 0), "max_score": float(attempt.max_score or 0),
         "percentage": float(attempt.percentage) if attempt.percentage is not None else None,
-        "passing_percentage": variant.passing_percentage,
+        "passing_percentage": session.passing_percentage,
         "started_at": attempt.started_at, "submitted_at": attempt.submitted_at,
         "time_spent_seconds": attempt.time_spent_seconds or 0,
         "violations": attempt.violation_count or 0, "max_violations": MAX_EXAM_VIOLATIONS,

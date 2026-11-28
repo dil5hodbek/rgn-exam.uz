@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { formatDateTime, type SessionSummary } from "@/lib/examiner";
 import { useLang } from "@/lib/i18n";
+import { variantName, variantTag } from "@/lib/exam-types";
 import { cn } from "@/lib/utils";
 
 /** Writing & results: every exam this examiner ran, newest first. */
@@ -44,7 +45,7 @@ export default function ExaminerWriting() {
       <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-teal-500/10 text-teal-600"><FileText className="h-5 w-5" /></span>
       <div className="min-w-0 flex-1">
         <p className="truncate text-base font-extrabold text-ink">{row.title || row.test_title}</p>
-        <p className="mt-0.5 truncate text-xs text-muted">{row.level_name} · {row.exam_type_name} · V{row.variant_number}{row.examiner_name ? ` · ${row.examiner_name}` : ""}</p>
+        <p className="mt-0.5 truncate text-xs text-muted">{row.level_name} · {row.exam_type_name} · {variantTag(row.exam_type_name, row.variant_number)}{row.examiner_name ? ` · ${row.examiner_name}` : ""}</p>
         <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold">
           <span className="inline-flex items-center gap-1 rounded-full bg-surface px-2.5 py-1 text-muted"><CalendarDays className="h-3 w-3" />{date(row.created_at)}</span>
           <span className="inline-flex items-center gap-1 rounded-full bg-surface px-2.5 py-1 text-muted"><Users className="h-3 w-3" />{t(`${row.submitted} topshirdi`, `${row.submitted} submitted`)}{row.in_progress ? t(` · ${row.in_progress} yozmoqda`, ` · ${row.in_progress} sitting`) : ""}</span>

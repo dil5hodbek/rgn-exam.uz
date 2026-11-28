@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { useConfirm } from "@/components/ui/use-confirm";
 import { ExerciseBuilder } from "@/components/admin/exercise-builder";
 import { api, ApiError, mediaUrl } from "@/lib/api";
+import { variantName } from "@/lib/exam-types";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { answerText, binaryTypes, manualTypes } from "@/lib/question-types";
 
@@ -336,7 +337,7 @@ export function TestBuilder({ variantId }: { variantId: string }) {
     {dialog}
     <div className="flex flex-col justify-between gap-4 border-b border-line bg-canvas px-4 py-4 sm:flex-row sm:items-center sm:px-8">
       <div>
-        <p className="text-xs font-bold text-brand">{test.level} · {test.exam_type} · Variant {test.variant_number} · {test.status}</p>
+        <p className="text-xs font-bold text-brand">{test.level} · {test.exam_type} · {variantName(test.exam_type, test.variant_number)} · {test.status}</p>
         <Input className="mt-1 h-10 max-w-lg border-0 px-0 text-xl font-extrabold" value={test.title} onChange={(event) => setTest({ ...test, title: event.target.value })} />
       </div>
       <div className="flex gap-2">

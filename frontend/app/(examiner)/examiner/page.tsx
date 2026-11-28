@@ -2,13 +2,15 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Clock3, KeyRound, Play, Plus, X } from "lucide-react";
+import { ArrowRight, Clock3, KeyRound, Play, Plus, Target, X } from "lucide-react";
 import { DEFAULT_EXAM_MINUTES, DurationPicker } from "@/components/examiner/duration-picker";
+import { PassMarkPicker } from "@/components/examiner/pass-mark-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { formatDateTime, type ExaminerCatalog, type SessionSummary } from "@/lib/examiner";
 import { useLang } from "@/lib/i18n";
+import { variantName, variantTag } from "@/lib/exam-types";
 import { cn } from "@/lib/utils";
 
 function CreateSessionDialog({ onClose }: { onClose: () => void }) {
@@ -20,6 +22,8 @@ function CreateSessionDialog({ onClose }: { onClose: () => void }) {
   const [variantId, setVariantId] = useState("");
   const [title, setTitle] = useState("");
   const [minutes, setMinutes] = useState(DEFAULT_EXAM_MINUTES);
+  // The pass mark follows the chosen test until the examiner sets their own.
+  const [passMark, setPassMark] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   useEffect(() => {
@@ -32,6 +36,8 @@ function CreateSessionDialog({ onClose }: { onClose: () => void }) {
   const variants = useMemo(() => (catalog?.variants ?? []).filter((variant) =>
     variant.level_id === levelId && (!examTypeId || variant.exam_type_id === examTypeId)), [catalog, levelId, examTypeId]);
   const typeName = (id: string) => catalog?.exam_types.find((row) => row.id === id)?.name ?? "";
+  const testPassMark = catalog?.variants.find((row) => row.id === variantId)?.passing_percentage ?? 60;
+  const effectivePass = passMark ?? testPassMark;
 
   async function start() {
     if (!variantId) return;
@@ -39,7 +45,7 @@ function CreateSessionDialog({ onClose }: { onClose: () => void }) {
     setError("");
     try {
       const session = await api<{ id: string }>("/examiner/sessions", {
-        method: "POST", body: JSON.stringify({ test_variant_id: variantId, title, time_limit_minutes: minutes }),
+        method: "POST", body: JSON.stringify({ test_variant_id: variantId, title, time_limit_minutes: minutes, passing_percentage: effectivePass }),
       });
       router.push(`/examiner/sessions/${session.id}`);
     } catch (reason) {
@@ -67,22 +73,28 @@ function CreateSessionDialog({ onClose }: { onClose: () => void }) {
           <p className="text-xs font-bold uppercase tracking-wider text-muted">{t("Test", "Test")}</p>
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
             {variants.map((variant) => <button key={variant.id} type="button" onClick={() => setVariantId(variant.id)} className={cn("rounded-2xl border p-3 text-left transition", variantId === variant.id ? "border-teal-500 bg-teal-500/10 ring-2 ring-teal-500/30" : "border-line hover:bg-surface")}>
-              <p className="text-[11px] font-bold uppercase tracking-wider text-muted">{typeName(variant.exam_type_id)} · {t("Variant", "Variant")} {variant.variant_number}</p>
+              <p className="text-[11px] font-bold uppercase tracking-wider text-muted">{typeName(variant.exam_type_id)} · {variantName(typeName(variant.exam_type_id), variant.variant_number, t("Variant", "Variant"))}</p>
               <p className="mt-1 text-sm font-extrabold text-ink">{variant.title}</p>
               <p className="mt-1 text-xs text-muted">{variant.question_count} {t("savol", "questions")}</p>
             </button>)}
             {catalog && !variants.length && <p className="col-span-full rounded-xl bg-surface p-4 text-sm text-muted">{t("Bu yerda nashr qilingan test yo'q.", "No published tests here.")}</p>}
           </div>
         </div>
-        <div>
-          <label htmlFor="exam-minutes" className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted"><Clock3 className="h-3.5 w-3.5" /> {t("Imtihon vaqti", "Exam length")}</label>
-          <div className="mt-2"><DurationPicker id="exam-minutes" value={minutes} onChange={setMinutes} /></div>
-          <p className="mt-2 text-xs text-muted">{t("Imtihon paytida ham o‘zgartirsa bo‘ladi.", "You can change it during the exam too.")}</p>
+        <div className="grid gap-5 sm:grid-cols-2">
+          <div>
+            <label htmlFor="exam-minutes" className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted"><Clock3 className="h-3.5 w-3.5" /> {t("Imtihon vaqti", "Exam length")}</label>
+            <div className="mt-2"><DurationPicker id="exam-minutes" value={minutes} onChange={setMinutes} /></div>
+          </div>
+          <div>
+            <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted"><Target className="h-3.5 w-3.5" /> {t("O‘tish bali", "Pass mark")}</p>
+            <div className="mt-2"><PassMarkPicker value={effectivePass} onChange={setPassMark} original={variantId && passMark !== null ? testPassMark : undefined} /></div>
+          </div>
         </div>
+        <p className="-mt-2 text-xs text-muted">{t("Ikkalasini imtihon paytida ham o‘zgartirsa bo‘ladi.", "Both can be changed during the exam too.")}</p>
         <label className="block space-y-2 text-sm font-semibold text-ink">{t("Imtihon nomi (ixtiyoriy)", "Exam name (optional)")}<Input placeholder={t("Masalan: 3-guruh, Mid-course", "e.g. Group 3, Mid-course")} value={title} onChange={(event) => setTitle(event.target.value)} maxLength={180} /></label>
         {error && <p className="rounded-xl bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-600">{error}</p>}
       </div>
-      <div className="border-t border-line p-5"><Button className="w-full !bg-teal-600 hover:!bg-teal-700" size="lg" disabled={!variantId || saving} onClick={start}><Play className="h-4 w-4" /> {saving ? t("Yaratilmoqda…", "Creating…") : t(`Imtihon o'tkazish · ${minutes} daq`, `Run exam · ${minutes} min`)}</Button></div>
+      <div className="border-t border-line p-5"><Button className="w-full !bg-teal-600 hover:!bg-teal-700" size="lg" disabled={!variantId || saving} onClick={start}><Play className="h-4 w-4" /> {saving ? t("Yaratilmoqda…", "Creating…") : t(`Imtihon o'tkazish · ${minutes} daq · ${effectivePass}%`, `Run exam · ${minutes} min · ${effectivePass}%`)}</Button></div>
     </div>
   </div>;
 }
@@ -107,9 +119,9 @@ export default function ExaminerSessions() {
 
   const card = (row: SessionSummary) => <Link key={row.id} href={`/examiner/sessions/${row.id}`} className="group flex flex-col gap-4 rounded-3xl border border-line bg-canvas p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lift sm:flex-row sm:items-center">
     <div className="min-w-0 flex-1">
-      <p className="text-[11px] font-bold uppercase tracking-wider text-muted">{row.level_name} · {row.exam_type_name} · V{row.variant_number}{row.examiner_name ? ` · ${row.examiner_name}` : ""}</p>
+      <p className="text-[11px] font-bold uppercase tracking-wider text-muted">{row.level_name} · {row.exam_type_name} · {variantTag(row.exam_type_name, row.variant_number)}{row.examiner_name ? ` · ${row.examiner_name}` : ""}</p>
       <h3 className="mt-1 truncate text-lg font-extrabold text-ink">{row.title}</h3>
-      <p className="mt-1 text-xs text-muted">{when(row.created_at)} · {row.time_limit_minutes} {t("daqiqa", "min")}</p>
+      <p className="mt-1 text-xs text-muted">{when(row.created_at)} · {row.time_limit_minutes} {t("daqiqa", "min")}{row.passing_percentage !== undefined && ` · ${t("o‘tish", "pass")} ${row.passing_percentage}%`}</p>
       <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
         {row.pending > 0 && <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-amber-600">{row.pending} {t("kutmoqda", "waiting")}</span>}
         <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-emerald-600">{row.in_progress} {t("ishlamoqda", "working")}</span>

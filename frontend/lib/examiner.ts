@@ -5,7 +5,7 @@ export type CatalogLevel = { id: string; name: string; slug: string };
 export type CatalogExamType = { id: string; name: string; slug: string };
 export type CatalogVariant = {
   id: string; title: string; variant_number: number; level_id: string; exam_type_id: string;
-  time_limit_minutes: number; question_count: number;
+  time_limit_minutes: number; passing_percentage: number; question_count: number;
 };
 export type ExaminerCatalog = { levels: CatalogLevel[]; exam_types: CatalogExamType[]; variants: CatalogVariant[] };
 
@@ -16,7 +16,7 @@ export type SessionSummary = {
   id: string; title: string; code: string; status: "ACTIVE" | "CLOSED"; created_at: string; closed_at: string | null;
   examiner_name: string | null; test_title: string; variant_number: number; time_limit_minutes: number;
   level_name: string; exam_type_name: string; pending: number; in_progress: number; submitted: number; total: number;
-  writing_total?: number; writing_awaiting?: number;
+  writing_total?: number; writing_awaiting?: number; passing_percentage?: number;
 };
 
 export type Participant = {
@@ -24,13 +24,14 @@ export type Participant = {
   avatar_url: string | null; status: string; state: ParticipantState; requested_at: string; last_seen_at: string | null;
   online: boolean; attempt_id: string | null; started_at: string | null; paused: boolean;
   elapsed_seconds: number; remaining_seconds: number; answered_count: number; percentage: number | null;
-  violations?: number; max_violations?: number; exam_mode?: boolean;
+  violations?: number; max_violations?: number; exam_mode?: boolean; passed?: boolean;
 };
 
 export type SessionDetail = Omit<SessionSummary, "pending" | "in_progress" | "submitted" | "total" | "examiner_name"> & {
   total_questions: number; level_slug: string; exam_type_slug: string; test_variant_id: string;
   participants: Participant[]; server_time: string;
   test_time_limit_minutes?: number; min_time_limit_minutes?: number; running_count?: number;
+  passing_percentage: number; test_passing_percentage?: number;
 };
 
 export type Grant = {

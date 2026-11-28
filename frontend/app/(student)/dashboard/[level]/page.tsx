@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowRight, BookMarked, Check, GraduationCap, Hourglass, Layers, Lock, Trophy } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookMarked, Check, ClipboardCheck, GraduationCap, Hourglass, Layers, Lock, Trophy } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { useLang } from "@/lib/i18n";
+import { variantName, variantTag } from "@/lib/exam-types";
 import { cn, formatDay } from "@/lib/utils";
 
 type ExamType = { id: string; name: string; slug: string };
@@ -92,8 +93,8 @@ export default function LevelPage({ params }: { params: { level: string } }) {
     </div>
     {error && <p className="mt-6 text-sm font-semibold text-red-600">{error}</p>}
 
-    <div className="mt-9 grid gap-5 md:grid-cols-2">{examTypes.map((exam, index) => {
-      const Icon = index ? GraduationCap : BookMarked;
+    <div className={cn("mt-9 grid gap-5 md:grid-cols-2", examTypes.length > 2 && "2xl:grid-cols-3")}>{examTypes.map((exam) => {
+      const Icon = exam.slug === "unit-test" ? ClipboardCheck : exam.slug === "end-course" ? GraduationCap : BookMarked;
       const rows = variants[exam.slug];
       const done = rows?.filter((row) => best.has(row.id)).length ?? 0;
       const top = rows?.reduce<number | null>((max, row) => best.has(row.id) ? Math.max(max ?? 0, best.get(row.id) ?? 0) : max, null) ?? null;
@@ -130,7 +131,7 @@ export default function LevelPage({ params }: { params: { level: string } }) {
             const score = best.get(row.id);
             return <li key={row.id} className="flex items-center gap-3 border-b border-line px-5 py-3 last:border-b-0 sm:px-6">
               <span className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg text-xs font-extrabold tabular-nums",
-                score !== undefined ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-surface text-muted")}>V{row.variant_number}</span>
+                score !== undefined ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-surface text-muted")}>{variantTag(exam.slug, row.variant_number)}</span>
               <span className="min-w-0 flex-1 truncate text-sm font-bold text-ink">{short(row.title)}</span>
               {score !== undefined
                 ? <span className="inline-flex shrink-0 items-center gap-1 text-sm font-extrabold tabular-nums text-emerald-600 dark:text-emerald-400"><Check className="h-4 w-4" /> {Math.round(score)}%</span>

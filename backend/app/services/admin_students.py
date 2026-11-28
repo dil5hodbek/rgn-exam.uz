@@ -4,6 +4,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.exam_access import session_pass_marks
 from app.models import (
     AdminAuditLog, Attempt, AttemptStatus, ExamType, Level, Role, TelegramLink, TestVariant, User,
 )
@@ -56,6 +57,8 @@ async def student_attempts(db: AsyncSession, student_id: uuid.UUID) -> dict:
         .where(Attempt.user_id == student_id, Attempt.status != AttemptStatus.IN_PROGRESS)
         .order_by(Attempt.submitted_at.desc().nulls_last(), Attempt.started_at.desc())
     )).all()
+    # Proctored attempts are judged by their examiner's pass mark.
+    marks = await session_pass_marks(db, {attempt.exam_session_id for attempt, *_ in rows})
     return {
         "student": {
             "id": student.id, "first_name": student.first_name, "last_name": student.last_name,
@@ -69,9 +72,10 @@ async def student_attempts(db: AsyncSession, student_id: uuid.UUID) -> dict:
             "is_mixed": bool(attempt.extra_task_ids),
             "status": attempt.status,
             "percentage": float(attempt.percentage) if attempt.percentage is not None else None,
-            "passing_percentage": variant.passing_percentage,
+            "passing_percentage": marks.get(attempt.exam_session_id, variant.passing_percentage),
             "passed": (
-                float(attempt.percentage) >= variant.passing_percentage if attempt.percentage is not None else False
+                float(attempt.percentage) >= marks.get(attempt.exam_session_id, variant.passing_percentage)
+                if attempt.percentage is not None else False
             ),
             "started_at": attempt.started_at,
             "submitted_at": attempt.submitted_at,

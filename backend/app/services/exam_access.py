@@ -130,6 +130,28 @@ async def attempt_time_limit(db: AsyncSession, attempt: Attempt) -> int:
     ) or 0)
 
 
+async def attempt_pass_mark(db: AsyncSession, attempt: Attempt, variant: TestVariant) -> int:
+    """Pass mark for this attempt: the examiner's for a proctored sitting,
+    otherwise the test's own."""
+    if attempt.exam_session_id is not None:
+        mark = await db.scalar(
+            select(ExamSession.passing_percentage).where(ExamSession.id == attempt.exam_session_id)
+        )
+        if mark is not None:
+            return int(mark)
+    return int(variant.passing_percentage)
+
+
+async def session_pass_marks(db: AsyncSession, session_ids: set[uuid.UUID]) -> dict[uuid.UUID, int]:
+    """Batch form of attempt_pass_mark for lists of attempts."""
+    ids = {sid for sid in session_ids if sid is not None}
+    if not ids:
+        return {}
+    return dict((await db.execute(
+        select(ExamSession.id, ExamSession.passing_percentage).where(ExamSession.id.in_(ids))
+    )).all())
+
+
 def pause_attempt_clock(attempt: Attempt) -> bool:
     if attempt.paused_at is not None:
         return False

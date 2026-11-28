@@ -2,15 +2,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  AlertTriangle, ArrowLeft, Check, CheckCheck, Clock3, Copy, KeyRound, LogOut, Pause, Pencil, Play, RefreshCw, Send, ShieldOff, UserX, Wifi, WifiOff, X,
+  AlertTriangle, ArrowLeft, Check, CheckCheck, Clock3, Copy, FileSpreadsheet, KeyRound, LogOut, Pause, Pencil, Play, RefreshCw, Send, Target, ShieldOff, UserX, Wifi, WifiOff, X,
 } from "lucide-react";
 import { DurationPicker } from "@/components/examiner/duration-picker";
+import { PassMarkPicker } from "@/components/examiner/pass-mark-picker";
 import { ExamModeToggle } from "@/components/examiner/exam-mode-toggle";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/use-confirm";
-import { api } from "@/lib/api";
+import { api, API_URL, refreshSession } from "@/lib/api";
 import { clock, STATE_STYLES, stateLabel, type Participant, type SessionDetail } from "@/lib/examiner";
 import { useLang } from "@/lib/i18n";
+import { variantName, variantTag } from "@/lib/exam-types";
 import { cn, formatDuration } from "@/lib/utils";
 
 const POLL_MS = 3000;
@@ -30,6 +32,9 @@ export default function SessionMonitor({ params }: { params: { sessionId: string
   // Exam length editor: null = closed, otherwise the minutes being chosen.
   const [lengthDraft, setLengthDraft] = useState<number | null>(null);
   const [lengthError, setLengthError] = useState("");
+  // Pass-mark editor: null = closed.
+  const [passDraft, setPassDraft] = useState<number | null>(null);
+  const [exporting, setExporting] = useState(false);
   const alive = useRef(true);
 
   const apply = useCallback((data: SessionDetail) => {
@@ -75,6 +80,48 @@ export default function SessionMonitor({ params }: { params: { sessionId: string
       setLengthError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setBusy(null);
+    }
+  }
+  async function savePass(percent: number) {
+    setBusy("pass");
+    setLengthError("");
+    try {
+      apply(await api<SessionDetail>(`/examiner/sessions/${params.sessionId}`, {
+        method: "PATCH", body: JSON.stringify({ passing_percentage: percent }),
+      }));
+      setPassDraft(null);
+    } catch (reason) {
+      setLengthError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Excel of everyone's results; a fetch (not a plain link) so an expired
+  // session refreshes first instead of downloading an error page.
+  async function downloadExcel() {
+    setExporting(true);
+    setError("");
+    try {
+      const url = `${API_URL}/examiner/sessions/${params.sessionId}/export`;
+      let response = await fetch(url, { credentials: "include" });
+      if (response.status === 401 && (await refreshSession())) response = await fetch(url, { credentials: "include" });
+      if (!response.ok) throw new Error(t("Excel faylni tayyorlab bo‘lmadi.", "Could not build the Excel file."));
+      const disposition = response.headers.get("content-disposition") ?? "";
+      const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
+      const name = encoded ? decodeURIComponent(encoded) : "natijalar.xlsx";
+      const href = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = href;
+      link.download = name;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(href);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setExporting(false);
     }
   }
   const participantAct = (participant: Participant, action: string) =>
@@ -142,6 +189,8 @@ export default function SessionMonitor({ params }: { params: { sessionId: string
   const lengthEditable = active || runningCount > 0;
   const minLength = runningCount > 0 ? (session.min_time_limit_minutes ?? 5) : 5;
   const lengthDelta = lengthDraft === null ? 0 : lengthDraft - session.time_limit_minutes;
+  const finishedScores = seated.filter((row) => row.state === "SUBMITTED" && row.percentage !== null).map((row) => row.percentage as number);
+  const passingAt = (mark: number) => finishedScores.filter((score) => score >= mark).length;
   return <div className="mx-auto max-w-6xl p-4 sm:p-8">
     {dialog}
     {cardRow && <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onClick={() => setStudentCard(null)}>
@@ -161,7 +210,7 @@ export default function SessionMonitor({ params }: { params: { sessionId: string
     <Link href="/examiner" className="inline-flex items-center gap-2 text-sm font-bold text-muted hover:text-ink"><ArrowLeft className="h-4 w-4" /> {t("Imtihonlar", "Exam sessions")}</Link>
     <div className="mt-5 flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
       <div className="min-w-0">
-        <p className="text-xs font-bold uppercase tracking-[.08em] text-teal-600">{session.level_name} · {session.exam_type_name} · {t("Variant", "Variant")} {session.variant_number}</p>
+        <p className="text-xs font-bold uppercase tracking-[.08em] text-teal-600">{session.level_name} · {session.exam_type_name} · {variantName(session.exam_type_name, session.variant_number, t("Variant", "Variant"))}</p>
         <h1 className="mt-2 text-3xl font-extrabold text-ink">{session.title}</h1>
         <p className="mt-2 text-sm text-muted">{session.test_title} · {session.total_questions} {t("savol", "questions")}</p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -172,6 +221,10 @@ export default function SessionMonitor({ params }: { params: { sessionId: string
               <Pencil className="h-3 w-3 opacity-60 transition group-hover:opacity-100" /><span className="sr-only">{t("Vaqtni o‘zgartirish", "Change length")}</span>
             </button>
             : <span className="inline-flex items-center gap-1.5 rounded-full bg-surface px-3 py-1 text-xs font-bold text-muted"><Clock3 className="h-3.5 w-3.5" /> {formatDuration(session.time_limit_minutes * 60, lang)}</span>}
+          <button type="button" onClick={() => { setLengthError(""); setPassDraft(session.passing_percentage); }} className="group inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 py-1 pl-2.5 pr-3 text-xs font-bold text-teal-700 transition hover:bg-teal-500/15 dark:text-teal-300">
+            <Target className="h-3.5 w-3.5" /> {t("O‘tish", "Pass")} {session.passing_percentage}%
+            <Pencil className="h-3 w-3 opacity-60 transition group-hover:opacity-100" /><span className="sr-only">{t("O‘tish balini o‘zgartirish", "Change pass mark")}</span>
+          </button>
         </div>
       </div>
       {active && <div className="shrink-0 rounded-3xl border border-teal-500/30 bg-teal-500/10 p-5 text-center lg:min-w-[300px]">
@@ -209,6 +262,7 @@ export default function SessionMonitor({ params }: { params: { sessionId: string
         confirmLabel: t("To'xtatish", "Pause"), onConfirm: () => act("/pause-all", "pause-all"),
       })}><Pause className="h-4 w-4" /> {t("Hammasini to'xtatish", "Pause all")}</Button>
       <Button size="sm" variant="secondary" disabled={!paused.length || busy === "resume-all"} onClick={() => act("/resume-all", "resume-all")}><Play className="h-4 w-4" /> {t("Hammasini davom ettirish", "Resume all")}</Button>
+      <Button size="sm" variant="secondary" className={cn(!active && "ml-auto")} disabled={!seated.length || exporting} onClick={downloadExcel}><FileSpreadsheet className="h-4 w-4 text-emerald-600" /> {exporting ? t("Tayyorlanmoqda…", "Preparing…") : t("Excel yuklab olish", "Download Excel")}</Button>
       {active && <Button size="sm" variant="danger" className="ml-auto" onClick={() => setClosing(true)}><LogOut className="h-4 w-4" /> {t("Imtihonni yakunlash", "Close exam")}</Button>}
     </div>
 
@@ -239,7 +293,7 @@ export default function SessionMonitor({ params }: { params: { sessionId: string
             <div className="shrink-0 text-right">
               <span className={cn("rounded-full px-2.5 py-1 text-xs font-bold", STATE_STYLES[row.state])}>{stateLabel(row.state, t)}</span>
               {row.attempt_id && row.state !== "SUBMITTED" && <p className={cn("mt-2 font-mono text-lg font-extrabold", remaining <= 300 ? "text-red-600" : "text-ink")}>{clock(remaining)}</p>}
-              {row.state === "SUBMITTED" && row.percentage !== null && <p className="mt-2 text-lg font-extrabold text-ink">{Math.round(row.percentage)}%</p>}
+              {row.state === "SUBMITTED" && row.percentage !== null && <p className={cn("mt-2 text-lg font-extrabold", row.passed ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}>{Math.round(row.percentage)}%</p>}
             </div>
           </div>
           <div className="mt-3 flex flex-wrap items-end justify-between gap-2">
@@ -264,7 +318,7 @@ export default function SessionMonitor({ params }: { params: { sessionId: string
                 <p className="text-xs text-muted">{row.username ? `@${row.username}` : row.phone_number}</p>
                 {row.exam_mode === false && <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-300"><ShieldOff className="h-3 w-3" /> {t("Imtihon rejimi o'chiq", "Exam mode off")}</span>}
               </button></td>
-              <td className="px-4 py-3"><span className={cn("rounded-full px-2.5 py-1 text-xs font-bold", STATE_STYLES[row.state])}>{stateLabel(row.state, t)}</span>{row.state === "SUBMITTED" && row.percentage !== null && <span className="ml-2 text-xs font-bold text-ink">{Math.round(row.percentage)}%</span>}</td>
+              <td className="px-4 py-3"><span className={cn("rounded-full px-2.5 py-1 text-xs font-bold", STATE_STYLES[row.state])}>{stateLabel(row.state, t)}</span>{row.state === "SUBMITTED" && row.percentage !== null && <span className={cn("ml-2 text-xs font-bold", row.passed ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}>{Math.round(row.percentage)}%</span>}</td>
               <td className="px-4 py-3">{connectionInfo(row, running)}</td>
               <td className="px-4 py-3">{row.attempt_id ? <span className={cn("font-mono text-base font-extrabold", remaining <= 300 && row.state !== "SUBMITTED" ? "text-red-600" : "text-ink")}>{row.state === "SUBMITTED" ? "—" : clock(remaining)}</span> : <span className="text-xs text-muted">{t("Boshlamagan", "Not started")}</span>}</td>
               <td className="px-4 py-3"><div className="flex items-center gap-2"><div className="h-2 w-24 overflow-hidden rounded-full bg-surface"><div className="h-full rounded-full bg-teal-500" style={{ width: `${share}%` }} /></div><span className="text-xs font-bold text-muted">{row.answered_count}/{session.total_questions}</span></div></td>
@@ -277,6 +331,27 @@ export default function SessionMonitor({ params }: { params: { sessionId: string
     </section>
 
     {declined.length > 0 && <section className="mt-7"><h2 className="text-sm font-extrabold uppercase tracking-wider text-muted">{t("Rad etilgan / chiqarilgan", "Rejected / removed")}</h2><div className="mt-2 flex flex-wrap gap-2">{declined.map((row) => <span key={row.id} className="inline-flex items-center gap-2 rounded-full border border-line bg-canvas px-3 py-1.5 text-xs font-bold text-ink">{row.first_name} {row.last_name}<span className={cn("rounded-full px-2 py-0.5", STATE_STYLES[row.state])}>{stateLabel(row.state, t)}</span>{row.state === "REJECTED" && active && <button type="button" className="text-teal-600 hover:underline" onClick={() => participantAct(row, "approve")}>{t("Tasdiqlash", "Approve")}</button>}</span>)}</div></section>}
+
+    {passDraft !== null && <div className="fixed inset-0 z-50 grid place-items-end bg-black/50 sm:place-items-center sm:p-4" onClick={() => setPassDraft(null)}>
+      <div role="dialog" aria-modal="true" aria-labelledby="pass-title" className="w-full max-w-md rounded-t-3xl border border-line bg-canvas p-5 shadow-lift sm:rounded-3xl sm:p-6" onClick={(event) => event.stopPropagation()}>
+        <div className="flex items-start justify-between gap-3">
+          <div><h2 id="pass-title" className="text-lg font-extrabold text-ink">{t("O‘tish bali", "Pass mark")}</h2><p className="text-xs text-muted">{t("Hozir", "Now")}: {session.passing_percentage}%</p></div>
+          <button type="button" aria-label={t("Yopish", "Close")} onClick={() => setPassDraft(null)} className="rounded-lg p-1.5 text-muted hover:text-ink"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="mt-4"><PassMarkPicker value={passDraft} onChange={setPassDraft} original={session.test_passing_percentage} /></div>
+        <p className={cn("mt-4 rounded-2xl px-3 py-2.5 text-sm font-semibold", passDraft === session.passing_percentage ? "bg-surface text-muted" : "bg-teal-500/10 text-teal-800 dark:text-teal-200")}>
+          {finishedScores.length
+            ? t(`${finishedScores.length} ta natijadan ${passingAt(passDraft)} tasi o‘tadi` + (passDraft !== session.passing_percentage ? ` (hozir ${passingAt(session.passing_percentage)}).` : "."),
+              `${passingAt(passDraft)} of ${finishedScores.length} results pass` + (passDraft !== session.passing_percentage ? ` (now ${passingAt(session.passing_percentage)}).` : "."))
+            : t("Natijalar shu bal bo‘yicha baholanadi.", "Results are judged by this mark.")}
+        </p>
+        {lengthError && passDraft !== null && <p role="alert" className="mt-3 rounded-xl bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-600">{lengthError}</p>}
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <Button variant="secondary" className="whitespace-nowrap" onClick={() => setPassDraft(null)}>{t("Bekor qilish", "Cancel")}</Button>
+          <Button className="whitespace-nowrap !bg-teal-600 hover:!bg-teal-700" disabled={passDraft === session.passing_percentage || busy === "pass"} onClick={() => savePass(passDraft)}>{busy === "pass" ? t("Saqlanmoqda…", "Saving…") : t("Saqlash", "Save")}</Button>
+        </div>
+      </div>
+    </div>}
 
     {lengthDraft !== null && <div className="fixed inset-0 z-50 grid place-items-end bg-black/50 sm:place-items-center sm:p-4" onClick={() => setLengthDraft(null)}>
       <div role="dialog" aria-modal="true" aria-labelledby="length-title" className="w-full max-w-md rounded-t-3xl border border-line bg-canvas p-5 shadow-lift sm:rounded-3xl sm:p-6" onClick={(event) => event.stopPropagation()}>

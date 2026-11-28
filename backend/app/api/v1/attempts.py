@@ -26,7 +26,7 @@ from app.services.exercise_registry import MANUAL_TASK_TYPES
 from app.services.certificate import generate_certificate_pdf
 from app.services.exam_access import (
     MAX_EXAM_VIOLATIONS, attempt_elapsed_seconds, can_open_variant, ensure_scope_access, ensure_session_attempt_allowed,
-    attempt_time_limit, ensure_variant_access, remaining_seconds, session_participant_for_attempt,
+    attempt_pass_mark, attempt_time_limit, ensure_variant_access, remaining_seconds, session_participant_for_attempt,
 )
 from app.services.grading import grade_answer, scaled_score
 
@@ -282,7 +282,7 @@ async def open_exam(
             "id": variant.id, "title": variant.title, "instructions": variant.instructions,
             # A proctored sitting runs on the examiner's length, not the test's.
             "time_limit_minutes": await attempt_time_limit(db, attempt),
-            "passing_percentage": variant.passing_percentage, "review_allowed": variant.review_allowed,
+            "passing_percentage": await attempt_pass_mark(db, attempt, variant), "review_allowed": variant.review_allowed,
             "sections": await serialize_sections(db, sections),
         },
     }
@@ -293,6 +293,7 @@ async def open_exam(
 # End-course exercises), per the product decision to mix study material
 # across the mid/end split rather than serve either type in isolation.
 CROSS_EXAM_TYPE_SHARE = 0.25
+MIXING_PARTNERS = {"mid-course": "end-course", "end-course": "mid-course"}
 
 
 async def cross_exam_type_task_ids(
@@ -303,11 +304,18 @@ async def cross_exam_type_task_ids(
     all its sections, flattened (no per-section grouping needed here — they
     land in one bonus section, see attempt_sections). Empty if this level has
     no variant of the other exam type at all — the test then stays 100%
-    primary-type with no error, per product decision."""
+    primary-type with no error, per product decision.
+
+    Only Mid-course and End-course mix with each other; Unit tests (and any
+    other type) never borrow or lend exercises."""
+    primary_slug = await db.scalar(select(ExamType.slug).where(ExamType.id == primary_exam_type_id))
+    partner_slug = MIXING_PARTNERS.get(primary_slug or "")
+    if not partner_slug:
+        return []
     other_variant_ids = (await db.execute(
-        select(TestVariant.id).where(
+        select(TestVariant.id).join(ExamType, ExamType.id == TestVariant.exam_type_id).where(
             TestVariant.level_id == level_id,
-            TestVariant.exam_type_id != primary_exam_type_id,
+            ExamType.slug == partner_slug,
             TestVariant.status == ContentStatus.PUBLISHED,
         )
     )).scalars().all()
@@ -970,6 +978,7 @@ async def attempt_result(
         }
     section_summaries = []
     review = []
+    pass_mark = await attempt_pass_mark(db, attempt, variant)
     correct_count = incorrect_count = pending_count = 0
     for section in attempt_secs:
         earned = maximum = 0.0
@@ -1026,8 +1035,8 @@ async def attempt_result(
         "score": float(attempt.total_score or 0),
         "max_score": float(attempt.max_score or 0),
         "percentage": float(attempt.percentage or 0),
-        "passing_percentage": variant.passing_percentage,
-        "passed": float(attempt.percentage or 0) >= variant.passing_percentage,
+        "passing_percentage": pass_mark,
+        "passed": float(attempt.percentage or 0) >= pass_mark,
         # Offer "retake" only where the student could actually open the test
         # again: never for an examiner-proctored sitting, and not for a test
         # that is locked to them (it would just hit the password wall).
@@ -1064,7 +1073,7 @@ async def attempt_certificate(
         raise HTTPException(404, "Test variant not found.")
     variant, level, exam_type = row
     percentage = float(attempt.percentage or 0)
-    if percentage < variant.passing_percentage:
+    if percentage < await attempt_pass_mark(db, attempt, variant):
         raise HTTPException(403, "Certificate is only available for passing attempts.")
 
     pdf_bytes = generate_certificate_pdf(
