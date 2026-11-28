@@ -8,6 +8,8 @@ import { getLang } from "@/lib/lang-server";
 export const metadata: Metadata = {
   title: "Registon O'quv Markazi",
   description: "Registon o'quv markazi o'quvchilari uchun ingliz tili imtihonlari.",
+  // iPhone "Add to Home Screen" → opens without Safari's bars (see manifest.ts).
+  appleWebApp: { capable: true, title: "Registon", statusBarStyle: "black" },
 };
 
 // Orange hexagon trail that follows the mouse. Switched off for now;

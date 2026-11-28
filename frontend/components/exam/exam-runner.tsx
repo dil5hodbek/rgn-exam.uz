@@ -9,7 +9,8 @@ import { useRouter } from "next/navigation";
 import { AudioPlayer } from "@/components/exam/audio-player";
 import { ExamCountdown, timeLeft, type ClockBase } from "@/components/exam/exam-countdown";
 import { GapMatch } from "@/components/exam/gap-match";
-import { enterFullscreen, exitFullscreen, fullscreenSupported, useExamLockdown, type ViolationKind } from "@/components/exam/use-exam-lockdown";
+import { enterFullscreen, exitFullscreen, fullscreenSupported, useExamLockdown, useFullscreenState, type ViolationKind } from "@/components/exam/use-exam-lockdown";
+import { BrowserAdvice } from "@/components/exam/browser-advice";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/use-confirm";
 import { useLang } from "@/lib/i18n";
@@ -346,12 +347,22 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     return () => { if (sidebarTimer.current) clearTimeout(sidebarTimer.current); };
   }, [test]);
 
+  const fullscreenState = useFullscreenState();
+  // Exam mode off (or fullscreen dropped): a button to go (back) fullscreen
+  // with no warning attached. With exam mode on the lockdown overlay does it.
+  const offerFullscreen = Boolean(fullscreenState?.supported && !fullscreenState.on && !examMode && !fullscreenRefused && timerStarted);
   const lockdown = useExamLockdown({
     active: examMode && timerStarted && Boolean(attemptId) && !paused && !removed && !leaving,
     initialViolations: violationBase,
     fullscreenRefused,
     onViolation: (kind, localCount) => { reportViolation(kind, localCount).catch(() => {}); },
   });
+
+  function goFullscreen() {
+    enterFullscreen().then((ok) => { if (!ok) setFullscreenRefused(true); }).catch(() => {});
+  }
+  // Leaving the exam page (result, dashboard) leaves fullscreen too.
+  useEffect(() => () => exitFullscreen(), []);
 
   // Each trip away is reported to the server, which keeps the count and
   // submits the attempt itself on the last one (saved answers are pushed first).
@@ -384,7 +395,9 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     if (!attemptId || beginning) return;
     setBeginning(true);
     setError("");
-    const fullscreen = examMode && fullscreenSupported() ? enterFullscreen() : Promise.resolve(true);
+    // Fullscreen for everyone whose browser allows it; exam mode only adds
+    // the warnings for leaving it.
+    const fullscreen = fullscreenSupported() ? enterFullscreen() : Promise.resolve(true);
     try {
       const state = await api<AttemptState>(`/attempts/${attemptId}/begin`, { method: "POST" });
       if (!(await fullscreen)) setFullscreenRefused(true);
@@ -1120,6 +1133,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
           ? t(`${lockdown.violations}/${maxViolations} ogohlantirish`, `${lockdown.violations}/${maxViolations} warnings`)
           : t("Imtihon yakunlanmoqda…", "Ending the exam…")}</p>
       </div>}
+      {lockdown.away === "start" && <BrowserAdvice className="mt-5" />}
       <Button className="mt-6 w-full" disabled={violationsLeft === 0} onClick={() => { lockdown.resume().catch(() => {}); }}>
         <Maximize className="h-4 w-4" />
         {t("Davom etish", "Continue")}
@@ -1164,6 +1178,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
             {examMode && <li className="flex items-center gap-3"><ShieldAlert className="h-4 w-4 shrink-0 text-brand" />{t(`Boshqa oynaga o‘tish — ogohlantirish. ${maxViolations} tasida imtihon yakunlanadi.`, `Leaving the exam is a warning. ${maxViolations} end it.`)}</li>}
             <li className="flex items-center gap-3"><Check className="h-4 w-4 shrink-0 text-brand" />{t("Javoblar o‘zi saqlanadi.", "Answers save automatically.")}</li>
           </ul>
+          <BrowserAdvice className="mt-6" />
           {error && <p className="mt-5 rounded-xl bg-red-500/10 p-3 text-sm font-semibold text-red-600">{error}</p>}
           <Button className="mt-7 w-full" onClick={beginExam} disabled={beginning}><Play className="h-4 w-4" /> {beginning ? t("Tayyorlanmoqda…", "Preparing…") : t("Boshlash", "Start")}</Button>
           <p className="mt-3 text-xs text-muted">{t("Vaqt shu tugmadan keyin boshlanadi.", "The clock starts when you press it.")}</p>
@@ -1213,8 +1228,10 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     {lockdownOverlay}
     <div className="exam-screen min-h-[100dvh] bg-surface xl:flex xl:h-[100dvh] xl:flex-col xl:overflow-hidden">
     <header className="sticky top-0 z-30 border-b border-line bg-canvas/95 backdrop-blur">
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5 xl:px-6">
-        <div className="flex min-w-0 max-w-full flex-1 items-center gap-2 sm:flex-none sm:gap-3">
+      {/* Phone sideways (short:): everything on one thin row so the few
+          hundred pixels of height go to the questions. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-2.5 short:flex-nowrap short:gap-x-3 short:py-1.5 xl:px-6">
+        <div className="flex min-w-0 max-w-full flex-1 items-center gap-2 sm:flex-none sm:gap-3 short:flex-1">
           <button
             // A proctored attempt's history entry is the waiting room, which
             // would bounce straight back here — go to the dashboard instead.
@@ -1232,15 +1249,16 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
             <ExamCountdown base={clockBase} paused={paused} onExpire={() => { if (timerStarted) setShowReview(true); }}>{(left, text) =>
               <span className={cn("flex items-center gap-1 rounded-lg bg-surface px-2 py-1.5 font-mono text-[13px] font-bold", left < 300 ? "text-red-500" : "text-ink")}><Clock3 className="h-3.5 w-3.5 text-brand" />{text}</span>}
             </ExamCountdown>
+            {offerFullscreen && <button type="button" onClick={goFullscreen} aria-label={t("To‘liq ekran", "Fullscreen")} title={t("To‘liq ekran", "Fullscreen")} className="grid h-8 w-8 place-items-center rounded-lg border border-line bg-surface text-ink active:scale-95"><Maximize className="h-4 w-4" /></button>}
             {examMode && <span title={t("Imtihon rejimi", "Exam mode")} className={cn("flex items-center gap-1 rounded-lg px-1.5 py-1.5 text-[11px] font-bold", lockdown.violations ? "bg-red-500/10 text-red-600 dark:text-red-400" : "bg-surface text-muted")}><Lock className="h-3.5 w-3.5" />{lockdown.violations ? `${lockdown.violations}/${maxViolations}` : null}</span>}
             {proctored
               ? <span title={t("Examiner nazoratidagi imtihon", "Examiner-proctored exam")} className="grid h-8 w-8 place-items-center rounded-lg bg-teal-500/10 text-teal-700 dark:text-teal-300"><ShieldAlert className="h-4 w-4" /></span>
               : <button type="button" onClick={saveAndExit} aria-label={t("Saqlab chiqish", "Save & exit")} title={t("Saqlab chiqish", "Save & exit")} className="grid h-8 w-8 place-items-center rounded-lg border border-line bg-surface text-ink active:scale-95"><LogOut className="h-4 w-4" /></button>}
           </div>
         </div>
-        <div className={cn("w-full min-w-0 flex-wrap items-center justify-end gap-2.5 xl:w-auto", exercise.media?.mime_type.startsWith("audio/") ? "flex" : "hidden sm:flex")}>
+        <div className={cn("w-full min-w-0 flex-wrap items-center justify-end gap-2.5 short:w-auto short:flex-none short:flex-nowrap short:gap-2 xl:w-auto",exercise.media?.mime_type.startsWith("audio/") ? "flex" : "hidden sm:flex")}>
           {exercise.media?.mime_type.startsWith("audio/") && <>
-            <AudioPlayer className="min-w-0 flex-1 sm:w-[22rem] sm:flex-none sm:shrink-0" src={mediaUrl(exercise.media.url)} autoStartDelay={5000} onPlay={(media) => guardMediaPlay(exercise, media)} onEnded={() => recordMediaPlay(exercise)} />
+            <AudioPlayer className="min-w-0 flex-1 sm:w-[22rem] sm:flex-none sm:shrink-0 short:w-60 short:flex-none md:short:w-[22rem]" src={mediaUrl(exercise.media.url)} autoStartDelay={5000} onPlay={(media) => guardMediaPlay(exercise, media)} onEnded={() => recordMediaPlay(exercise)} />
             {exercise.audio_replay_limit && <span title={t("Qolgan tinglashlar", "Plays left")} className="shrink-0 rounded-lg bg-surface px-2 py-2 text-[10px] font-bold text-muted">{Math.max(0, exercise.audio_replay_limit - (mediaPlays[exercise.id] ?? 0))} {t("ta qoldi", "left")}</span>}
           </>}
           <span className="hidden shrink-0 rounded-xl bg-surface px-2.5 py-2 text-xs font-bold text-muted sm:block">{exerciseAnswered}/{exerciseQuestions.length}</span>
@@ -1248,6 +1266,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
           <ExamCountdown base={clockBase} paused={paused} onExpire={() => { if (timerStarted) setShowReview(true); }}>{(left, text) =>
             <span className={cn("hidden shrink-0 items-center gap-2 rounded-xl bg-surface px-3 py-2 font-mono text-sm font-bold sm:flex", left < 300 ? "text-red-500" : "text-ink")}><Clock3 className="h-4 w-4 text-brand" />{text}</span>}
           </ExamCountdown>
+          {offerFullscreen && <button type="button" onClick={goFullscreen} title={t("To‘liq ekran", "Fullscreen")} className="hidden shrink-0 items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-xs font-bold text-ink transition hover:border-brand hover:text-brand sm:flex"><Maximize className="h-4 w-4" /><span className="hidden md:inline">{t("To‘liq ekran", "Fullscreen")}</span></button>}
           {examMode && <span className="hidden sm:contents">{lockdownPill}</span>}
           {proctored
             ? <span title={t("Examiner nazoratidagi imtihon", "Examiner-proctored exam")} className="hidden shrink-0 sm:flex items-center gap-1.5 rounded-xl bg-teal-500/10 px-3 py-2 text-xs font-bold text-teal-700 dark:text-teal-300"><ShieldAlert className="h-4 w-4" /><span className="hidden md:inline">{t("Nazoratdagi imtihon", "Proctored")}</span></span>

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import secrets
@@ -174,6 +175,49 @@ async def refresh_session(
         raise HTTPException(401, "Session expired.")
     set_session(response, str(user.id), session_until=payload.get("session_until"))
     return AuthResponse(user=user_output(user), message="Session refreshed.")
+
+
+# Browser hand-off: an app's built-in browser (Telegram, Instagram…) can't go
+# fullscreen, so the exam offers "open in Chrome". Chrome has its own cookies,
+# so the signed-in page mints a single-use, two-minute code that Chrome trades
+# for the same session (same user, same session_until cap — never longer).
+HANDOFF_TTL = 120
+
+
+def handoff_key(code: str) -> str:
+    return "browser-handoff:" + hashlib.sha256(code.encode()).hexdigest()
+
+
+@router.post("/handoff")
+async def start_handoff(request: Request, user: User = Depends(current_user)):
+    session_until = None
+    raw = request.cookies.get("access_token")
+    if raw:
+        try:
+            session_until = decode_token(raw, "access").get("session_until")
+        except ValueError:
+            session_until = None
+    code = secrets.token_urlsafe(32)
+    async with redis_client() as redis:
+        await redis.set(handoff_key(code), json.dumps({"user_id": str(user.id), "session_until": session_until}), ex=HANDOFF_TTL)
+    return {"code": code, "expires_in": HANDOFF_TTL}
+
+
+@router.post("/handoff/complete", response_model=AuthResponse)
+async def complete_handoff(payload: TelegramMagicLogin, response: Response, db: AsyncSession = Depends(get_db)):
+    async with redis_client() as redis:
+        raw = await redis.getdel(handoff_key(payload.token))
+    if not raw:
+        raise HTTPException(401, "This link has expired. Open the exam again from the other browser.")
+    data = json.loads(raw)
+    user = await db.scalar(
+        select(User).where(User.id == uuid.UUID(data["user_id"])).options(selectinload(User.telegram_link))
+    )
+    if not user or not user.is_active:
+        raise HTTPException(401, "This account is unavailable.")
+    set_session(response, str(user.id), session_until=data.get("session_until"))
+    response.headers["Cache-Control"] = "no-store"
+    return AuthResponse(user=user_output(user))
 
 
 @router.post("/telegram/sign-in/start")

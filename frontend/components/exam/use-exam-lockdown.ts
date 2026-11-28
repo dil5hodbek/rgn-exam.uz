@@ -47,6 +47,22 @@ export function exitFullscreen() {
   if (isFullscreen()) (doc().exitFullscreen ? doc().exitFullscreen() : doc().webkitExitFullscreen?.())?.catch?.(() => {});
 }
 
+/** null until mounted (SSR), then whether the page is fullscreen right now. */
+export function useFullscreenState() {
+  const [state, setState] = useState<{ supported: boolean; on: boolean } | null>(null);
+  useEffect(() => {
+    const update = () => setState({ supported: fullscreenSupported(), on: isFullscreen() });
+    update();
+    document.addEventListener("fullscreenchange", update);
+    document.addEventListener("webkitfullscreenchange", update);
+    return () => {
+      document.removeEventListener("fullscreenchange", update);
+      document.removeEventListener("webkitfullscreenchange", update);
+    };
+  }, []);
+  return state;
+}
+
 /** Blocked shortcuts: copy/paste/cut, print, save, view source, find, reload, new tab/window, dev tools. */
 function blockedCombo(event: KeyboardEvent) {
   const key = event.key.toLowerCase(), mod = event.ctrlKey || event.metaKey;

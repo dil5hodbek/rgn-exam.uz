@@ -75,6 +75,7 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     "/auth/refresh",
     "/auth/telegram",
     "/auth/forgot",
+    "/auth/handoff/complete",
   ].some((authPath) => path.startsWith(authPath));
 
   if (response.status === 401 && !isAuthenticationRequest) {

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, CheckCircle2, Clock3, Hourglass, PauseCircle, ShieldX } from "lucide-react";
+import { BrowserAdvice } from "@/components/exam/browser-advice";
 import { Button } from "@/components/ui/button";
 import { api, ApiError } from "@/lib/api";
 import { clock, type MySession } from "@/lib/examiner";
@@ -75,7 +76,7 @@ export default function ExamSessionRoom({ params }: { params: { sessionId: strin
       <span className="relative mx-auto grid h-16 w-16 place-items-center"><span className="absolute inset-0 animate-ping rounded-full bg-amber-400/30" /><Hourglass className="relative h-10 w-10 text-amber-500" /></span>,
       t("Examiner tasdiqlashini kuting", "Waiting for the examiner"),
       t("Parol to‘g‘ri. Examiner tasdiqlashini kuting.", "Password accepted. Waiting for the examiner."),
-      <>{info}{error && <p className="mt-4 text-xs font-semibold text-red-600">{error}</p>}</>,
+      <>{info}<BrowserAdvice className="mt-4" />{error && <p className="mt-4 text-xs font-semibold text-red-600">{error}</p>}</>,
     )}
     {session && session.status === "APPROVED" && session.attempt_status !== "IN_PROGRESS" && session.attempt_id && card(
       <CheckCircle2 className="mx-auto h-14 w-14 text-emerald-500" />,
