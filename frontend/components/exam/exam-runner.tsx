@@ -1424,8 +1424,8 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
         <div ref={splitRef} className={cn("min-h-0 xl:flex xl:min-h-0 xl:flex-1 xl:overflow-hidden", split && "flex flex-1 flex-col overflow-hidden xl:flex-row")}>
         {passageText && <>
         {/* Phones: the passage takes passageHeight% of what's left after the
-            32px divider; the questions take the rest — so 30% really is 30%. */}
-        <aside ref={passageScrollRef} style={{ "--pw": `${passageWidth}%`, "--pf": passageHeight / 100 } as CSSProperties} className="passage-panel min-h-0 min-w-0 flex-none basis-[calc((100%-32px)*var(--pf))] overflow-y-auto overscroll-contain rounded-3xl border border-line bg-canvas p-4 shadow-sm sm:p-5 xl:basis-auto xl:w-[var(--pw)]">
+            14px divider; the questions take the rest — so 30% really is 30%. */}
+        <aside ref={passageScrollRef} style={{ "--pw": `${passageWidth}%`, "--pf": passageHeight / 100 } as CSSProperties} className="passage-panel min-h-0 min-w-0 flex-none basis-[calc((100%-14px)*var(--pf))] overflow-y-auto overscroll-contain rounded-3xl border border-line bg-canvas p-4 shadow-sm sm:p-5 xl:basis-auto xl:w-[var(--pw)]">
           <div className="mb-3 flex items-center gap-2 text-brand">
             <PanelIcon className="h-4 w-4" /><p className="text-xs font-bold uppercase tracking-wider">{panelLabel}</p>
             {/* Text zoom: − / current / + */}
@@ -1458,11 +1458,11 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
             }
           }}
           title={t("Tortib o'lchamni o'zgartiring", "Drag to resize")}
-          className="group flex h-8 shrink-0 cursor-row-resize touch-none select-none items-center justify-center outline-none xl:hidden"
+          // A slim 4px bar in a 14px gap; the invisible ::before keeps a
+          // finger-sized (30px) grab area without taking that much screen.
+          className="group relative z-10 flex h-3.5 shrink-0 cursor-row-resize touch-none select-none items-center justify-center outline-none before:absolute before:inset-x-0 before:-inset-y-2 before:content-[''] xl:hidden"
         >
-          <div className="flex h-5 w-16 items-center justify-center rounded-full border border-line bg-canvas shadow-sm transition group-active:border-brand group-focus-visible:border-brand">
-            <div className="h-1 w-8 rounded-full bg-muted/50 transition group-active:bg-brand" />
-          </div>
+          <div className="h-1 w-10 rounded-full bg-current text-muted opacity-50 transition-all group-active:w-14 group-active:text-brand group-active:opacity-100 group-focus-visible:text-brand group-focus-visible:opacity-100" />
         </div>
         <div onPointerDown={(event) => startSplitDrag(event, "x")} title={t("O'lchamni o'zgartirish uchun torting", "Drag to resize")} className="group hidden shrink-0 cursor-col-resize touch-none items-center justify-center px-2 xl:flex">
           <div className="h-16 w-1.5 rounded-full bg-line transition group-hover:bg-brand" />
