@@ -1141,7 +1141,8 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     </div>
   </div>;
   const violationsLeft = Math.max(0, maxViolations - lockdown.violations);
-  const lockdownOverlay = examMode && lockdown.away && !paused && !removed && !leaving && <div role="alertdialog" aria-modal="true" aria-labelledby="lockdown-title" className="fixed inset-0 z-[70] grid place-items-center bg-[#0b1020]/85 p-4 backdrop-blur-md">
+  // Opaque on purpose: whatever is captured while away shows no questions.
+  const lockdownOverlay = examMode && lockdown.away && !paused && !removed && !leaving && <div role="alertdialog" aria-modal="true" aria-labelledby="lockdown-title" className="fixed inset-0 z-[70] grid place-items-center bg-[#0b1020] p-4">
     <div className="w-full max-w-md rounded-3xl border border-line bg-canvas p-8 text-center shadow-lift">
       <span className={cn("mx-auto grid h-14 w-14 place-items-center rounded-2xl", lockdown.away === "start" ? "bg-orange-500/10 text-orange-500" : "bg-red-500/10 text-red-500")}>
         {lockdown.away === "start" ? <Lock className="h-7 w-7" /> : <AlertTriangle className="h-7 w-7" />}
@@ -1153,7 +1154,9 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
         ? t("To‘liq ekranda davom eting.", "Continue in fullscreen.")
         : lockdown.away === "fullscreen"
           ? t("To‘liq ekrandan chiqdingiz.", "You left fullscreen.")
-          : t("Boshqa oynaga o‘tdingiz.", "You switched to another window.")}</p>
+          : lockdown.away === "screenshot"
+            ? t("Skrinshot olish taqiqlangan. Urinish qayd etildi va examinerga ko‘rinadi.", "Screenshots are not allowed. The attempt was recorded and the examiner can see it.")
+            : t("Boshqa oynaga o‘tdingiz.", "You switched to another window.")}</p>
       {lockdown.violations > 0 && <div className="mt-5" aria-label={`${lockdown.violations} / ${maxViolations}`}>
         <div className="flex justify-center gap-2">{Array.from({ length: maxViolations }, (_, index) => <i key={index} className={cn("h-2.5 w-10 rounded-full", index < lockdown.violations ? "bg-red-500" : "bg-surface ring-1 ring-line")} />)}</div>
         <p className="mt-2 text-xs font-bold text-red-500">{violationsLeft > 0
@@ -1170,6 +1173,11 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
       </button>
       <p className="mt-2 text-xs text-muted">{t("Qolgan vaqt", "Time left")}: <b className="font-mono text-ink">{time}</b></p>
     </div>
+  </div>;
+  // Screenshot protection: the exam is painted over the moment Win/Cmd is
+  // pressed or the window loses focus, so a capture shows only this screen.
+  const protection = examMode && lockdown.shield && !leaving && <div aria-hidden="true" className="exam-shield fixed inset-0 z-[72] grid place-items-center bg-[#0b1020] p-6 text-center">
+    <div><Lock className="mx-auto h-10 w-10 text-orange-500" /><p className="mt-3 text-sm font-bold text-white/80">{t("Imtihon himoyalangan", "Exam protected")}</p></div>
   </div>;
   const lockdownPill = <span
     title={t("Imtihon rejimi", "Exam mode")}
@@ -1219,6 +1227,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     {proctorOverlay}
     {timeBanner}
     {lockdownOverlay}
+    {protection}
     {dialog}
     <div className="exam-screen min-h-screen bg-surface p-4 sm:p-8"><div className="mx-auto max-w-5xl rounded-3xl border border-line bg-canvas p-6 shadow-soft sm:p-9">
     <div className="flex items-center justify-between gap-3">
@@ -1253,6 +1262,7 @@ export function ExamRunner({ testId, resultBasePath, initialAttemptId }: { testI
     {proctorOverlay}
     {timeBanner}
     {lockdownOverlay}
+    {protection}
     {/* split: a reading/writing panel is on screen — the page stops scrolling
         and the panel and the questions each scroll on their own. */}
     <div className={cn("exam-screen min-h-[100dvh] bg-surface xl:flex xl:h-[100dvh] xl:flex-col xl:overflow-hidden", split && "flex h-[100dvh] flex-col overflow-hidden")}>

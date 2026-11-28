@@ -77,6 +77,8 @@ video { height: auto; }
 .passage-content img { height: auto; }
 .passage-content pre { max-width: 100%; overflow-x: auto; white-space: pre-wrap; }
 .exam-questions { container: exam-questions / inline-size; }
+/* Printing (or "Save as PDF") an exam gives a blank page. */
+@media print { .exam-screen { display: none !important; } }
 /* Use the space available to questions, including when a passage sits beside them. */
 @container exam-questions (min-width: 800px) {
   .exam-with-bank { grid-template-columns: minmax(0, 1fr) 210px; }

@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  AlertTriangle, ArrowLeft, Check, CheckCheck, Clock3, Copy, FileSpreadsheet, KeyRound, LogOut, Pause, Pencil, Play, RefreshCw, Send, Target, ShieldOff, UserX, Wifi, WifiOff, X,
+  AlertTriangle, ArrowLeft, Camera, Check, CheckCheck, Clock3, Copy, FileSpreadsheet, KeyRound, LogOut, Pause, Pencil, Play, RefreshCw, Send, Target, ShieldOff, UserX, Wifi, WifiOff, X,
 } from "lucide-react";
 import { DurationPicker } from "@/components/examiner/duration-picker";
 import { PassMarkPicker } from "@/components/examiner/pass-mark-picker";
@@ -167,6 +167,10 @@ export default function SessionMonitor({ params }: { params: { sessionId: string
       title={t("Imtihon rejimidan chiqishlar", "Exits from exam mode")}
       className={cn("mt-1 flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold", (row.violations ?? 0) > 0 ? "bg-red-500/10 text-red-600 dark:text-red-400" : "bg-surface text-muted")}
     ><AlertTriangle className="h-3 w-3" /> {t("Chiqishlar", "Leaves")} {row.violations ?? 0}/{row.max_violations ?? 3}</span>}
+    {(row.screenshots ?? 0) > 0 && <span
+      title={t("Imtihon ekranida skrinshot olishga urinish qayd etildi", "A screenshot attempt was caught on the exam screen")}
+      className="mt-1 flex w-fit items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[11px] font-bold text-white"
+    ><Camera className="h-3 w-3" /> {t(`Skrinshot olindi · ${row.screenshots}`, `Screenshot taken · ${row.screenshots}`)}</span>}
   </>;
   const rowActions = (row: Participant, running: boolean) => <>
 
@@ -202,6 +206,7 @@ export default function SessionMonitor({ params }: { params: { sessionId: string
         <div className="mt-4 grid grid-cols-2 gap-3">
           <div className="rounded-2xl bg-surface p-3"><p className="text-[11px] font-bold uppercase tracking-wider text-muted">{t("Holat", "State")}</p><p className="mt-1 text-sm font-extrabold text-ink">{stateLabel(cardRow.state, t)}</p></div>
           <div className={cn("rounded-2xl p-3", (cardRow.violations ?? 0) > 0 ? "bg-red-500/10" : "bg-surface")}><p className="text-[11px] font-bold uppercase tracking-wider text-muted">{t("Imtihon rejimidan chiqishlar", "Exam-mode leaves")}</p><p className={cn("mt-1 text-sm font-extrabold", (cardRow.violations ?? 0) > 0 ? "text-red-600 dark:text-red-400" : "text-ink")}>{cardRow.violations ?? 0} / {cardRow.max_violations ?? 3}</p></div>
+          <div className={cn("col-span-2 flex items-center gap-2 rounded-2xl p-3", (cardRow.screenshots ?? 0) > 0 ? "bg-red-600 text-white" : "bg-surface")}><Camera className={cn("h-4 w-4 shrink-0", (cardRow.screenshots ?? 0) > 0 ? "text-white" : "text-muted")} /><p className={cn("text-sm font-extrabold", (cardRow.screenshots ?? 0) > 0 ? "text-white" : "text-ink")}>{(cardRow.screenshots ?? 0) > 0 ? t(`Skrinshot olishga urinish: ${cardRow.screenshots} marta`, `Screenshot attempts: ${cardRow.screenshots}`) : t("Skrinshot urinishi yo‘q", "No screenshot attempts")}</p></div>
         </div>
         <div className="mt-4"><ExamModeToggle studentId={cardRow.user_id} enabled={cardRow.exam_mode !== false} maxViolations={cardRow.max_violations ?? 3} onChange={() => { load(); }} /></div>
         <p className="mt-3 text-xs leading-5 text-muted">{t("Darhol kuchga kiradi.", "Applies right away.")}</p>

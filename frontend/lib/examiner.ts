@@ -25,6 +25,8 @@ export type Participant = {
   online: boolean; attempt_id: string | null; started_at: string | null; paused: boolean;
   elapsed_seconds: number; remaining_seconds: number; answered_count: number; percentage: number | null;
   violations?: number; max_violations?: number; exam_mode?: boolean; passed?: boolean;
+  /** Screenshot attempts the exam screen caught (each is also a violation). */
+  screenshots?: number;
 };
 
 export type SessionDetail = Omit<SessionSummary, "pending" | "in_progress" | "submitted" | "total" | "examiner_name"> & {

@@ -547,7 +547,7 @@ async def heartbeat(attempt_id: uuid.UUID, user: User = Depends(current_user), d
     }
 
 
-VIOLATION_KINDS = {"fullscreen", "hidden", "blur"}
+VIOLATION_KINDS = {"fullscreen", "hidden", "blur", "screenshot"}
 
 
 @router.post("/attempts/{attempt_id}/violation")
@@ -577,6 +577,8 @@ async def record_violation(
             return result
     kind = str((payload or {}).get("kind", ""))
     attempt.violation_count = (attempt.violation_count or 0) + 1
+    if kind == "screenshot":
+        attempt.screenshot_count = (attempt.screenshot_count or 0) + 1
     count = attempt.violation_count
     if count >= MAX_EXAM_VIOLATIONS:
         await finalize_attempt(db, attempt)

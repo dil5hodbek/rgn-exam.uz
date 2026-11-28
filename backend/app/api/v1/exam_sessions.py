@@ -450,6 +450,7 @@ async def session_detail_payload(db: AsyncSession, session: ExamSession) -> dict
             "remaining_seconds": remaining_seconds(attempt, time_limit, now) if attempt else time_limit * 60,
             "answered_count": answered.get(attempt.id, 0) if attempt else 0,
             "violations": (attempt.violation_count or 0) if attempt else 0,
+            "screenshots": (attempt.screenshot_count or 0) if attempt else 0,
             "exam_mode": student.exam_mode_enabled is not False,
             "max_violations": MAX_EXAM_VIOLATIONS,
             "percentage": float(attempt.percentage) if attempt and attempt.percentage is not None else None,
@@ -567,7 +568,8 @@ def build_results_workbook(detail: dict, attempts: dict) -> bytes:
                   f"Vaqt {detail['time_limit_minutes']} daqiqa"])
     sheet.append([])
     headers = ["№", "Ism", "Familiya", "Telefon", "Username", "Imtihon", "Daraja", "Imtihon turi",
-               "Holat", "Ball", "Maks. ball", "Foiz", "Natija", "Sarflangan vaqt (daq)", "Topshirilgan vaqt"]
+               "Holat", "Ball", "Maks. ball", "Foiz", "Natija", "Sarflangan vaqt (daq)", "Topshirilgan vaqt",
+               "Chiqishlar", "Skrinshotlar"]
     sheet.append(headers)
     header_row = sheet.max_row
     seated = [row for row in detail["participants"] if row["state"] not in ("REJECTED", "REMOVED")]
@@ -594,7 +596,11 @@ def build_results_workbook(detail: dict, attempts: dict) -> bytes:
             verdict,
             round((attempt.time_spent_seconds or 0) / 60) if finished else None,
             submitted,
+            row.get("violations", 0) if attempt else None,
+            row.get("screenshots", 0) if attempt else None,
         ])
+        if attempt and row.get("screenshots"):
+            sheet.cell(row=sheet.max_row, column=17).font = Font(bold=True, color="B91C1C")
         if verdict in ("O'tdi", "O'tmadi"):
             sheet.cell(row=sheet.max_row, column=13).font = Font(
                 bold=True, color="047857" if verdict == "O'tdi" else "B91C1C")
@@ -604,7 +610,7 @@ def build_results_workbook(detail: dict, attempts: dict) -> bytes:
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor="F26522")
         cell.alignment = Alignment(vertical="center", wrap_text=True)
-    widths = [5, 16, 18, 16, 14, 30, 16, 18, 14, 8, 10, 8, 14, 12, 18]
+    widths = [5, 16, 18, 16, 14, 30, 16, 18, 14, 8, 10, 8, 14, 12, 18, 11, 12]
     for index, width in enumerate(widths, start=1):
         sheet.column_dimensions[get_column_letter(index)].width = width
     sheet.freeze_panes = sheet.cell(row=header_row + 1, column=1)

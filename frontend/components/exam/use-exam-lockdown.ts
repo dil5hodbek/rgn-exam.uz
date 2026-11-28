@@ -11,7 +11,14 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export type LockdownAway = null | "start" | "fullscreen" | "hidden" | "blur";
+export type LockdownAway = null | "start" | "fullscreen" | "hidden" | "blur" | "screenshot";
+
+/** System screenshot shortcuts that reach the page: PrintScreen (Windows
+ *  sends it on key-up), Win+Shift+S, and macOS Cmd+Shift+3/4/5/6. */
+export function screenshotCombo(event: KeyboardEvent) {
+  if (event.key === "PrintScreen" || event.code === "PrintScreen") return true;
+  return event.metaKey && event.shiftKey && ["Digit3", "Digit4", "Digit5", "Digit6", "KeyS"].includes(event.code);
+}
 export type ViolationKind = Exclude<LockdownAway, null | "start">;
 
 type Doc = Document & { webkitFullscreenElement?: Element; webkitExitFullscreen?: () => Promise<void> };
@@ -81,6 +88,9 @@ export function useExamLockdown({ active, initialViolations, onViolation, fullsc
   fullscreenRefused?: boolean;
 }) {
   const [away, setAway] = useState<LockdownAway>(null);
+  // Shield: the exam is painted over the moment a screenshot may be coming
+  // (Win/Cmd held, window lost focus) — the capture then shows a blank screen.
+  const [shield, setShield] = useState(false);
   const [violations, setViolations] = useState(initialViolations);
   const awayRef = useRef<LockdownAway>(null);
   const callback = useRef(onViolation);
@@ -110,31 +120,51 @@ export function useExamLockdown({ active, initialViolations, onViolation, fullsc
     // A fresh page load is never fullscreen — coming back needs a click (not a violation).
     if (fullscreenOk.current && !isFullscreen()) { awayRef.current = "start"; setAway("start"); }
 
+    let unshield: ReturnType<typeof setTimeout> | undefined;
+    const raiseShield = () => { if (unshield) clearTimeout(unshield); setShield(true); };
+    const lowerShield = (delay = 0) => { if (unshield) clearTimeout(unshield); unshield = setTimeout(() => setShield(false), delay); };
     const onFullscreen = () => { if (fullscreenOk.current && !isFullscreen()) mark("fullscreen"); };
-    const onVisibility = () => { if (document.hidden) mark("hidden"); };
-    const onBlur = () => { setTimeout(() => { if (!document.hasFocus()) mark("blur"); }, 150); };
+    const onVisibility = () => { if (document.hidden) { raiseShield(); mark("hidden"); } };
+    const onBlur = () => { raiseShield(); setTimeout(() => { if (!document.hasFocus()) mark("blur"); }, 150); };
+    const onFocus = () => lowerShield(150);
     const stop = (event: Event) => { event.preventDefault(); };
-    const onKey = (event: KeyboardEvent) => { if (blockedCombo(event)) { event.preventDefault(); event.stopPropagation(); } };
+    const onKey = (event: KeyboardEvent) => {
+      // Win / Cmd starts every desktop screenshot shortcut: hide the exam first.
+      if (event.key === "Meta" || event.key === "OS") raiseShield();
+      if (screenshotCombo(event)) { event.preventDefault(); event.stopPropagation(); raiseShield(); mark("screenshot"); return; }
+      if (blockedCombo(event)) { event.preventDefault(); event.stopPropagation(); }
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      // Windows delivers PrintScreen only on key-up — record it then.
+      if (screenshotCombo(event)) { raiseShield(); mark("screenshot"); lowerShield(800); return; }
+      if (event.key === "Meta" || event.key === "OS") lowerShield(400);
+    };
     const guarded = ["contextmenu", "copy", "cut", "paste"];
 
     document.addEventListener("fullscreenchange", onFullscreen);
     document.addEventListener("webkitfullscreenchange", onFullscreen);
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
     for (const name of guarded) document.addEventListener(name, stop, true);
     window.addEventListener("keydown", onKey, true);
+    window.addEventListener("keyup", onKeyUp, true);
     window.addEventListener("beforeprint", stop);
     return () => {
       document.removeEventListener("fullscreenchange", onFullscreen);
       document.removeEventListener("webkitfullscreenchange", onFullscreen);
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
       for (const name of guarded) document.removeEventListener(name, stop, true);
       window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("keyup", onKeyUp, true);
       window.removeEventListener("beforeprint", stop);
+      if (unshield) clearTimeout(unshield);
       exitFullscreen();
       awayRef.current = null;
       setAway(null);
+      setShield(false);
     };
   }, [active, mark, fullscreenRefused]);
 
@@ -175,5 +205,5 @@ export function useExamLockdown({ active, initialViolations, onViolation, fullsc
     setAway(null);
   }, []);
 
-  return { away, violations, resume, syncViolations, fullscreen: fullscreenOk };
+  return { away, violations, resume, syncViolations, fullscreen: fullscreenOk, shield };
 }

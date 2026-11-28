@@ -219,6 +219,8 @@ class Attempt(Base):
     # Exam mode: times the student left fullscreen or switched to another
     # window/app. Reaching MAX_EXAM_VIOLATIONS auto-submits the attempt.
     violation_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Of those, the screenshot attempts the exam screen caught (shown to the examiner).
+    screenshot_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # True while a new attempt sits on the pre-exam briefing: its clock has not
     # started yet. POST /attempts/{id}/begin (or the first saved answer) starts it.
     awaiting_start: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
