@@ -11,7 +11,7 @@ import { LevelIcon } from "@/components/dashboard/level-icon";
 import { levelVisuals } from "@/lib/levels";
 import { useLang, type Lang } from "@/lib/i18n";
 
-const LEVELS = ["Beginner", "Elementary", "Pre-Intermediate", "Intermediate"];
+const LEVELS = ["Beginner", "Elementary", "Pre-Intermediate", "Intermediate", "Advanced"];
 const stepIcons = [LogIn, Layers3, PenLine, Award];
 const SKILLS = ["Listening", "Reading", "Grammar", "Vocabulary", "Writing"] as const;
 
@@ -41,7 +41,7 @@ const dict = {
     wrong: "Bu yerda \"would study\" bo'ladi: \"If I were you\" dan keyin would + fe'l keladi.",
     more: "Qolgan savollar imtihonda",
     again: "Qaytadan",
-    levelsTitle: "To'rt daraja, har birida ikkita imtihon",
+    levelsTitle: "Beginner'dan IELTS'gacha — beshta daraja",
     levelStep: (n: number) => `${n}-daraja`,
     howTitle: "Qanday ishlaydi",
     steps: [
@@ -79,7 +79,7 @@ const dict = {
     wrong: "It's \"would study\" here: after \"If I were you\" we use would + verb.",
     more: "The rest are in the exam",
     again: "Try again",
-    levelsTitle: "Four levels, two exams each",
+    levelsTitle: "Five levels, from Beginner to IELTS",
     levelStep: (n: number) => `Level ${n}`,
     howTitle: "How it works",
     steps: [
@@ -128,7 +128,7 @@ const visuals = {
     levelCount: "levels", skillCount: "skills", examCount: "exam types", journey: "Your learning journey", yourTurn: "Now it’s your turn!",
   },
 };
-const levelSlugs = ["beginner", "elementary", "pre-intermediate", "intermediate"];
+const levelSlugs = ["beginner", "elementary", "pre-intermediate", "intermediate", "advanced"];
 const skillIcons = { Listening: Headphones, Reading: BookOpen, Grammar: Layers3, Vocabulary: Sparkles, Writing: PenLine };
 
 function BookArtwork() {
@@ -350,8 +350,8 @@ export default function Home() {
           <div className="lp-level-cards">{LEVELS.map((level, index) => {return <Link href="/sign-in" className={`lp-level-card lp-level-${index}`} key={level}>
             <div className="lp-level-top"><span className="lp-level-number">0{index + 1}</span><ArrowUpRight size={19} /></div>
             <div className="lp-level-art"><LevelIcon level={levelVisuals[levelSlugs[index]]} /></div>
-            <span className="lp-level-label">{t.levelStep(index + 1)}</span><h3>{level}</h3><p>Mid-course · End-course</p>
-            <div className="lp-level-bars" aria-hidden="true">{[0,1,2,3].map(i => <i key={i} className={i <= index ? "active" : ""} />)}</div>
+            <span className="lp-level-label">{t.levelStep(index + 1)}</span><h3>{level}</h3><p>{levelSlugs[index] === "advanced" ? "IELTS · Mid · End-course" : "Mid-course · End-course"}</p>
+            <div className="lp-level-bars" aria-hidden="true">{LEVELS.map((_, i) =><i key={i} className={i <= index ? "active" : ""} />)}</div>
             <div className="lp-level-bottom"><span>{v.exams}</span><strong>{v.explore}<ArrowRight size={15} /></strong></div>
           </Link>;})}</div>
         </section>

@@ -14,6 +14,7 @@ LEVELS = [
     ("Elementary", "elementary", "Use English in everyday situations.", 2),
     ("Pre-Intermediate", "pre-intermediate", "Connect ideas with growing fluency.", 3),
     ("Intermediate", "intermediate", "Communicate with precision and range.", 4),
+    ("Advanced", "advanced", "IELTS preparation and confident, complex English.", 5),
 ]
 
 

@@ -15,7 +15,7 @@ ExamFlow — bu o'quv markazlar uchun maxsus qurilgan imtihon tizimi. Word hujja
 ## Imkoniyatlar
 
 **O'quvchi uchun**
-- Daraja bo'yicha testlar: Beginner → Elementary → Pre-Intermediate → Intermediate
+- Daraja bo'yicha testlar: Beginner → Elementary → Pre-Intermediate → Intermediate → Advanced (IELTS)
 - Mid-course va End-course imtihonlari
 - Har bir savol turini qo'llab-quvvatlash: ko'p tanlovli, gap to'ldirish, audio topshiriqlar, idiom matching
 - Natijalar tarixi va statistika

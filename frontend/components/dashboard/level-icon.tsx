@@ -1,4 +1,4 @@
-import { Sprout, Compass, Rocket, Crown } from "lucide-react";
+import { Sprout, Compass, Rocket, Crown, Trophy } from "lucide-react";
 import type { LevelCardData } from "@/lib/levels";
 import styles from "./level-icon.module.css";
 
@@ -7,9 +7,10 @@ export const levelGradients = {
   violet: "from-[#ff8a46] to-[#dc5b20]",
   blue: "from-[#ff8a46] to-[#dc5b20]",
   mint: "from-[#ff8a46] to-[#dc5b20]",
+  gold: "from-[#ff8a46] to-[#dc5b20]",
 };
 
-const symbols = { coral: Sprout, violet: Compass, blue: Rocket, mint: Crown };
+const symbols = { coral: Sprout, violet: Compass, blue: Rocket, mint: Crown, gold: Trophy };
 
 export function LevelIcon({ level, compact = false }: { level: Pick<LevelCardData, "color" | "icon">; compact?: boolean }) {
   const Symbol = symbols[level.color];
